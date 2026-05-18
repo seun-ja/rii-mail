@@ -1,59 +1,71 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="stylesheet" href="styles.css" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tauri App</title>
-    <script type="module" src="/main.js" defer></script>
-  </head>
+    <head>
+        <meta charset="UTF-8" />
+        <link rel="stylesheet" href="styles.css" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Tauri App</title>
+        <script type="module" src="/main.js" defer></script>
+    </head>
 
-  <body>
-    <main class="container">
-      <h1>Email Input Test</h1>
-      <p>Use this form to test taking subject, sender email, and body input.</p>
+    <body>
+        <main class="container">
+            <h1>Email Input Test</h1>
+            <p>
+                Use this form to test taking subject, sender email, and body
+                input.
+            </p>
 
-      <div class="row">
-        <a href="https://tauri.app" target="_blank">
-          <img src="/assets/tauri.svg" class="logo tauri" alt="Tauri logo" />
-        </a>
-        <a
-          href="https://developer.mozilla.org/en-US/docs/Web/JavaScript"
-          target="_blank"
-        >
-          <img
-            src="/assets/javascript.svg"
-            class="logo vanilla"
-            alt="JavaScript logo"
-          />
-        </a>
-      </div>
+            <div class="row">
+                <a href="https://tauri.app" target="_blank">
+                    <img
+                        src="/assets/tauri.svg"
+                        class="logo tauri"
+                        alt="Tauri logo"
+                    />
+                </a>
+                <a
+                    href="https://developer.mozilla.org/en-US/docs/Web/JavaScript"
+                    target="_blank"
+                >
+                    <img
+                        src="/assets/javascript.svg"
+                        class="logo vanilla"
+                        alt="JavaScript logo"
+                    />
+                </a>
+            </div>
 
-      <form id="email-form">
-        <label for="subject-input">Subject</label>
-        <input id="subject-input" name="subject" placeholder="Enter subject" required />
+            <form id="email-form">
+                <label for="subject-input">Subject</label>
+                <input
+                    id="subject-input"
+                    name="subject"
+                    placeholder="Enter subject"
+                    required
+                />
 
-        <label for="from-input">Email From</label>
-        <input
-          id="from-input"
-          name="emailFrom"
-          type="email"
-          placeholder="sender@example.com"
-          required
-        />
+                <label for="from-input">Email From</label>
+                <input
+                    id="from-input"
+                    name="emailFrom"
+                    type="email"
+                    placeholder="sender@example.com"
+                    required
+                />
 
-        <label for="body-input">Body</label>
-        <textarea
-          id="body-input"
-          name="body"
-          rows="6"
-          placeholder="Type email body"
-          required
-        ></textarea>
+                <label for="body-input">Body</label>
+                <textarea
+                    id="body-input"
+                    name="body"
+                    rows="6"
+                    placeholder="Type email body"
+                    required
+                ></textarea>
 
-        <button type="submit">Test Input</button>
-      </form>
-      <p id="result-msg"></p>
-    </main>
-  </body>
+                <button type="submit">Test Input</button>
+            </form>
+            <p id="result-msg"></p>
+        </main>
+    </body>
 </html>

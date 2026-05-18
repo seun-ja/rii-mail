@@ -10,8 +10,8 @@ mod rpc;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
-fn greet(
-    state: tauri::State<AppState>,
+async fn rater(
+    state: tauri::State<'_, AppState>,
     subject: String,
     email_from: String,
     body: String,
@@ -22,10 +22,7 @@ fn greet(
         body,
     };
 
-    // TODO: this blocking can be buggy - if the RPC call takes a long time, it will block the entire Tauri app. We should consider making this async and using a channel to send the result back to the main thread.
-    let rating = tauri::async_runtime::block_on(rpc::caller(&state.rpc_client, email))?;
-
-    Ok(rating)
+    rpc::caller(&state.rpc_client, email).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -37,7 +34,7 @@ pub async fn run() {
     tauri::Builder::default()
         .manage(state)
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet])
+        .invoke_handler(tauri::generate_handler![rater])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
