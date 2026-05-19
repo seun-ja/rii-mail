@@ -35,7 +35,10 @@ pub async fn run() {
 
             tauri::async_runtime::spawn(async {
                 if let Ok(config) = Config::init(handle.clone()).await {
-                    initialize_services(handle, config).await.unwrap();
+                    initialize_services(handle, config)
+                        .await
+                        .map_err(|e| eprintln!("Fails to initialize sevices: {}", e))
+                        .unwrap();
                 }
             });
 
@@ -53,13 +56,17 @@ async fn initialize_services(app: tauri::AppHandle, config: Config) -> Result<()
     )
     .expect("Failed to initialize subscriber");
 
+    let rpc_client = init_rpc(&config.rpc_server)
+        .await
+        .map_err(|e| Error::Other(format!("Failed to initialize RPC Service: {}", e)))?;
+
+    let _imap_client = session::init_imap_session(&config.imap_server, config.imap_port)
+        .await
+        .map_err(|e| Error::Other(format!("Failed to initialize IMAP Session: {}", e)))?;
+
     let app_state = config::InitializedState {
-        rpc_client: init_rpc(&config.rpc_server)
-            .await
-            .expect("Failed to Initialize RPC Service"),
-        _imap_client: session::init_imap_session(&config.imap_server, config.imap_port)
-            .await
-            .expect("Failed to Initialize IMAP Session"),
+        rpc_client,
+        _imap_client,
     };
 
     let state = app.state::<AppState>();

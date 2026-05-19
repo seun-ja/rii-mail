@@ -1,10 +1,11 @@
 const { invoke } = window.__TAURI__.core;
 
 const DEFAULT_CONFIG = {
-  rpc_server: import.meta.env.VITE_RPC_SERVER || "0.0.0.0:5500",
-  rust_log: import.meta.env.VITE_RUST_LOG || "info",
+  rpc_server: import.meta?.env?.VITE_RPC_SERVER || "0.0.0.0:5500",
+  rust_log: import.meta?.env?.VITE_RUST_LOG || "info",
   otlp_collector_endpoint:
-    import.meta.env.VITE_OTLP_COLLECTOR_ENDPOINT || "http://otel-collector:4317",
+    import.meta?.env?.VITE_OTLP_COLLECTOR_ENDPOINT ||
+    "http://otel-collector:4317",
 };
 
 window.addEventListener("DOMContentLoaded", () => {
@@ -27,8 +28,11 @@ window.addEventListener("DOMContentLoaded", () => {
   setupForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
-    const imapServer = document.querySelector("#imap-server-input").value.trim();
-    const imapPortValue = document.querySelector("#imap-port-input").value.trim();
+    const imapServerInput = document.querySelector("#imap-server-input");
+    const imapPortInput = document.querySelector("#imap-port-input");
+
+    const imapServer = imapServerInput?.value?.trim() || "";
+    const imapPortValue = imapPortInput?.value?.trim() || "";
 
     const config = {
       rpc_server: DEFAULT_CONFIG.rpc_server,
@@ -45,7 +49,19 @@ window.addEventListener("DOMContentLoaded", () => {
 
     try {
       setupMsgEl.textContent = "Saving configuration...";
-      await invoke("config_setup", { config });
+      try {
+        // Flatten config object for Tauri IPC (Tauri converts Rust snake_case to camelCase)
+        await invoke("config_setup", {
+          rpcServer: config.rpc_server,
+          imapServer: config.imap_server,
+          imapPort: config.imap_port,
+          rustLog: config.rust_log,
+          otlpCollectorEndpoint: config.otlp_collector_endpoint,
+        });
+      } catch (setupError) {
+        const setupErrorMsg = setupError?.message || JSON.stringify(setupError);
+        throw setupError;
+      }
       setupMsgEl.textContent = "Setup complete. Waiting for initialization...";
 
       // Poll is_initialized up to 10 times, 300ms apart
@@ -54,16 +70,31 @@ window.addEventListener("DOMContentLoaded", () => {
         try {
           initialized = await invoke("is_initialized");
           if (initialized) break;
-        } catch {}
+        } catch (pollError) {
+          const pollErrorMsg =
+            pollError instanceof Error
+              ? pollError.message
+              : JSON.stringify(pollError);
+        }
         await new Promise((res) => setTimeout(res, 300));
       }
       if (initialized) {
         window.location.reload();
       } else {
-        setupMsgEl.textContent = "Setup saved, but backend did not initialize in time. Please reload the app.";
+        setupMsgEl.textContent =
+          "Setup saved, but backend did not initialize. Check console for errors and try reloading the app.";
       }
     } catch (error) {
-      setupMsgEl.textContent = `Setup failed: ${error}`;
+      let errorMessage = "Unknown error";
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === "string") {
+        errorMessage = error;
+      } else if (error && typeof error === "object") {
+        // Handle Rust Error struct serialized as object with 'message' field
+        errorMessage = error.message || error.msg || JSON.stringify(error);
+      }
+      setupMsgEl.textContent = `Setup failed: ${errorMessage}`;
     }
   });
 });

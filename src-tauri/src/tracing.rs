@@ -33,7 +33,9 @@ pub fn init_subscriber(
         .with(fmt_layer)
         .with(telemetry_layer);
 
-    set_global_default(subscriber).expect("Failed to set subscriber");
+    // If subscriber is already set, this will fail - that's OK, we just ignore it
+    // This allows init_subscriber to be called multiple times safely
+    let _ = set_global_default(subscriber);
 
     Ok(())
 }
