@@ -4,9 +4,13 @@ use crate::{
     rpc::{SpamRaterRequest, SpamRating},
 };
 
+pub mod auth;
 mod config;
+pub mod email_cache;
 mod error;
 mod rpc;
+mod session;
+mod tracing;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -27,8 +31,19 @@ async fn rater(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub async fn run() {
+    let config = config::Config::init();
+
+    tracing::init_subscriber(
+        &config.rust_log.unwrap_or_default(),
+        &config.otlp_collector_endpoint.unwrap_or_default(),
+    )
+    .expect("Failed to initialize subscriber");
+
     let state = config::AppState {
-        rpc_client: init_rpc("0.0.0.0:5500").await.unwrap(),
+        rpc_client: init_rpc(&config.rpc_server).await.expect(""),
+        _imap_client: session::init_imap_session(&config.imap_server, config.imap_port)
+            .await
+            .expect(""),
     };
 
     tauri::Builder::default()
