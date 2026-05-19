@@ -12,6 +12,14 @@ pub enum Error {
     NotFound,
     #[error("RPC Server Error: {0}")]
     RPCServer(#[from] rpc_agent::error::ApiError),
+    #[error("IO Error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("TLS Error: {0}")]
+    Tls(#[from] async_native_tls::Error),
+    #[error("IMAP Error: {0}")]
+    Imap(#[from] async_imap::error::Error),
+    #[error("Tauri Error: {0}")]
+    Tauri(#[from] tauri::Error),
 }
 
 impl Serialize for Error {
@@ -24,6 +32,10 @@ impl Serialize for Error {
             Error::Other(msg) => ("Other", msg.clone()),
             Error::NotFound => ("NotFound", self.to_string()),
             Error::RPCServer(e) => ("RPCServer", e.to_string()),
+            Error::Io(e) => ("Io", e.to_string()),
+            Error::Tls(e) => ("Tls", e.to_string()),
+            Error::Imap(e) => ("Imap", e.to_string()),
+            Error::Tauri(e) => ("Tauri", e.to_string()),
         };
 
         use serde::ser::SerializeStruct;

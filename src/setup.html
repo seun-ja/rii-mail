@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <link rel="stylesheet" href="styles.css" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Setup Configuration</title>
+        <script type="module" src="/setup.js" defer></script>
+    </head>
+
+    <body>
+        <main class="container">
+            <h1>App Setup</h1>
+            <p>Update IMAP settings. Other configuration values use defaults.</p>
+
+            <form id="setup-form">
+                <label for="imap-server-input">IMAP Server</label>
+                <input
+                    id="imap-server-input"
+                    name="imap_server"
+                    placeholder="imap.gmail.com"
+                    value="imap.gmail.com"
+                    required
+                />
+
+                <label for="imap-port-input">IMAP Port</label>
+                <input
+                    id="imap-port-input"
+                    name="imap_port"
+                    type="number"
+                    min="1"
+                    max="65535"
+                    value="993"
+                    required
+                />
+
+                <button type="submit">Save Setup</button>
+            </form>
+
+            <p id="setup-msg"></p>
+        </main>
+    </body>
+</html>

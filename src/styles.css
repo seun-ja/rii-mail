@@ -96,11 +96,26 @@ button {
     gap: 0.6rem;
 }
 
+#setup-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
 #email-form label {
     font-weight: 600;
 }
 
+#setup-form label {
+    font-weight: 600;
+}
+
 #email-form button {
+    margin-top: 0.6rem;
+    width: fit-content;
+}
+
+#setup-form button {
     margin-top: 0.6rem;
     width: fit-content;
 }
