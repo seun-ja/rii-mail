@@ -7,6 +7,17 @@ use sqlx::SqlitePool;
 use tarpc::{client, serde_transport::tcp, tokio_serde::formats::Json};
 use tokio::{fs, net::TcpStream};
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum InitStatus {
+    /// Configuration file doesn't exist - user needs to complete full setup
+    Setup,
+    /// Configuration exists but user is not authenticated - show login page
+    Login,
+    /// User is fully authenticated and app is ready
+    SignedIn,
+}
+
 #[derive(Deserialize, Serialize)]
 pub struct Config {
     pub rpc_server: String,
@@ -24,7 +35,7 @@ impl Config {
         let config: Self = serde_json::from_str(&config_json)?;
 
         if config.imap_port == 0 || config.imap_server.is_empty() {
-            panic!("IMAP Port and Server not set")
+            return Err("IMAP Port and Server not set".into());
         }
 
         Ok(config)
@@ -37,13 +48,6 @@ pub enum AppState {
 }
 
 impl AppState {
-    pub fn initialized(&self) -> bool {
-        match self {
-            AppState::Initialized(_) => true,
-            AppState::Fresh => false,
-        }
-    }
-
     pub fn state(&self) -> &InitializedState {
         match self {
             AppState::Initialized(state) => state,

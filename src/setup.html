@@ -9,35 +9,58 @@
     </head>
 
     <body>
-        <main class="container">
-            <h1>App Setup</h1>
-            <p>Update IMAP settings. Other configuration values use defaults.</p>
+        <div class="setup-page">
+            <div class="setup-container">
+                <div class="setup-header">
+                    <div class="setup-icon">⚙️</div>
+                    <h1>Email Configuration</h1>
+                    <p class="setup-subtitle">
+                        Configure your IMAP server to get started
+                    </p>
+                </div>
 
-            <form id="setup-form">
-                <label for="imap-server-input">IMAP Server</label>
-                <input
-                    id="imap-server-input"
-                    name="imap_server"
-                    placeholder="imap.gmail.com"
-                    value="imap.gmail.com"
-                    required
-                />
+                <form id="setup-form" class="setup-form">
+                    <div class="form-group">
+                        <label for="imap-server-input"
+                            >IMAP Server Address</label
+                        >
+                        <input
+                            id="imap-server-input"
+                            name="imap_server"
+                            type="text"
+                            placeholder="e.g., imap.gmail.com"
+                            value="imap.gmail.com"
+                            required
+                        />
+                        <small class="form-hint"
+                            >The server address for your email provider</small
+                        >
+                    </div>
 
-                <label for="imap-port-input">IMAP Port</label>
-                <input
-                    id="imap-port-input"
-                    name="imap_port"
-                    type="number"
-                    min="1"
-                    max="65535"
-                    value="993"
-                    required
-                />
+                    <div class="form-group">
+                        <label for="imap-port-input">IMAP Port</label>
+                        <input
+                            id="imap-port-input"
+                            name="imap_port"
+                            type="number"
+                            min="1"
+                            max="65535"
+                            placeholder="993"
+                            value="993"
+                            required
+                        />
+                        <small class="form-hint"
+                            >Usually 993 for SSL/TLS connections</small
+                        >
+                    </div>
 
-                <button type="submit">Save Setup</button>
-            </form>
+                    <button type="submit" class="setup-button">
+                        Continue to Login
+                    </button>
+                </form>
 
-            <p id="setup-msg"></p>
-        </main>
+                <div id="setup-msg" class="setup-message"></div>
+            </div>
+        </div>
     </body>
 </html>

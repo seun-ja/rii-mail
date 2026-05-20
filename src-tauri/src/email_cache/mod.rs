@@ -14,13 +14,15 @@ pub struct Email {
 }
 
 impl From<Fetch> for Email {
-    fn from(value: Fetch) -> Self {
-        Email {
-            date: value.internal_date(),
-            labels: value
-                .gmail_labels()
-                .map(|labels| labels.iter().map(|s| s.to_string()).collect()),
-            body: value.body().map(|b| b.to_vec()),
-        }
+    fn from(fetch: Fetch) -> Self {
+        let date = fetch.internal_date();
+
+        let body = fetch.body().map(|b| b.to_vec());
+
+        let labels = fetch
+            .gmail_labels()
+            .map(|labels| labels.iter().map(|s| s.to_string()).collect());
+
+        Self { date, body, labels }
     }
 }

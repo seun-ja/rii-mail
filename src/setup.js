@@ -1,27 +1,25 @@
 const { invoke } = window.__TAURI__.core;
 
-const DEFAULT_CONFIG = {
-  rpc_server: import.meta?.env?.VITE_RPC_SERVER || "0.0.0.0:5500",
-  rust_log: import.meta?.env?.VITE_RUST_LOG || "info",
-  otlp_collector_endpoint:
-    import.meta?.env?.VITE_OTLP_COLLECTOR_ENDPOINT ||
-    "http://otel-collector:4317",
-};
+async function checkAlreadyInitialized() {
+  try {
+    const status = await invoke("check_init_status");
+
+    if (status === "signed_in") {
+      // User already signed in, redirect to main app
+      window.location.replace("/");
+    } else if (status === "login") {
+      // Config exists but not signed in, redirect to login page
+      window.location.replace("/login.html");
+    }
+    // If status === "setup", we're on the right page, continue
+  } catch (error) {
+    setupMsgEl.textContent = `Could not check initialization status`;
+  }
+}
 
 window.addEventListener("DOMContentLoaded", () => {
   const setupForm = document.querySelector("#setup-form");
   const setupMsgEl = document.querySelector("#setup-msg");
-
-  async function checkAlreadyInitialized() {
-    try {
-      const initialized = await invoke("is_initialized");
-      if (initialized) {
-        window.location.replace("/");
-      }
-    } catch (error) {
-      setupMsgEl.textContent = `Could not check initialization status: ${error}`;
-    }
-  }
 
   checkAlreadyInitialized();
 
@@ -34,56 +32,24 @@ window.addEventListener("DOMContentLoaded", () => {
     const imapServer = imapServerInput?.value?.trim() || "";
     const imapPortValue = imapPortInput?.value?.trim() || "";
 
-    const config = {
-      rpc_server: DEFAULT_CONFIG.rpc_server,
-      imap_server: imapServer,
-      imap_port: Number.parseInt(imapPortValue, 10),
-      rust_log: DEFAULT_CONFIG.rust_log,
-      otlp_collector_endpoint: DEFAULT_CONFIG.otlp_collector_endpoint,
-    };
+    const imapPort = Number.parseInt(imapPortValue, 10);
 
-    if (Number.isNaN(config.imap_port)) {
+    if (Number.isNaN(imapPort)) {
       setupMsgEl.textContent = "IMAP port must be a valid number.";
       return;
     }
 
     try {
-      setupMsgEl.textContent = "Saving configuration...";
-      try {
-        // Flatten config object for Tauri IPC (Tauri converts Rust snake_case to camelCase)
-        await invoke("config_setup", {
-          rpcServer: config.rpc_server,
-          imapServer: config.imap_server,
-          imapPort: config.imap_port,
-          rustLog: config.rust_log,
-          otlpCollectorEndpoint: config.otlp_collector_endpoint,
-        });
-      } catch (setupError) {
-        const setupErrorMsg = setupError?.message || JSON.stringify(setupError);
-        throw setupError;
-      }
-      setupMsgEl.textContent = "Setup complete. Waiting for initialization...";
+      await invoke("config_setup", {
+        imapServer: imapServer,
+        imapPort: imapPort,
+      });
+      setupMsgEl.textContent = "Configuration saved. Redirecting to login...";
 
-      // Poll is_initialized up to 10 times, 300ms apart
-      let initialized = false;
-      for (let i = 0; i < 10; i++) {
-        try {
-          initialized = await invoke("is_initialized");
-          if (initialized) break;
-        } catch (pollError) {
-          const pollErrorMsg =
-            pollError instanceof Error
-              ? pollError.message
-              : JSON.stringify(pollError);
-        }
-        await new Promise((res) => setTimeout(res, 300));
-      }
-      if (initialized) {
-        window.location.reload();
-      } else {
-        setupMsgEl.textContent =
-          "Setup saved, but backend did not initialize. Check console for errors and try reloading the app.";
-      }
+      // Redirect to login page after setup completes
+      setTimeout(() => {
+        window.location.replace("/login.html");
+      }, 500);
     } catch (error) {
       let errorMessage = "Unknown error";
       if (error instanceof Error) {
@@ -91,10 +57,8 @@ window.addEventListener("DOMContentLoaded", () => {
       } else if (typeof error === "string") {
         errorMessage = error;
       } else if (error && typeof error === "object") {
-        // Handle Rust Error struct serialized as object with 'message' field
         errorMessage = error.message || error.msg || JSON.stringify(error);
       }
-      setupMsgEl.textContent = `Setup failed: ${errorMessage}`;
     }
   });
 });

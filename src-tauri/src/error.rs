@@ -1,6 +1,7 @@
 use std::{error::Error as StdError, io::ErrorKind};
 
 use serde::{Deserialize, Serialize};
+use tracing::{error, warn};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -43,10 +44,32 @@ impl Serialize for Error {
 
         use serde::ser::SerializeStruct;
 
+        self.log_error();
+
         let mut state = serializer.serialize_struct("Error", 2)?;
         state.serialize_field("kind", kind)?;
         state.serialize_field("message", &message)?;
         state.end()
+    }
+}
+
+impl Error {
+    /// Log the error using tracing at error level, including its source chain.
+    pub fn log_error(&self) {
+        match self {
+            Error::Serialization(_)
+            | Error::RPCServer(_)
+            | Error::Io(_)
+            | Error::Imap(_)
+            | Error::Tauri(_)
+            | Error::Sqlx(_)
+            | Error::Tls(_) => {
+                error!(error = ?self, "Error occurred: {}", self);
+            }
+            Error::NotFound | Error::Other(_) => {
+                warn!(error = ?self, "Error occurred: {}", self);
+            }
+        }
     }
 }
 

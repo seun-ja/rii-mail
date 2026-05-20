@@ -89,8 +89,12 @@ Configuration is saved to `~/.config/Pemail/config.json` and persists across ses
 - **AppState**: RwLock-wrapped optional initialized state (async-safe)
 - **Config**: File-based (JSON) with environment variable fallbacks
 - **Tauri Commands**:
-  - `config_setup(config)`: Save config and initialize services
-  - `is_initialized()`: Check if backend services are ready
+  - `check_init_status()`: Check initialization status and return one of:
+    - `"setup"`: Config file doesn't exist, show setup page
+    - `"login"`: Config exists but user not authenticated, show login page
+    - `"signed_in"`: User is authenticated, proceed to main app
+  - `config_setup(imap_server, imap_port, username, password)`: Save config and initialize services
+  - `login(username, password)`: Authenticate with existing config
   - `rater(subject, emailFrom, body)`: Rate email for spam
 - **RPC Client**: Async tarpc-based communication with ML agent service
 - **IMAP Client**: async_imap for email session management
@@ -113,8 +117,11 @@ npm run tauri build --target universal-apple-darwin  # Universal macOS
 
 ## Troubleshooting
 
-- **Setup doesn't trigger redirect**: Check that `is_initialized` is called after `config_setup` completes; app reloads to pick up new state.
-- **RPC connection fails**: Ensure RPC server is running at `VITE_RPC_SERVER` address.
+- **Stuck on login/setup page**: 
+  - For setup: Verify IMAP credentials and port are correct
+  - For login: Ensure `check_init_status()` returns "login" when config exists
+  - Check that app state is properly transitioned to `Initialized` after successful authentication
+- **RPC connection fails**: Ensure RPC server is running at the address specified in `RPC_SERVER` environment variable.
 - **IMAP connection fails**: Verify IMAP credentials and port in config; some providers require app-specific passwords.
 
 ## License

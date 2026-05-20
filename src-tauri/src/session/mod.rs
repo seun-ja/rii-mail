@@ -10,7 +10,7 @@ pub async fn init_imap_client(
 ) -> Result<Client<TlsStream<TcpStream>>, Error> {
     let imap_addr = (imap_server, imap_port);
     let tcp_stream = TcpStream::connect(imap_addr).await?;
-    let tls = async_native_tls::TlsConnector::new();
+    let tls = async_native_tls::TlsConnector::new().danger_accept_invalid_certs(false);
     let tls_stream = tls.connect(imap_server, tcp_stream).await?;
 
     tracing::info!("IMAP connected to {}", imap_server);

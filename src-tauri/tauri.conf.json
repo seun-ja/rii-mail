@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "pemail",
+  "productName": "PhisherMan",
   "version": "0.1.0",
   "identifier": "com.seunaminu.pemail",
   "build": {
@@ -10,9 +10,12 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "pemail",
-        "width": 800,
-        "height": 600
+        "title": "PhisherMan",
+        "width": 500,
+        "height": 700,
+        "resizable": false,
+        "decorations": true,
+        "alwaysOnTop": false
       }
     ],
     "security": {

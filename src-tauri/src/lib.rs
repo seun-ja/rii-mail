@@ -3,7 +3,7 @@ use tauri::Manager as _;
 use crate::{
     config::{init_rpc, AppState, Config},
     error::Error,
-    handlers::{config_setup, is_initialized, rater},
+    handlers::{check_init_status, config_setup, login, open_main_window, rater},
 };
 
 pub mod auth;
@@ -26,12 +26,15 @@ pub async fn run() {
         .invoke_handler(tauri::generate_handler![
             rater,
             config_setup,
-            is_initialized
+            check_init_status,
+            login,
+            open_main_window
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
 
+#[::tracing::instrument(name = "initialize", skip(app, config, password))]
 async fn initialize_services(
     app: tauri::AppHandle,
     config: Config,
@@ -52,7 +55,9 @@ async fn initialize_services(
         .await
         .map_err(|e| Error::Other(format!("Failed to initialize IMAP Session: {}", e)))?;
 
-    let sqlite_pool = db::init_db(&config.sqlite_db)
+    let config_dir = app.path().app_config_dir()?;
+
+    let sqlite_pool = db::init_db(config_dir, &config.sqlite_db)
         .await
         .map_err(|e| Error::Other(format!("Failed to initialize Database: {}", e)))?;
 
