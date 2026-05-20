@@ -4,7 +4,7 @@ use tokio::net::TcpStream;
 
 use crate::error::Error;
 
-pub async fn init_imap_session(
+pub async fn init_imap_client(
     imap_server: &str,
     imap_port: u16,
 ) -> Result<Client<TlsStream<TcpStream>>, Error> {

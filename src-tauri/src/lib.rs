@@ -1,5 +1,4 @@
 use tauri::Manager as _;
-use tokio::sync::RwLock;
 
 use crate::{
     config::{init_rpc, AppState, Config},
@@ -9,6 +8,7 @@ use crate::{
 
 pub mod auth;
 mod config;
+pub mod db;
 pub mod email_cache;
 mod error;
 mod handlers;
@@ -18,38 +18,26 @@ mod tracing;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub async fn run() {
-    let builder = tauri::Builder::default()
-        .manage(AppState {
-            inner: RwLock::new(None),
-        })
+    tauri::Builder::default()
+        .manage(std::sync::Arc::new(tokio::sync::RwLock::new(
+            AppState::Fresh,
+        )))
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             rater,
             config_setup,
             is_initialized
-        ]);
-
-    let app = builder
-        .setup(|app| {
-            let handle = app.handle().clone();
-
-            tauri::async_runtime::spawn(async {
-                if let Ok(config) = Config::init(handle.clone()).await {
-                    initialize_services(handle, config)
-                        .await
-                        .map_err(|e| eprintln!("Fails to initialize sevices: {}", e))
-                        .unwrap();
-                }
-            });
-
-            Ok(())
-        })
-        .run(tauri::generate_context!());
-
-    app.expect("error while running tauri application");
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
 }
 
-async fn initialize_services(app: tauri::AppHandle, config: Config) -> Result<(), Error> {
+async fn initialize_services(
+    app: tauri::AppHandle,
+    config: Config,
+    username: &str,
+    password: &str,
+) -> Result<(), Error> {
     tracing::init_subscriber(
         &config.rust_log.unwrap_or_default(),
         &config.otlp_collector_endpoint.unwrap_or_default(),
@@ -60,19 +48,25 @@ async fn initialize_services(app: tauri::AppHandle, config: Config) -> Result<()
         .await
         .map_err(|e| Error::Other(format!("Failed to initialize RPC Service: {}", e)))?;
 
-    let _imap_client = session::init_imap_session(&config.imap_server, config.imap_port)
+    let imap_client = session::init_imap_client(&config.imap_server, config.imap_port)
         .await
         .map_err(|e| Error::Other(format!("Failed to initialize IMAP Session: {}", e)))?;
 
-    let app_state = config::InitializedState {
+    let sqlite_pool = db::init_db(&config.sqlite_db)
+        .await
+        .map_err(|e| Error::Other(format!("Failed to initialize Database: {}", e)))?;
+
+    let imap_session = auth::login(username, password, imap_client).await?;
+
+    let initialized_state = config::InitializedState {
         rpc_client,
-        _imap_client,
+        imap_session,
+        sqlite_pool,
     };
 
-    let state = app.state::<AppState>();
-    let mut inner = state.inner.write().await;
-
-    *inner = Some(app_state);
+    let app_state = app.state::<std::sync::Arc<tokio::sync::RwLock<AppState>>>();
+    let mut state = app_state.write().await;
+    *state = AppState::Initialized(initialized_state);
 
     Ok(())
 }

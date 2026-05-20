@@ -1,0 +1,25 @@
+use sqlx::{QueryBuilder, SqlitePool};
+
+use crate::{email_cache::Email, error::Error};
+
+pub async fn populate_storage(pool: SqlitePool, emails: Vec<Email>) -> Result<(), Error> {
+    let mut query_builder: QueryBuilder<'_, sqlx::Sqlite> =
+        QueryBuilder::new("INSERT INTO emails (date, body, label)");
+
+    let emails_data: Vec<_> = emails
+        .into_iter()
+        .map(|email| {
+            let labels_str = email.labels.map(|labels| labels.join(","));
+            (email.date, email.body, labels_str)
+        })
+        .collect();
+
+    query_builder.push_values(emails_data, |mut b, (date, body, labels_str)| {
+        b.push_bind(date).push_bind(body).push_bind(labels_str);
+    });
+
+    let query = query_builder.build();
+    query.execute(&pool).await?;
+
+    Ok(())
+}

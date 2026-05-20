@@ -28,8 +28,6 @@ futures = "0.3.28"
 
 thiserror = "1.0.61"
 
-dotenv = "0.15.0"
-envy = "0.4.2"
 chrono = "0.4.44"
 
 tarpc = { version = "0.37", features = ["full"] }
@@ -50,3 +48,5 @@ opentelemetry-otlp = { version = "0.31", features = [
 ] }
 opentelemetry_sdk = { version = "0.31.0", features = ["rt-tokio"] }
 tracing-opentelemetry = "0.32"
+
+sqlx = { version = "=0.8.1", features = [ "runtime-tokio", "sqlite", "chrono"] }

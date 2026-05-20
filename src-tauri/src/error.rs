@@ -20,6 +20,8 @@ pub enum Error {
     Imap(#[from] async_imap::error::Error),
     #[error("Tauri Error: {0}")]
     Tauri(#[from] tauri::Error),
+    #[error("SQLx Error: {0}")]
+    Sqlx(#[from] sqlx::Error),
 }
 
 impl Serialize for Error {
@@ -36,6 +38,7 @@ impl Serialize for Error {
             Error::Tls(e) => ("Tls", e.to_string()),
             Error::Imap(e) => ("Imap", e.to_string()),
             Error::Tauri(e) => ("Tauri", e.to_string()),
+            Error::Sqlx(e) => ("SQLx", e.to_string()),
         };
 
         use serde::ser::SerializeStruct;

@@ -4,16 +4,18 @@ use chrono::{DateTime, FixedOffset};
 mod fetcher;
 
 pub use fetcher::fetch_emails;
+use sqlx::prelude::FromRow;
 
-pub struct FetchedMessages {
+#[derive(FromRow)]
+pub struct Email {
     pub date: Option<DateTime<FixedOffset>>,
     pub body: Option<Vec<u8>>,
     pub labels: Option<Vec<String>>,
 }
 
-impl From<Fetch> for FetchedMessages {
+impl From<Fetch> for Email {
     fn from(value: Fetch) -> Self {
-        FetchedMessages {
+        Email {
             date: value.internal_date(),
             labels: value
                 .gmail_labels()

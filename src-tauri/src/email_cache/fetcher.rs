@@ -1,17 +1,20 @@
 use async_imap::Session;
 use async_native_tls::TlsStream;
 use futures::StreamExt;
+use sqlx::SqlitePool;
 use tokio::net::TcpStream;
 
-use crate::{email_cache::FetchedMessages, error::Error};
+use crate::{db::populate_storage, email_cache::Email, error::Error};
 
 pub async fn fetch_emails(
     session: &mut Session<TlsStream<TcpStream>>,
     size: u32,
-) -> Result<Vec<FetchedMessages>, Error> {
+    pool: SqlitePool,
+) -> Result<u16, Error> {
     let mut messages_stream = session.fetch(size.to_string(), "RFC822").await?;
 
-    let mut emails: Vec<FetchedMessages> = Vec::new();
+    let mut emails: Vec<Email> = Vec::new();
+    let emails_len = emails.len();
 
     let stream = messages_stream.next().await;
 
@@ -20,6 +23,6 @@ pub async fn fetch_emails(
         emails.push(e.into());
     }
 
-    // TODO: save to database
-    Ok(emails)
+    populate_storage(pool, emails).await?;
+    Ok(emails_len as u16)
 }

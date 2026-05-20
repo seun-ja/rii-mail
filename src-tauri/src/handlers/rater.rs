@@ -1,5 +1,5 @@
 use crate::{
-    config::InitializedState,
+    config::AppState,
     error::Error,
     rpc::{self, SpamRaterRequest, SpamRating},
 };
@@ -8,16 +8,18 @@ use crate::{
 #[tauri::command]
 #[tracing::instrument(name = "command.rater", skip(state))]
 pub async fn rater(
-    state: tauri::State<'_, InitializedState>,
+    state: tauri::State<'_, std::sync::Arc<tokio::sync::RwLock<AppState>>>,
     subject: String,
     email_from: String,
     body: String,
 ) -> Result<SpamRating, Error> {
+    let app_state = state.read().await;
+    let initialized = app_state.state();
+
     let email = SpamRaterRequest {
         from: email_from,
         subject,
         body,
     };
-
-    rpc::caller(&state.rpc_client, email).await
+    rpc::caller(&initialized.rpc_client, email).await
 }

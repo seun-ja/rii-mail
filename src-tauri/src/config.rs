@@ -1,38 +1,25 @@
+use std::path::PathBuf;
+
 use crate::rpc::AgentWorkerClient;
 use async_native_tls::TlsStream;
 use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
 use tarpc::{client, serde_transport::tcp, tokio_serde::formats::Json};
-use tauri::Manager as _;
-use tokio::{fs, net::TcpStream, sync::RwLock};
+use tokio::{fs, net::TcpStream};
 
 #[derive(Deserialize, Serialize)]
 pub struct Config {
     pub rpc_server: String,
     pub imap_server: String,
     pub imap_port: u16,
+    pub sqlite_db: String,
     #[serde(default)]
     pub rust_log: Option<String>,
     pub otlp_collector_endpoint: Option<String>,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            imap_server: "imap.gmail.com".to_string(),
-            imap_port: 993,
-            rpc_server: "0.0.0.0:5500".to_string(),
-            rust_log: Some("info".to_string()),
-            otlp_collector_endpoint: Some("http://otel-collector:4317".to_string()),
-        }
-    }
-}
-
 impl Config {
-    pub async fn init(
-        app: tauri::AppHandle,
-    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let path = app.path().app_config_dir()?.join("config.json");
-
+    pub async fn init(path: &PathBuf) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let config_json = fs::read_to_string(path).await?;
         let config: Self = serde_json::from_str(&config_json)?;
 
@@ -44,13 +31,38 @@ impl Config {
     }
 }
 
-pub struct AppState {
-    pub inner: RwLock<Option<InitializedState>>,
+pub enum AppState {
+    Initialized(InitializedState),
+    Fresh,
+}
+
+impl AppState {
+    pub fn initialized(&self) -> bool {
+        match self {
+            AppState::Initialized(_) => true,
+            AppState::Fresh => false,
+        }
+    }
+
+    pub fn state(&self) -> &InitializedState {
+        match self {
+            AppState::Initialized(state) => state,
+            AppState::Fresh => panic!("Application not initialized"),
+        }
+    }
+
+    pub fn state_mut(&mut self) -> &mut InitializedState {
+        match self {
+            AppState::Initialized(state) => state,
+            AppState::Fresh => panic!("Application not initialized"),
+        }
+    }
 }
 
 pub struct InitializedState {
     pub rpc_client: AgentWorkerClient,
-    pub _imap_client: async_imap::Client<TlsStream<TcpStream>>,
+    pub sqlite_pool: SqlitePool,
+    pub imap_session: async_imap::Session<TlsStream<TcpStream>>,
 }
 
 pub async fn init_rpc(
