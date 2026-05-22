@@ -2,14 +2,13 @@ mod emails_db;
 
 use std::{fs, path::PathBuf};
 
-pub use emails_db::populate_storage;
+pub use emails_db::{cleanup, populate_storage};
 
 use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 
-pub async fn init_db(
-    app_dir: PathBuf,
-    db: &str,
-) -> Result<SqlitePool, Box<dyn std::error::Error + Send + Sync>> {
+use crate::error::Error;
+
+pub async fn init_db(app_dir: PathBuf, db: &str) -> Result<SqlitePool, Error> {
     fs::create_dir_all(&app_dir)?;
 
     let data_dir = app_dir.join("data");

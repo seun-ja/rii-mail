@@ -4,6 +4,11 @@ use tokio::net::TcpStream;
 
 use crate::error::Error;
 
+pub enum ImapCommand {
+    Logout,
+    FetchEmails(u32),
+}
+
 pub async fn init_imap_client(
     imap_server: &str,
     imap_port: u16,

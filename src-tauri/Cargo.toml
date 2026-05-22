@@ -23,12 +23,13 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+async-trait = "0.1.89"
 tokio = { version = "1.38.0", features = ["full", "tracing"] }
 futures = "0.3.28"
 
 thiserror = "1.0.61"
-
 chrono = { version = "0.4.44", features = ["serde"] }
+dotenv = "0.15.0"
 
 tarpc = { version = "0.37", features = ["full"] }
 rpc-agent = { version = "0.1.5", git = "https://github.com/oluseun-consult/rpc-agent-custom", features = ["tracing"] }
@@ -50,3 +51,15 @@ opentelemetry_sdk = { version = "0.31.0", features = ["rt-tokio"] }
 tracing-opentelemetry = "0.32"
 
 sqlx = { version = "=0.8.1", features = [ "runtime-tokio", "sqlite", "chrono"] }
+
+rig-core = "0.33.0"
+
+schemars = "1.2.1"
+
+aws-sdk-sagemakerruntime = "1"
+aws-sdk-sagemaker = "1"
+aws-config = { version = "1", features = ["behavior-version-latest"] }
+
+pyo3 = { version = "0.21", features = ["auto-initialize"]}
+hex = "0.4.3"
+arc-swap = "1.7.1"

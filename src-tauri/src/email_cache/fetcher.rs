@@ -6,12 +6,11 @@ use tokio::net::TcpStream;
 
 use crate::{db::populate_storage, email_cache::Email, error::Error};
 
-// TODO: Move to a background worker, query in batches
 #[tracing::instrument(name = "emails.fetch", skip(session, pool))]
 pub async fn fetch_emails(
     session: &mut Session<TlsStream<TcpStream>>,
     size: u32,
-    pool: SqlitePool,
+    pool: &SqlitePool,
 ) -> Result<u16, Error> {
     let mailbox = session.select("INBOX").await?;
 

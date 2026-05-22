@@ -1,10 +1,19 @@
+use std::sync::Arc;
+
+use arc_swap::ArcSwap;
 use tauri::{Manager as _, WebviewUrl, WebviewWindowBuilder};
-use tokio::fs::{self, create_dir_all};
+use tokio::{
+    fs::{self, create_dir_all},
+    sync::mpsc::UnboundedSender,
+};
 
 use crate::{
-    config::{AppState, Config, InitStatus},
+    config::{self, AppState, Config, ImapClientConfig, InitStatus},
+    db,
     error::Error,
-    initialize_services,
+    llm::{self, Providers},
+    tracing::init_subscriber,
+    CACHE_SIZE,
 };
 
 #[tauri::command]
@@ -14,11 +23,17 @@ pub async fn config_setup(
     imap_server: String,
     imap_port: u16,
 ) -> Result<(), Error> {
+    dotenv::dotenv().ok();
+
     let rpc_server = std::env::var("RPC_SERVER").unwrap_or("0.0.0.0:5500".to_string());
     let rust_log = std::env::var("RUST_LOG").unwrap_or("info".to_string());
     let sqlite_db = std::env::var("SQLITE_DB").unwrap_or("emails.db".to_string());
     let otlp_collector_endpoint = std::env::var("OTLP_COLLECTOR_ENDPOINT")
         .unwrap_or("http://otel-collector:4317".to_string());
+    let email_cache_size = std::env::var("EMAIL_CACHE_SIZE")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(100);
 
     let config = Config {
         rpc_server,
@@ -27,6 +42,7 @@ pub async fn config_setup(
         sqlite_db,
         rust_log: Some(rust_log),
         otlp_collector_endpoint: Some(otlp_collector_endpoint),
+        email_cache_size,
     };
 
     let config_dir = app.path().app_config_dir()?;
@@ -58,10 +74,10 @@ pub async fn check_init_status(app: tauri::AppHandle) -> Result<InitStatus, Erro
     }
 
     // Config exists, check if user is already signed in
-    let app_state = app.state::<std::sync::Arc<tokio::sync::RwLock<AppState>>>();
-    let state = app_state.read().await;
+    let app_state = app.state::<ArcSwap<AppState>>();
+    let current_state = app_state.load();
 
-    match &*state {
+    match current_state.as_ref() {
         AppState::Initialized(_) => Ok(InitStatus::SignedIn),
         AppState::Fresh => Ok(InitStatus::Login),
     }
@@ -75,25 +91,58 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
     let config_dir = app.path().app_config_dir()?;
     let config_path = config_dir.join("config.json");
 
-    // Should never fail since we check for config existence before showing login page, but handle just in case
     let config = Config::init(&config_path).await.map_err(|_| {
         Error::Other("Configuration not found. Please run setup first.".to_string())
     })?;
 
-    initialize_services(app.clone(), config, &username, &password).await?;
-
-    // Fetch emails after initialization
-    let app_state = app.state::<std::sync::Arc<tokio::sync::RwLock<AppState>>>();
-    let mut state_guard = app_state.write().await;
-
-    let initialized = state_guard.state_mut();
-
-    crate::email_cache::fetch_emails(
-        &mut initialized.imap_session,
-        10,
-        initialized.sqlite_pool.clone(),
+    init_subscriber(
+        &config.rust_log.unwrap_or_default(),
+        &config.otlp_collector_endpoint.unwrap_or_default(),
     )
-    .await?;
+    .expect("Failed to initialize subscriber");
+
+    let sqlite_pool = db::init_db(config_dir, &config.sqlite_db).await?;
+
+    let imap_client_channel_tx = app.state::<UnboundedSender<ImapClientConfig>>();
+
+    let imap_client_config = ImapClientConfig {
+        username,
+        password,
+        imap_server: config.imap_server.clone(),
+        imap_port: config.imap_port,
+        sqlite_pool: sqlite_pool.clone(),
+    };
+    imap_client_channel_tx.send(imap_client_config)?;
+
+    let mut cache_size = CACHE_SIZE.lock().await;
+    *cache_size = config.email_cache_size;
+
+    // TODO: Make configurable
+    let provider = Providers::LocalInference;
+    let model = "";
+    let system_message = "";
+    let api_key = "";
+    let max_tokens = None;
+    let temperature = None;
+
+    let llm_client_builder = llm::ProviderBuilder::new(provider, system_message, model);
+
+    let llm_client = llm_client_builder
+        .api_key(api_key)
+        .temperature(temperature)
+        .max_tokens(max_tokens)
+        .function_handler("predict".to_string())
+        .script_name("local_inference".to_string())
+        .build()
+        .await?;
+
+    let initialized_state = config::InitializedState {
+        llm_client,
+        sqlite_pool,
+    };
+
+    let app_state = app.state::<ArcSwap<AppState>>();
+    app_state.store(Arc::new(AppState::Initialized(Arc::new(initialized_state))));
 
     Ok(())
 }

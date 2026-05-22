@@ -1,77 +1,124 @@
-use tauri::Manager as _;
+use std::sync::LazyLock;
 
+use arc_swap::ArcSwap;
+
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::{Emitter as _, Manager as _};
+
+use tokio::sync::{mpsc, Mutex};
+
+use crate::config::ImapClientConfig;
+use crate::imap::ImapCommand;
+use crate::workers::session_thread;
 use crate::{
-    config::{init_rpc, AppState, Config},
-    error::Error,
-    handlers::{check_init_status, config_setup, login, open_main_window, rater},
+    config::AppState,
+    handlers::{
+        check_init_status, config_setup, login, logout, logout_with_state, open_main_window, rater,
+    },
 };
 
 pub mod auth;
 mod config;
 pub mod db;
 pub mod email_cache;
+mod email_providers;
 mod error;
 mod handlers;
-mod rpc;
-mod session;
+mod imap;
+mod llm;
 mod tracing;
+mod workers;
+
+pub static CACHE_SIZE: LazyLock<Mutex<u32>> = LazyLock::new(|| Mutex::new(100));
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub async fn run() {
+    let (imap_client_channel_tx, imap_client_channel_rx) =
+        mpsc::unbounded_channel::<ImapClientConfig>();
+
+    let (imap_cmd_channel_tx, imap_cmd_channel_rx) = mpsc::unbounded_channel::<ImapCommand>();
+
+    _ = session_thread(imap_client_channel_rx, imap_cmd_channel_rx);
+
     tauri::Builder::default()
-        .manage(std::sync::Arc::new(tokio::sync::RwLock::new(
-            AppState::Fresh,
-        )))
+        .manage(ArcSwap::from_pointee(AppState::Fresh))
+        .manage(imap_client_channel_tx)
+        .manage(imap_cmd_channel_tx)
         .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            let app_about = PredefinedMenuItem::about(app, None, None)?;
+            let app_quit = PredefinedMenuItem::quit(app, None)?;
+            let app_separator = PredefinedMenuItem::separator(app)?;
+            let app_submenu = Submenu::with_items(
+                app,
+                "PhisherMan",
+                true,
+                &[&app_about, &app_separator, &app_quit],
+            )?;
+
+            let edit_undo = PredefinedMenuItem::undo(app, None)?;
+            let edit_redo = PredefinedMenuItem::redo(app, None)?;
+            let edit_separator_1 = PredefinedMenuItem::separator(app)?;
+            let edit_cut = PredefinedMenuItem::cut(app, None)?;
+            let edit_copy = PredefinedMenuItem::copy(app, None)?;
+            let edit_paste = PredefinedMenuItem::paste(app, None)?;
+            let edit_select_all = PredefinedMenuItem::select_all(app, None)?;
+            let edit_submenu = Submenu::with_items(
+                app,
+                "Edit",
+                true,
+                &[
+                    &edit_undo,
+                    &edit_redo,
+                    &edit_separator_1,
+                    &edit_cut,
+                    &edit_copy,
+                    &edit_paste,
+                    &edit_select_all,
+                ],
+            )?;
+
+            let logout_item =
+                MenuItem::with_id(app, "logout", "Logout", true, Some("Cmd+Shift+L"))?;
+            let account_submenu = Submenu::with_items(app, "Account", true, &[&logout_item])?;
+
+            let menu = Menu::with_items(app, &[&app_submenu, &edit_submenu, &account_submenu])?;
+
+            app.set_menu(menu)?;
+
+            Ok(())
+        })
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() != "logout" {
+                return;
+            }
+
+            let app_handle = app.clone();
+
+            tauri::async_runtime::spawn(async move {
+                if let Err(err) = logout_with_state(app_handle.clone()).await {
+                    ::tracing::warn!(error = ?err, "Menu logout failed");
+                }
+
+                if let Some(window) = app_handle.get_webview_window("main-app") {
+                    if let Err(err) = window.eval("window.location.replace('/setup.html')") {
+                        ::tracing::warn!(error = ?err, "Failed to redirect main window after logout");
+                    }
+                }
+
+                if let Err(err) = app_handle.emit("app://logged-out", ()) {
+                    ::tracing::warn!(error = ?err, "Failed to notify frontend after logout");
+                }
+            });
+        })
         .invoke_handler(tauri::generate_handler![
-            rater,
-            config_setup,
             check_init_status,
+            config_setup,
             login,
-            open_main_window
+            logout,
+            open_main_window,
+            rater,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
-}
-
-#[::tracing::instrument(name = "initialize", skip(app, config, password))]
-async fn initialize_services(
-    app: tauri::AppHandle,
-    config: Config,
-    username: &str,
-    password: &str,
-) -> Result<(), Error> {
-    tracing::init_subscriber(
-        &config.rust_log.unwrap_or_default(),
-        &config.otlp_collector_endpoint.unwrap_or_default(),
-    )
-    .expect("Failed to initialize subscriber");
-
-    let rpc_client = init_rpc(&config.rpc_server)
-        .await
-        .map_err(|e| Error::Other(format!("Failed to initialize RPC Service: {}", e)))?;
-
-    let imap_client = session::init_imap_client(&config.imap_server, config.imap_port)
-        .await
-        .map_err(|e| Error::Other(format!("Failed to initialize IMAP Session: {}", e)))?;
-
-    let config_dir = app.path().app_config_dir()?;
-
-    let sqlite_pool = db::init_db(config_dir, &config.sqlite_db)
-        .await
-        .map_err(|e| Error::Other(format!("Failed to initialize Database: {}", e)))?;
-
-    let imap_session = auth::login(username, password, imap_client).await?;
-
-    let initialized_state = config::InitializedState {
-        rpc_client,
-        imap_session,
-        sqlite_pool,
-    };
-
-    let app_state = app.state::<std::sync::Arc<tokio::sync::RwLock<AppState>>>();
-    let mut state = app_state.write().await;
-    *state = AppState::Initialized(initialized_state);
-
-    Ok(())
 }

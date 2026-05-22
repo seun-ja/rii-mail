@@ -8,64 +8,81 @@
         <script type="module" src="/main.js" defer></script>
     </head>
 
-    <body>
-        <main class="container">
-            <h1>Email Input Test</h1>
-            <p>
-                Use this form to test taking subject, sender email, and body
-                input.
-            </p>
+    <body class="home-page">
+        <div class="mail-app">
+            <header class="mail-topbar">
+                <div class="topbar-brand">
+                    <span class="brand-icon" aria-hidden="true">
+                        <img src="/assets/icon.png" alt="" class="brand-icon-img" />
+                    </span>
+                    <div>
+                        <h1>PhisherMan</h1>
+                        <p>Unified Inbox</p>
+                    </div>
+                </div>
 
-            <div class="row">
-                <a href="https://tauri.app" target="_blank">
-                    <img
-                        src="/assets/tauri.svg"
-                        class="logo tauri"
-                        alt="Tauri logo"
-                    />
-                </a>
-                <a
-                    href="https://developer.mozilla.org/en-US/docs/Web/JavaScript"
-                    target="_blank"
-                >
-                    <img
-                        src="/assets/javascript.svg"
-                        class="logo vanilla"
-                        alt="JavaScript logo"
-                    />
-                </a>
+                <div class="topbar-actions">
+                    <button id="compose-btn" class="action-btn primary" type="button">
+                        Compose
+                    </button>
+                    <button id="refresh-btn" class="action-btn" type="button">
+                        Refresh
+                    </button>
+                    <button id="spam-check-btn" class="action-btn" type="button">
+                        Spam Check
+                    </button>
+                </div>
+            </header>
+
+            <div class="mail-body">
+                <aside class="mail-sidebar">
+                    <div class="sidebar-group">
+                        <button class="folder-btn active" type="button" data-folder="inbox">
+                            Inbox
+                            <span class="folder-count" id="count-inbox">0</span>
+                        </button>
+                        <button class="folder-btn" type="button" data-folder="starred">
+                            Starred
+                            <span class="folder-count" id="count-starred">0</span>
+                        </button>
+                        <button class="folder-btn" type="button" data-folder="sent">
+                            Sent
+                            <span class="folder-count" id="count-sent">0</span>
+                        </button>
+                        <button class="folder-btn" type="button" data-folder="archive">
+                            Archive
+                            <span class="folder-count" id="count-archive">0</span>
+                        </button>
+                    </div>
+                </aside>
+
+                <section class="mail-list-panel">
+                    <div class="mail-list-head">
+                        <input
+                            id="mail-search"
+                            class="mail-search"
+                            type="search"
+                            placeholder="Search by sender, subject, or preview"
+                        />
+                        <button id="mark-read-btn" class="small-btn" type="button">
+                            Mark Read
+                        </button>
+                        <button id="archive-btn" class="small-btn" type="button">
+                            Archive
+                        </button>
+                    </div>
+                    <ul id="mail-list" class="mail-list" aria-label="Email list"></ul>
+                </section>
+
+                <section class="mail-reader-panel">
+                    <div id="mail-reader" class="mail-reader empty-state">
+                        <h2>No email selected</h2>
+                        <p>Select an email from the list to preview details.</p>
+                    </div>
+                </section>
             </div>
+        </div>
 
-            <form id="email-form">
-                <label for="subject-input">Subject</label>
-                <input
-                    id="subject-input"
-                    name="subject"
-                    placeholder="Enter subject"
-                    required
-                />
-
-                <label for="from-input">Email From</label>
-                <input
-                    id="from-input"
-                    name="emailFrom"
-                    type="email"
-                    placeholder="sender@example.com"
-                    required
-                />
-
-                <label for="body-input">Body</label>
-                <textarea
-                    id="body-input"
-                    name="body"
-                    rows="6"
-                    placeholder="Type email body"
-                    required
-                ></textarea>
-
-                <button type="submit">Test Input</button>
-            </form>
-            <p id="result-msg"></p>
-        </main>
+        <div id="result-msg" class="status-toast" role="status" aria-live="polite"></div>
     </body>
 </html>

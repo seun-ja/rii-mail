@@ -1,31 +1,69 @@
+use chrono::{DateTime, FixedOffset};
 use sqlx::{QueryBuilder, SqlitePool};
 
 use crate::{email_cache::Email, error::Error};
 
-pub async fn populate_storage(pool: SqlitePool, emails: Vec<Email>) -> Result<(), Error> {
+#[derive(sqlx::FromRow)]
+struct DbEmail {
+    pub date: Option<DateTime<FixedOffset>>,
+    pub body: Option<Vec<u8>>,
+    pub labels: Option<String>,
+}
+
+#[tracing::instrument(name = "db.populate_storage", skip(pool, emails))]
+pub async fn populate_storage(pool: &SqlitePool, emails: Vec<Email>) -> Result<(), Error> {
     if emails.is_empty() {
         return Ok(());
     }
 
+    let mut tx = pool.begin().await?;
+
     let mut query_builder: QueryBuilder<'_, sqlx::Sqlite> =
         QueryBuilder::new("INSERT INTO emails (date, body, labels) ");
 
-    let emails_data: Vec<_> = emails
-        .into_iter()
-        .map(|email| {
-            let labels_str = email.labels.map(|labels| labels.join(","));
-            (email.date, email.body, labels_str)
-        })
-        .collect();
+    query_builder.push_values(emails, |mut b, email| {
+        let labels = email.labels.map(|l| serde_json::to_string(&l).unwrap());
 
-    query_builder.push_values(emails_data, |mut b, (date, body, labels_str)| {
-        b.push_bind(date);
-        b.push_bind(body);
-        b.push_bind(labels_str);
+        b.push_bind(email.date)
+            .push_bind(email.body)
+            .push_bind(labels);
     });
 
-    let query = query_builder.build();
-    query.execute(&pool).await?;
+    query_builder.build().execute(&mut *tx).await?;
+
+    tx.commit().await?;
+
+    Ok(())
+}
+
+#[tracing::instrument(name = "db.get_emails", skip(pool))]
+// could use some streaming?
+pub async fn _get_emails(
+    pool: SqlitePool,
+    _min_range: u64,
+    _max_range: u64,
+) -> Result<Vec<Email>, Error> {
+    let rows: Vec<DbEmail> = sqlx::query_as::<_, DbEmail>("SELECT date, body, labels FROM emails")
+        .fetch_all(&pool)
+        .await?;
+
+    let emails = rows
+        .into_iter()
+        .map(|row| {
+            Ok(Email {
+                date: row.date,
+                body: row.body,
+                labels: row.labels.map(|s| serde_json::from_str(&s)).transpose()?,
+            })
+        })
+        .collect::<Result<Vec<_>, serde_json::Error>>()?;
+
+    Ok(emails)
+}
+
+#[tracing::instrument(name = "db.cleanup", skip(pool))]
+pub async fn cleanup(pool: &SqlitePool) -> Result<(), Error> {
+    sqlx::query("DELETE FROM emails").execute(pool).await?;
 
     Ok(())
 }
