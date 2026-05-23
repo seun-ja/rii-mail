@@ -1,11 +1,12 @@
 use arc_swap::ArcSwap;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::{Emitter as _, Manager as _};
+use tauri::{Emitter as _, LogicalSize, Manager as _, Size};
 
 use tokio::sync::mpsc;
 
 use crate::config::ImapClientConfig;
+use crate::handlers::fetch_emails_handler;
 use crate::imap::ImapCommand;
 use crate::workers::session_thread;
 use crate::{
@@ -97,6 +98,16 @@ pub async fn run() {
                 }
 
                 if let Some(window) = app_handle.get_webview_window("main-app") {
+                    let compact_size = Size::Logical(LogicalSize::new(500.0, 700.0));
+
+                    if let Err(err) = window.set_resizable(false) {
+                        ::tracing::warn!(error = ?err, "Failed to set compact window resizable state");
+                    }
+
+                    if let Err(err) = window.set_size(compact_size) {
+                        ::tracing::warn!(error = ?err, "Failed to set compact window size");
+                    }
+
                     if let Err(err) = window.eval("window.location.replace('/setup.html')") {
                         ::tracing::warn!(error = ?err, "Failed to redirect main window after logout");
                     }
@@ -110,6 +121,7 @@ pub async fn run() {
         .invoke_handler(tauri::generate_handler![
             check_init_status,
             config_setup,
+            fetch_emails_handler,
             login,
             logout,
             open_main_window,

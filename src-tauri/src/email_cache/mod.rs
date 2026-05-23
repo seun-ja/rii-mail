@@ -1,5 +1,7 @@
 use async_imap::types::Fetch;
 use chrono::{DateTime, FixedOffset};
+use mail_parser::{Address, Message, MessageParser};
+use serde::{Deserialize, Serialize};
 
 mod fetcher;
 
@@ -25,4 +27,208 @@ impl From<Fetch> for Email {
 
         Self { date, body, labels }
     }
+}
+
+impl From<Email> for CompleteEmail {
+    fn from(value: Email) -> Self {
+        let body = value
+            .body
+            .and_then(|b| MessageParser::default().parse(&b).map(|m| m.into()));
+
+        Self {
+            date: value.date,
+            body,
+            labels: value.labels,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompleteEmail {
+    pub date: Option<DateTime<FixedOffset>>,
+    pub body: Option<EmailContent>,
+    pub labels: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmailContent {
+    pub subject: String,
+    pub sender_name: String,
+    pub email_from: String,
+    pub preview: String,
+    pub html_body: String,
+    pub text_body: String,
+    pub attachments: Vec<u32>,
+    pub parts: Vec<u32>,
+    pub raw_message: String,
+}
+
+fn normalize_text(value: &str, max_chars: usize) -> String {
+    let normalized = value.split_whitespace().collect::<Vec<_>>().join(" ");
+
+    if normalized.chars().count() <= max_chars {
+        return normalized;
+    }
+
+    normalized.chars().take(max_chars).collect::<String>() + "..."
+}
+
+fn extract_first_from(address: Option<&Address<'_>>) -> (String, String) {
+    match address {
+        Some(Address::List(list)) => {
+            if let Some(first) = list.first() {
+                let sender_name = first
+                    .name
+                    .as_ref()
+                    .map(|name| name.to_string())
+                    .filter(|name| !name.trim().is_empty())
+                    .or_else(|| {
+                        first.address.as_ref().map(|addr| {
+                            addr.split('@')
+                                .next()
+                                .unwrap_or("Unknown Sender")
+                                .to_string()
+                        })
+                    })
+                    .unwrap_or_else(|| "Unknown Sender".to_string());
+
+                let email_from = first
+                    .address
+                    .as_ref()
+                    .map(|addr| addr.to_string())
+                    .unwrap_or_else(|| "unknown@local".to_string());
+
+                (sender_name, email_from)
+            } else {
+                ("Unknown Sender".to_string(), "unknown@local".to_string())
+            }
+        }
+        _ => ("Unknown Sender".to_string(), "unknown@local".to_string()),
+    }
+}
+
+fn map_folder_and_starred(labels: &[String]) -> (String, bool) {
+    let mut folder = "inbox".to_string();
+    let mut starred = false;
+
+    for label in labels {
+        let lower = label.to_ascii_lowercase();
+
+        if lower.contains("starred") {
+            starred = true;
+        }
+
+        if lower.contains("sent") {
+            folder = "sent".to_string();
+        } else if lower.contains("archive") || lower.contains("junk") || lower.contains("spam") {
+            folder = "archive".to_string();
+        } else if lower.contains("inbox") {
+            folder = "inbox".to_string();
+        }
+    }
+
+    (folder, starred)
+}
+
+impl CompleteEmail {
+    pub fn into_frontend(self, id: String) -> FrontendEmail {
+        let labels = self.labels.unwrap_or_default();
+        let (folder, starred) = map_folder_and_starred(&labels);
+
+        let (subject, sender_name, email_from, preview, body) = if let Some(content) = self.body {
+            let body = if !content.text_body.trim().is_empty() {
+                content.text_body.clone()
+            } else if !content.html_body.trim().is_empty() {
+                content.html_body.clone()
+            } else {
+                "No message body".to_string()
+            };
+
+            (
+                content.subject,
+                content.sender_name,
+                content.email_from,
+                content.preview,
+                normalize_text(&body, 2000),
+            )
+        } else {
+            (
+                "No Subject".to_string(),
+                "Unknown Sender".to_string(),
+                "unknown@local".to_string(),
+                "No preview available".to_string(),
+                "No message body".to_string(),
+            )
+        };
+
+        let time = self
+            .date
+            .map(|d| d.format("%b %d %H:%M").to_string())
+            .unwrap_or_else(|| "Unknown".to_string());
+
+        FrontendEmail {
+            id,
+            folder,
+            sender_name,
+            email_from,
+            subject: normalize_text(&subject, 160),
+            preview: normalize_text(&preview, 120),
+            body,
+            time,
+            starred,
+            read: false,
+        }
+    }
+}
+
+impl<'a> From<Message<'a>> for EmailContent {
+    fn from(message: Message<'a>) -> Self {
+        let subject = message.subject().unwrap_or("No Subject").to_string();
+        let (sender_name, email_from) = extract_first_from(message.from());
+        let preview = message
+            .body_preview(120)
+            .map(|p| p.to_string())
+            .unwrap_or_else(|| "No preview available".to_string());
+
+        let html_body = (0..message.html_body_count())
+            .filter_map(|idx| message.body_html(idx).map(|body| body.into_owned()))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+
+        let text_body = (0..message.text_body_count())
+            .filter_map(|idx| message.body_text(idx).map(|body| body.into_owned()))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+
+        let attachments = message.attachments.clone();
+        let parts = (0..message.parts.len() as u32).collect();
+        let raw_message = String::from_utf8_lossy(message.raw_message()).into_owned();
+
+        Self {
+            subject,
+            sender_name,
+            email_from,
+            preview,
+            html_body,
+            text_body,
+            attachments,
+            parts,
+            raw_message,
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrontendEmail {
+    pub id: String,
+    pub folder: String,
+    pub sender_name: String,
+    pub email_from: String,
+    pub subject: String,
+    pub preview: String,
+    pub body: String,
+    pub time: String,
+    pub starred: bool,
+    pub read: bool,
 }

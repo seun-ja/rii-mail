@@ -1,7 +1,10 @@
 use chrono::{DateTime, FixedOffset};
 use sqlx::{QueryBuilder, SqlitePool};
 
-use crate::{email_cache::Email, error::Error};
+use crate::{
+    email_cache::{CompleteEmail, Email},
+    error::Error,
+};
 
 #[derive(sqlx::FromRow)]
 struct DbEmail {
@@ -38,27 +41,48 @@ pub async fn populate_storage(pool: &SqlitePool, emails: Vec<Email>) -> Result<(
 
 #[tracing::instrument(name = "db.get_emails", skip(pool))]
 // could use some streaming?
-pub async fn _get_emails(
-    pool: SqlitePool,
-    _min_range: u64,
-    _max_range: u64,
-) -> Result<Vec<Email>, Error> {
-    let rows: Vec<DbEmail> = sqlx::query_as::<_, DbEmail>("SELECT date, body, labels FROM emails")
-        .fetch_all(&pool)
-        .await?;
+pub async fn get_emails(
+    pool: &SqlitePool,
+    min_range: u32,
+    max_range: u32,
+) -> Result<Vec<CompleteEmail>, Error> {
+    if max_range <= min_range {
+        return Ok(Vec::new());
+    }
+
+    let limit = i64::from(max_range - min_range);
+    let offset = i64::from(min_range);
+
+    let rows: Vec<DbEmail> = sqlx::query_as::<_, DbEmail>(
+        "SELECT date, body, labels FROM emails ORDER BY rowid DESC LIMIT ? OFFSET ?",
+    )
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await?;
 
     let emails = rows
         .into_iter()
         .map(|row| {
+            let labels = row.labels.and_then(|s| match serde_json::from_str(&s) {
+                Ok(parsed) => Some(parsed),
+                Err(err) => {
+                    ::tracing::warn!(error = ?err, labels = %s, "Skipping malformed labels for email row");
+                    None
+                }
+            });
+
             Ok(Email {
                 date: row.date,
                 body: row.body,
-                labels: row.labels.map(|s| serde_json::from_str(&s)).transpose()?,
+                labels,
             })
         })
         .collect::<Result<Vec<_>, serde_json::Error>>()?;
 
-    Ok(emails)
+    let complete_emails = emails.into_iter().map(CompleteEmail::from).collect();
+
+    Ok(complete_emails)
 }
 
 #[tracing::instrument(name = "db.cleanup", skip(pool))]

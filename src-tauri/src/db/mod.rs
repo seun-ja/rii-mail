@@ -2,7 +2,7 @@ mod emails_db;
 
 use std::{fs, path::PathBuf};
 
-pub use emails_db::{check_email_db_empty, cleanup, populate_storage};
+pub use emails_db::{check_email_db_empty, cleanup, get_emails, populate_storage};
 
 use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 
@@ -25,6 +25,7 @@ pub async fn init_db(app_dir: PathBuf, db: &str) -> Result<SqlitePool, Error> {
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS emails (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             date TEXT,
             body BLOB,
             labels TEXT

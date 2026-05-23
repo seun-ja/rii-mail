@@ -19,6 +19,7 @@ pub async fn fetch_emails(
     pool: &SqlitePool,
 ) -> Result<FetchResult, Error> {
     if crate::db::check_email_db_empty(pool).await? {
+        tracing::info!("Emails Already Fetched");
         return Ok(FetchResult::Populated);
     }
 
@@ -37,6 +38,7 @@ pub async fn fetch_emails(
 
     let mut messages_stream = session.fetch(sequence_set, "BODY[]").await?;
 
+    tracing::info!("Fetching emails from IMAP server...");
     while let Some(email) = messages_stream.next().await {
         let email = email?;
         emails.push(email.into());

@@ -78,4 +78,5 @@ pub struct ImapClientConfig {
     pub imap_server: String,
     pub imap_port: u16,
     pub sqlite_pool: SqlitePool,
+    pub login_result_tx: Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
 }

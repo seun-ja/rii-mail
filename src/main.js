@@ -1,5 +1,11 @@
-const invoke = window.__TAURI__?.core?.invoke;
-const listen = window.__TAURI__?.event?.listen;
+const { invoke } = window.__TAURI__.core;
+const { listen } = window.__TAURI__.event;
+const INITIAL_BATCH_SIZE = 300;
+const NEXT_BATCH_SIZE = 50;
+const INITIAL_EMPTY_RETRY_DELAY_MS = 1500;
+const INITIAL_EMPTY_RETRY_MAX = 30;
+const AUTO_BOOTSTRAP_REFRESH_INTERVAL_MS = 3000;
+const AUTO_BOOTSTRAP_REFRESH_MAX = 20;
 
 window.addEventListener("DOMContentLoaded", () => {
   const folderButtons = document.querySelectorAll(".folder-btn");
@@ -21,76 +27,24 @@ window.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  const dummyEmails = [
-    {
-      id: "m01",
-      folder: "inbox",
-      senderName: "GitHub",
-      emailFrom: "notifications@github.com",
-      subject: "[Action required] Review requested on PR #142",
-      preview: "Seun has requested your review on the latest changes to the desktop mail client.",
-      body: "Hi Seun,\n\nA review was requested on PR #142 in seun-ja/email-desktop-client.\n\nHighlights:\n- Refined sidebar interactions\n- Added message loading skeleton\n- Improved spam scoring model call path\n\nPlease review when convenient.\n\nThanks,\nGitHub",
-      time: "08:41",
-      starred: true,
-      read: false,
-    },
-    {
-      id: "m02",
-      folder: "inbox",
-      senderName: "Design Team",
-      emailFrom: "ui@pemail.dev",
-      subject: "Thunderbird-inspired navigation concepts",
-      preview: "Attached concept v3 with denser list spacing and clearer hierarchy.",
-      body: "Morning,\n\nWe shipped a tighter navigation concept with better contrast and scanning for power users.\n\nIf approved, we can map this to your existing components this sprint.",
-      time: "07:12",
-      starred: false,
-      read: false,
-    },
-    {
-      id: "m03",
-      folder: "inbox",
-      senderName: "Cloud Billing",
-      emailFrom: "billing@provider.io",
-      subject: "Invoice available for April 2026",
-      preview: "Your monthly invoice is ready. Total due: $72.90.",
-      body: "Hello,\n\nYour April invoice is now ready.\n\nTotal: $72.90\nDue date: May 25, 2026\n\nYou can download the full receipt from your billing portal.",
-      time: "Yesterday",
-      starred: false,
-      read: true,
-    },
-    {
-      id: "m04",
-      folder: "sent",
-      senderName: "You",
-      emailFrom: "you@company.com",
-      subject: "Re: Backend schema for message sync",
-      preview: "I added draft fields for conversation id and thread position.",
-      body: "Team,\n\nI added placeholders for conversation threading and sync cursor values.\n\nWill share migration notes shortly.",
-      time: "Mon",
-      starred: false,
-      read: true,
-    },
-    {
-      id: "m05",
-      folder: "archive",
-      senderName: "Meeting Bot",
-      emailFrom: "noreply@meetings.io",
-      subject: "Transcript: Weekly product sync",
-      preview: "Transcript and action items are now available.",
-      body: "Your meeting transcript is ready.\n\nAction items:\n1. Finalize inbox interactions\n2. Connect list view to backend API\n3. Add keyboard shortcuts",
-      time: "Apr 18",
-      starred: false,
-      read: true,
-    },
-  ];
-
   const state = {
+    emails: [],
     activeFolder: "inbox",
     selectedId: null,
     query: "",
+    nextOffset: 0,
+    isLoadingEmails: false,
+    hasMoreEmails: true,
+    initialEmptyRetries: 0,
+    bootstrapRefreshAttempts: 0,
+    bootstrapRefreshTimer: null,
   };
 
   let toastTimer = null;
+
+  function getEmails() {
+    return state.emails;
+  }
 
   function showMessage(text, isError = false) {
     resultMsgEl.textContent = text;
@@ -106,9 +60,34 @@ window.addEventListener("DOMContentLoaded", () => {
     }, 2800);
   }
 
+  function stopBootstrapRefresh() {
+    if (state.bootstrapRefreshTimer) {
+      clearInterval(state.bootstrapRefreshTimer);
+      state.bootstrapRefreshTimer = null;
+    }
+  }
+
+  function startBootstrapRefresh() {
+    stopBootstrapRefresh();
+    state.bootstrapRefreshAttempts = 0;
+
+    state.bootstrapRefreshTimer = setInterval(() => {
+      if (state.emails.length > 0 || state.bootstrapRefreshAttempts >= AUTO_BOOTSTRAP_REFRESH_MAX) {
+        stopBootstrapRefresh();
+        return;
+      }
+
+      if (!state.isLoadingEmails) {
+        loadMoreEmails(INITIAL_BATCH_SIZE, { reset: true });
+      }
+
+      state.bootstrapRefreshAttempts += 1;
+    }, AUTO_BOOTSTRAP_REFRESH_INTERVAL_MS);
+  }
+
   function getVisibleEmails() {
     const query = state.query.trim().toLowerCase();
-    const inFolder = dummyEmails.filter((mail) => {
+    const inFolder = getEmails().filter((mail) => {
       if (state.activeFolder === "starred") {
         return mail.starred;
       }
@@ -128,10 +107,10 @@ window.addEventListener("DOMContentLoaded", () => {
 
   function updateCounts() {
     const counts = {
-      inbox: dummyEmails.filter((mail) => mail.folder === "inbox").length,
-      starred: dummyEmails.filter((mail) => mail.starred).length,
-      sent: dummyEmails.filter((mail) => mail.folder === "sent").length,
-      archive: dummyEmails.filter((mail) => mail.folder === "archive").length,
+      inbox: getEmails().filter((mail) => mail.folder === "inbox").length,
+      starred: getEmails().filter((mail) => mail.starred).length,
+      sent: getEmails().filter((mail) => mail.folder === "sent").length,
+      archive: getEmails().filter((mail) => mail.folder === "archive").length,
     };
 
     document.querySelector("#count-inbox").textContent = String(counts.inbox);
@@ -141,7 +120,7 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderReader() {
-    const selected = dummyEmails.find((mail) => mail.id === state.selectedId);
+    const selected = getEmails().find((mail) => mail.id === state.selectedId);
 
     if (!selected) {
       mailReaderEl.className = "mail-reader empty-state";
@@ -174,15 +153,28 @@ window.addEventListener("DOMContentLoaded", () => {
     const visibleEmails = getVisibleEmails();
 
     if (visibleEmails.length === 0) {
-      mailListEl.innerHTML = `
-        <li class="mail-item">
-          <div class="mail-item-content">
-            <div class="mail-item-subject">No messages found</div>
-            <div class="mail-item-preview">Try a different folder or search term.</div>
-          </div>
-        </li>
-      `;
+      if (state.isLoadingEmails) {
+        mailListEl.innerHTML = `
+          <li class="mail-item">
+            <div class="mail-item-content">
+              <div class="mail-item-subject">Loading emails...</div>
+              <div class="mail-item-preview">Please wait while we fetch your mailbox.</div>
+            </div>
+          </li>
+        `;
+      } else {
+        mailListEl.innerHTML = `
+          <li class="mail-item">
+            <div class="mail-item-content">
+              <div class="mail-item-subject">No messages found</div>
+              <div class="mail-item-preview">Try a different folder or search term.</div>
+            </div>
+          </li>
+        `;
+      }
+
       state.selectedId = null;
+      updateCounts();
       renderReader();
       return;
     }
@@ -214,12 +206,80 @@ window.addEventListener("DOMContentLoaded", () => {
     updateCounts();
   }
 
-  async function checkInitStatus() {
-    if (!invoke) {
-      showMessage("Tauri runtime not available. Showing local demo.", true);
-      return true;
+  async function loadMoreEmails(batchSize, { reset = false } = {}) {
+    if (state.isLoadingEmails) {
+      return;
     }
 
+    if (!reset && !state.hasMoreEmails) {
+      return;
+    }
+
+    if (reset) {
+      state.emails = [];
+      state.selectedId = null;
+      state.nextOffset = 0;
+      state.hasMoreEmails = true;
+      state.initialEmptyRetries = 0;
+    }
+
+    const minRange = state.nextOffset;
+    const maxRange = minRange + batchSize;
+
+    state.isLoadingEmails = true;
+    renderList();
+
+    try {
+      const fetched = await invoke("fetch_emails_handler", {
+        minRange,
+        maxRange,
+      });
+
+      const page = Array.isArray(fetched) ? fetched : [];
+
+      if (page.length > 0) {
+        stopBootstrapRefresh();
+      }
+
+      if (reset) {
+        state.emails = page;
+      } else {
+        const existingIds = new Set(state.emails.map((mail) => mail.id));
+        const uniquePage = page.filter((mail) => !existingIds.has(mail.id));
+        state.emails.push(...uniquePage);
+      }
+
+      state.nextOffset += page.length;
+
+      if (page.length === 0 && minRange === 0 && state.initialEmptyRetries < INITIAL_EMPTY_RETRY_MAX) {
+        state.initialEmptyRetries += 1;
+        state.hasMoreEmails = true;
+
+        const attemptLabel = `${state.initialEmptyRetries}/${INITIAL_EMPTY_RETRY_MAX}`;
+        showMessage(`Syncing emails... (${attemptLabel})`);
+
+        setTimeout(() => {
+          loadMoreEmails(INITIAL_BATCH_SIZE, { reset: true });
+        }, INITIAL_EMPTY_RETRY_DELAY_MS);
+      } else if (page.length < batchSize) {
+        state.hasMoreEmails = false;
+      }
+
+      if (page.length === 0 && minRange === 0) {
+        if (state.initialEmptyRetries >= INITIAL_EMPTY_RETRY_MAX) {
+          showMessage("No emails found in local database.");
+        }
+      }
+    } catch (error) {
+      const message = error?.message || error?.msg || String(error);
+      showMessage(`Failed to load emails: ${message}`, true);
+    } finally {
+      state.isLoadingEmails = false;
+      renderList();
+    }
+  }
+
+  async function checkInitStatus() {
     try {
       const status = await invoke("check_init_status");
 
@@ -265,9 +325,23 @@ window.addEventListener("DOMContentLoaded", () => {
     renderList();
   });
 
+  mailListEl.addEventListener("scroll", () => {
+    if (state.isLoadingEmails || !state.hasMoreEmails) {
+      return;
+    }
+
+    const threshold = 40;
+    const reachedBottom =
+      mailListEl.scrollTop + mailListEl.clientHeight >= mailListEl.scrollHeight - threshold;
+
+    if (reachedBottom) {
+      loadMoreEmails(NEXT_BATCH_SIZE);
+    }
+  });
+
   composeBtnEl.addEventListener("click", () => {
     const draftId = `draft-${Date.now()}`;
-    dummyEmails.unshift({
+    state.emails.unshift({
       id: draftId,
       folder: "sent",
       senderName: "You",
@@ -290,17 +364,12 @@ window.addEventListener("DOMContentLoaded", () => {
   });
 
   refreshBtnEl.addEventListener("click", () => {
-    const nowTime = new Date().toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-    dummyEmails[0].time = nowTime;
-    renderList();
+    loadMoreEmails(INITIAL_BATCH_SIZE, { reset: true });
     showMessage("Mailbox refreshed.");
   });
 
   markReadBtnEl.addEventListener("click", () => {
-    const selected = dummyEmails.find((mail) => mail.id === state.selectedId);
+    const selected = getEmails().find((mail) => mail.id === state.selectedId);
 
     if (!selected) {
       showMessage("Select an email first.", true);
@@ -313,7 +382,7 @@ window.addEventListener("DOMContentLoaded", () => {
   });
 
   archiveBtnEl.addEventListener("click", () => {
-    const selected = dummyEmails.find((mail) => mail.id === state.selectedId);
+    const selected = getEmails().find((mail) => mail.id === state.selectedId);
 
     if (!selected) {
       showMessage("Select an email first.", true);
@@ -327,7 +396,7 @@ window.addEventListener("DOMContentLoaded", () => {
   });
 
   spamCheckBtnEl.addEventListener("click", async () => {
-    const selected = dummyEmails.find((mail) => mail.id === state.selectedId);
+    const selected = getEmails().find((mail) => mail.id === state.selectedId);
 
     if (!selected) {
       showMessage("Select an email first.", true);
@@ -354,12 +423,8 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  checkInitStatus().then((isReady) => {
-    if (!isReady) {
-      return;
-    }
+  loadMoreEmails(INITIAL_BATCH_SIZE, { reset: true });
+  startBootstrapRefresh();
 
-    updateCounts();
-    renderList();
-  });
+  checkInitStatus();
 });

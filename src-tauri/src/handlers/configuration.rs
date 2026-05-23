@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
-use tauri::{Manager as _, WebviewUrl, WebviewWindowBuilder};
+use tauri::{LogicalSize, Manager as _, Size, WebviewUrl, WebviewWindowBuilder};
 use tokio::{
     fs::{self, create_dir_all},
-    sync::mpsc::UnboundedSender,
+    sync::{mpsc::UnboundedSender, oneshot},
 };
 
 use crate::{
@@ -105,6 +105,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
 
     let imap_client_channel_tx = app.state::<UnboundedSender<ImapClientConfig>>();
     let imap_cmd_channel_tx = app.state::<UnboundedSender<ImapCommand>>();
+    let (login_result_tx, login_result_rx) = oneshot::channel::<Result<(), String>>();
 
     let imap_client_config = ImapClientConfig {
         username,
@@ -112,8 +113,22 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
         imap_server: config.imap_server.clone(),
         imap_port: config.imap_port,
         sqlite_pool: sqlite_pool.clone(),
+        login_result_tx: Some(login_result_tx),
     };
     imap_client_channel_tx.send(imap_client_config)?;
+
+    match login_result_rx.await.map_err(|_| {
+        Error::Other("Login worker failed to send authentication result".to_string())
+    })? {
+        Ok(()) => {
+            ::tracing::info!("Login successful, initializing app state");
+        }
+        Err(message) => {
+            ::tracing::error!(error = ?message, "Login failed: {message}");
+            return Err(Error::Authentication(message));
+        }
+    }
+
     imap_cmd_channel_tx.send(ImapCommand::FetchEmails(config.email_cache_size))?;
 
     // TODO: Make configurable
@@ -157,7 +172,15 @@ pub async fn open_main_window(
     app: tauri::AppHandle,
     current_window: tauri::WebviewWindow,
 ) -> Result<(), Error> {
+    let expanded_size = Size::Logical(LogicalSize::new(1100.0, 760.0));
+    let expanded_min_size = Size::Logical(LogicalSize::new(900.0, 620.0));
+
     if let Some(main_window) = app.get_webview_window("main-app") {
+        main_window.set_resizable(true)?;
+        main_window.set_max_size::<Size>(None)?;
+        main_window.set_min_size(Some(expanded_min_size))?;
+        main_window.set_size(expanded_size)?;
+        main_window.eval("window.location.replace('/')")?;
         main_window.show()?;
         main_window.set_focus()?;
     } else {
@@ -169,7 +192,9 @@ pub async fn open_main_window(
             .build()?;
     }
 
-    current_window.close()?;
+    if current_window.label() != "main-app" {
+        current_window.close()?;
+    }
 
     Ok(())
 }

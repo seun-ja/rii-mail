@@ -4,7 +4,7 @@ use tauri::Manager as _;
 use crate::{
     config::AppState,
     error::Error,
-    llm::{EmailRequest, SpamRating, caller},
+    llm::{caller, EmailRequest, SpamRating},
 };
 
 #[tauri::command]

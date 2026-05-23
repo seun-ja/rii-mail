@@ -40,7 +40,7 @@ window.addEventListener("DOMContentLoaded", () => {
         errorMessage = error.message || error.msg || JSON.stringify(error);
       }
 
-      loginMsgEl.textContent = `Login failed`;
+      loginMsgEl.textContent = `Login failed: ${errorMessage}`;
     }
   });
 });
