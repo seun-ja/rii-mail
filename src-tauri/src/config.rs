@@ -1,8 +1,9 @@
 use std::{path::PathBuf, sync::Arc};
 
-use crate::llm::LlmProvider;
+use crate::{error::Error, llm::AgentWorkerClient};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+use tarpc::{client, serde_transport::tcp, tokio_serde::formats::Json};
 use tokio::fs;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -14,6 +15,8 @@ pub enum InitStatus {
     Login,
     /// User is fully authenticated and app is ready
     SignedIn,
+    /// User is returning and already authenticated
+    ReturningSigned,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -56,8 +59,17 @@ impl AppState {
 }
 
 pub struct InitializedState {
-    pub llm_client: LlmProvider,
+    // pub _llm_client: LlmProvider,
+    pub rpc_llm_client: AgentWorkerClient,
     pub sqlite_pool: SqlitePool,
+}
+
+pub async fn init_rpc(rpc_server: &str) -> Result<AgentWorkerClient, Error> {
+    let transport = tcp::connect(rpc_server, Json::default).await?;
+
+    let client = AgentWorkerClient::new(client::Config::default(), transport).spawn();
+
+    Ok(client)
 }
 
 pub struct ImapClientConfig {

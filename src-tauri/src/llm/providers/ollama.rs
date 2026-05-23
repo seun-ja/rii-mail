@@ -9,34 +9,34 @@ use schemars::JsonSchema;
 
 use crate::{
     error::Error,
-    llm::{tools::ToolWrapper, CompletionProvider},
+    llm::{_CompletionProvider, tools::_ToolWrapper},
 };
 
-struct OllamaProvider {
+struct _OllamaProvider {
     model: String,
 }
 
-impl OllamaProvider {
-    fn new(model: String) -> Self {
+impl _OllamaProvider {
+    fn _new(model: String) -> Self {
         Self { model }
     }
 
-    fn build<T: Tool + 'static>(
+    fn _build<T: Tool + 'static>(
         &self,
         system_message: Option<&str>,
         temperature: Option<f64>,
         max_tokens: Option<u64>,
-        tool: Option<ToolWrapper<T>>,
-    ) -> Result<OllamaAI, Error> {
-        let builder = builder(&self.model, system_message, temperature, max_tokens)?;
+        tool: Option<_ToolWrapper<T>>,
+    ) -> Result<_OllamaAI, Error> {
+        let builder = _builder(&self.model, system_message, temperature, max_tokens)?;
 
         let agent = if let Some(tool) = tool {
-            builder_with_tools(builder, tool)?.build()
+            _builder_with_tools(builder, tool)?.build()
         } else {
             builder.build()
         };
 
-        Ok(OllamaAI { agent })
+        Ok(_OllamaAI { agent })
     }
 
     fn _build_with_schema<J: JsonSchema, T: Tool + 'static>(
@@ -44,37 +44,37 @@ impl OllamaProvider {
         system_message: Option<&str>,
         temperature: Option<f64>,
         max_tokens: Option<u64>,
-        tool: Option<ToolWrapper<T>>,
-    ) -> Result<OllamaAI, Error> {
+        tool: Option<_ToolWrapper<T>>,
+    ) -> Result<_OllamaAI, Error> {
         let builder =
-            builder(&self.model, system_message, temperature, max_tokens)?.output_schema::<J>();
+            _builder(&self.model, system_message, temperature, max_tokens)?.output_schema::<J>();
 
         let agent = if let Some(tool) = tool {
-            builder_with_tools(builder, tool)?.build()
+            _builder_with_tools(builder, tool)?.build()
         } else {
             builder.build()
         };
 
-        Ok(OllamaAI { agent })
+        Ok(_OllamaAI { agent })
     }
 }
 
 #[derive(Clone)]
-pub struct OllamaAI {
+pub struct _OllamaAI {
     agent: Agent<CompletionModel>,
 }
 
-impl OllamaAI {
-    pub fn new<T: Tool + 'static>(
+impl _OllamaAI {
+    pub fn _new<T: Tool + 'static>(
         model: &str,
         system_message: Option<&str>,
         temperature: Option<f64>,
         max_tokens: Option<u64>,
-        tool: Option<ToolWrapper<T>>,
+        tool: Option<_ToolWrapper<T>>,
     ) -> Result<Self, Error> {
-        let provider = OllamaProvider::new(model.to_string());
+        let provider = _OllamaProvider::_new(model.to_string());
 
-        provider.build(system_message, temperature, max_tokens, tool)
+        provider._build(system_message, temperature, max_tokens, tool)
     }
 
     pub fn _new_with_schema<J: JsonSchema, T: Tool + 'static>(
@@ -82,16 +82,16 @@ impl OllamaAI {
         system_message: Option<&str>,
         temperature: Option<f64>,
         max_tokens: Option<u64>,
-        tool: Option<ToolWrapper<T>>,
+        tool: Option<_ToolWrapper<T>>,
     ) -> Result<Self, Error> {
-        let provider = OllamaProvider::new(model.to_string());
+        let provider = _OllamaProvider::_new(model.to_string());
 
         provider._build_with_schema::<J, T>(system_message, temperature, max_tokens, tool)
     }
 }
 
 #[async_trait::async_trait]
-impl CompletionProvider for OllamaAI {
+impl _CompletionProvider for _OllamaAI {
     #[tracing::instrument(name = "ollama.chat", skip(self, prompt))]
     async fn chat(&self, prompt: &str) -> Result<String, Error> {
         let response = self.agent.prompt(prompt).await?;
@@ -99,7 +99,7 @@ impl CompletionProvider for OllamaAI {
     }
 }
 
-fn builder(
+fn _builder(
     model: &str,
     system_message: Option<&str>,
     temperature: Option<f64>,
@@ -124,11 +124,11 @@ fn builder(
     Ok(builder)
 }
 
-fn builder_with_tools<T: Tool + 'static>(
+fn _builder_with_tools<T: Tool + 'static>(
     builder: AgentBuilder<CompletionModel>,
-    tool: ToolWrapper<T>,
+    tool: _ToolWrapper<T>,
 ) -> Result<AgentBuilder<CompletionModel, (), WithBuilderTools>, Error> {
-    let builder = builder.tool(*tool.tool());
+    let builder = builder.tool(*tool._tool());
 
     Ok(builder)
 }

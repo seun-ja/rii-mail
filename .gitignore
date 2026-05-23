@@ -26,3 +26,5 @@ dist-ssr
 .env
 config.json
 merged-model-new
+.venv
+.venv312

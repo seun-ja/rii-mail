@@ -1,12 +1,15 @@
 use std::sync::Arc;
 
-use crate::{config::AppState, db, error::Error};
+use crate::{config::AppState, db, error::Error, imap::ImapCommand};
 use arc_swap::ArcSwap;
 use tauri::Manager as _;
-use tokio::fs;
+use tokio::{fs, sync::mpsc::UnboundedSender};
 
 #[tracing::instrument(name = "command.logout.menu", skip(app))]
 pub async fn logout_with_state(app: tauri::AppHandle) -> Result<(), Error> {
+    let imap_cmd_channel_tx = app.state::<UnboundedSender<ImapCommand>>();
+    imap_cmd_channel_tx.send(ImapCommand::Logout)?;
+
     let config_dir = app.path().app_config_dir()?;
     let config_path = config_dir.join("config.json");
 

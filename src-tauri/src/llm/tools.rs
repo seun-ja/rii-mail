@@ -4,9 +4,9 @@ use crate::error::Error;
 
 /// A wrapper around a [`Tool`] that implements [`Clone`].
 #[derive(Clone)]
-pub struct ToolWrapper<T: Tool + 'static>(Box<T>);
+pub struct _ToolWrapper<T: Tool + 'static>(Box<T>);
 
-impl<T: Tool + 'static> ToolWrapper<T> {
+impl<T: Tool + 'static> _ToolWrapper<T> {
     /// Creates a new [`ToolWrapper`] with the given `struct` that implements the [`Tool`] trait.
     ///
     /// example:
@@ -52,14 +52,14 @@ impl<T: Tool + 'static> ToolWrapper<T> {
         Self(Box::new(tool))
     }
 
-    pub(crate) fn tool(self) -> Box<T> {
+    pub(crate) fn _tool(self) -> Box<T> {
         self.0
     }
 }
 
-pub(crate) struct NoTool;
+pub(crate) struct _NoTool;
 
-impl Tool for NoTool {
+impl Tool for _NoTool {
     const NAME: &'static str = "";
 
     type Error = Error;

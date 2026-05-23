@@ -1,11 +1,9 @@
-use std::sync::LazyLock;
-
 use arc_swap::ArcSwap;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Emitter as _, Manager as _};
 
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::mpsc;
 
 use crate::config::ImapClientConfig;
 use crate::imap::ImapCommand;
@@ -29,8 +27,6 @@ mod llm;
 mod tracing;
 mod workers;
 
-pub static CACHE_SIZE: LazyLock<Mutex<u32>> = LazyLock::new(|| Mutex::new(100));
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub async fn run() {
     let (imap_client_channel_tx, imap_client_channel_rx) =
@@ -38,7 +34,7 @@ pub async fn run() {
 
     let (imap_cmd_channel_tx, imap_cmd_channel_rx) = mpsc::unbounded_channel::<ImapCommand>();
 
-    _ = session_thread(imap_client_channel_rx, imap_cmd_channel_rx);
+    session_thread(imap_client_channel_rx, imap_cmd_channel_rx);
 
     tauri::Builder::default()
         .manage(ArcSwap::from_pointee(AppState::Fresh))

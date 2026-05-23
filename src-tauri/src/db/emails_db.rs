@@ -67,3 +67,11 @@ pub async fn cleanup(pool: &SqlitePool) -> Result<(), Error> {
 
     Ok(())
 }
+
+pub async fn check_email_db_empty(pool: &SqlitePool) -> Result<bool, Error> {
+    let result: (bool,) = sqlx::query_as("SELECT EXISTS (SELECT 1 FROM emails)")
+        .fetch_one(pool)
+        .await?;
+
+    Ok(result.0)
+}

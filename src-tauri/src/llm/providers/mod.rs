@@ -9,14 +9,14 @@ use schemars::JsonSchema;
 use crate::{
     error::Error,
     llm::{
-        tools::{NoTool, ToolWrapper},
-        LlmProvider, Providers,
+        _LlmProvider, _Providers,
+        tools::{_NoTool, _ToolWrapper},
     },
 };
 
 /// Builder for creating an [`AgentServer`].
-pub struct ProviderBuilder<'a> {
-    provider: Providers,
+pub struct _ProviderBuilder<'a> {
+    provider: _Providers,
     system_message: &'a str,
     model: &'a str,
     api_key: Option<&'a str>,
@@ -26,9 +26,9 @@ pub struct ProviderBuilder<'a> {
     function_handler: Option<String>,
 }
 
-impl<'a> ProviderBuilder<'a> {
+impl<'a> _ProviderBuilder<'a> {
     /// Creates a new [`AgentServerBuilder`] with the given provider, system message, and model.
-    pub fn new(provider: Providers, system_message: &'a str, model: &'a str) -> Self {
+    pub fn _new(provider: _Providers, system_message: &'a str, model: &'a str) -> Self {
         Self {
             provider,
             system_message,
@@ -43,42 +43,42 @@ impl<'a> ProviderBuilder<'a> {
 
     /// Sets the API key for the provider.
     #[inline]
-    pub fn api_key(mut self, api_key: &'a str) -> Self {
+    pub fn _api_key(mut self, api_key: &'a str) -> Self {
         self.api_key = Some(api_key);
         self
     }
 
     /// Sets the temperature for the provider.
     #[inline]
-    pub fn temperature(mut self, temperature: Option<f64>) -> Self {
+    pub fn _temperature(mut self, temperature: Option<f64>) -> Self {
         self.temperature = temperature;
         self
     }
 
     /// Sets the maximum number of tokens for the provider.
     #[inline]
-    pub fn max_tokens(mut self, max_tokens: Option<u64>) -> Self {
+    pub fn _max_tokens(mut self, max_tokens: Option<u64>) -> Self {
         self.max_tokens = max_tokens;
         self
     }
 
     /// Sets the Python path for the provider.
     #[inline]
-    pub fn script_name(mut self, python_path: String) -> Self {
+    pub fn _script_name(mut self, python_path: String) -> Self {
         self.script_name = Some(python_path);
         self
     }
 
     /// Sets the Python path for the provider.
     #[inline]
-    pub fn function_handler(mut self, function_handler: String) -> Self {
+    pub fn _function_handler(mut self, function_handler: String) -> Self {
         self.function_handler = Some(function_handler);
         self
     }
 
     /// Builds the [`LlmProvider`] with the given configuration.
-    pub async fn build(self) -> Result<LlmProvider, Error> {
-        let providers = Providers::init::<NoTool>(
+    pub async fn _build(self) -> Result<_LlmProvider, Error> {
+        let providers = _Providers::_init::<_NoTool>(
             self.provider,
             self.model,
             self.api_key,
@@ -91,12 +91,12 @@ impl<'a> ProviderBuilder<'a> {
         )
         .await?;
 
-        Ok(LlmProvider { providers })
+        Ok(_LlmProvider { providers })
     }
 
     /// Builds the [`LlmProvider`] with the given configuration and schema.
-    pub fn _build_with_schema<J: JsonSchema>(self) -> Result<LlmProvider, Error> {
-        let providers = Providers::_init_with_schema::<J, NoTool>(
+    pub fn _build_with_schema<J: JsonSchema>(self) -> Result<_LlmProvider, Error> {
+        let providers = _Providers::_init_with_schema::<J, _NoTool>(
             self.provider,
             self.model,
             self.api_key,
@@ -106,15 +106,15 @@ impl<'a> ProviderBuilder<'a> {
             None,
         )?;
 
-        Ok(LlmProvider { providers })
+        Ok(_LlmProvider { providers })
     }
 
     /// Builds the [`LlmProvider`] with the given configuration and tool.
     pub async fn _build_with_tool<T: Tool + 'static>(
         self,
-        tool: ToolWrapper<T>,
-    ) -> Result<LlmProvider, Error> {
-        let providers = Providers::init::<T>(
+        tool: _ToolWrapper<T>,
+    ) -> Result<_LlmProvider, Error> {
+        let providers = _Providers::_init::<T>(
             self.provider,
             self.model,
             self.api_key,
@@ -127,6 +127,6 @@ impl<'a> ProviderBuilder<'a> {
         )
         .await?;
 
-        Ok(LlmProvider { providers })
+        Ok(_LlmProvider { providers })
     }
 }

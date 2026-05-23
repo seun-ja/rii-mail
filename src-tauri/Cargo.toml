@@ -60,6 +60,6 @@ aws-sdk-sagemakerruntime = "1"
 aws-sdk-sagemaker = "1"
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 
-pyo3 = { version = "0.21", features = ["auto-initialize"]}
+pyo3 = { version = "0.21", features = ["auto-initialize"] }
 hex = "0.4.3"
 arc-swap = "1.7.1"

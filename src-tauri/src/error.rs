@@ -1,10 +1,15 @@
+use std::{error::Error as StdError, io::ErrorKind};
+
 use aws_sdk_sagemakerruntime::{error::SdkError, operation::invoke_endpoint::InvokeEndpointError};
 use pyo3::PyErr;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tracing::{error, warn};
 
-use crate::config::{ImapClientConfig, InitializedState};
+use crate::{
+    config::{ImapClientConfig, InitializedState},
+    imap::ImapCommand,
+};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -30,6 +35,8 @@ pub enum Error {
     StateChannelSend(#[from] mpsc::error::SendError<InitializedState>),
     #[error("Imap Config Channel Send Error: {0}")]
     ImapConfigChannelSend(#[from] mpsc::error::SendError<ImapClientConfig>),
+    #[error("Imap Command Channel Send Error: {0}")]
+    ImapCommandChannelSend(#[from] mpsc::error::SendError<ImapCommand>),
     /// Authentication error: the provider returned an authentication error.
     #[error("authentication error: {0}")]
     Authentication(String),
@@ -63,6 +70,7 @@ impl Serialize for Error {
             Error::Sqlx(e) => ("SQLx", e.to_string()),
             Error::StateChannelSend(e) => ("StateChannelSend", e.to_string()),
             Error::ImapConfigChannelSend(e) => ("ImapConfigChannelSend", e.to_string()),
+            Error::ImapCommandChannelSend(e) => ("ImapCommandChannelSend", e.to_string()),
             Error::Authentication(e) => ("AuthenticationError", e.to_string()),
             Error::Http(e) => ("HttpError", e.to_string()),
             Error::Prompt(e) => ("PromptError", e.to_string()),
@@ -92,6 +100,7 @@ impl Error {
             | Error::Tauri(_)
             | Error::StateChannelSend(_)
             | Error::ImapConfigChannelSend(_)
+            | Error::ImapCommandChannelSend(_)
             | Error::Sqlx(_)
             | Error::Tls(_)
             | Error::Http(_)
@@ -104,5 +113,53 @@ impl Error {
                 warn!(error = ?self, "Error occurred: {}", self);
             }
         }
+    }
+}
+
+pub enum CrashAction {
+    Retry { backoff_ms: u64, reason: String },
+    Fatal,
+    Ignore,
+}
+
+#[derive(Debug, Deserialize)]
+struct RetryContext<'a> {
+    message: &'a str,
+    reason: &'a str,
+}
+
+pub fn inference_crash_handler(err: &str, attempt: u32) -> CrashAction {
+    if let Ok(err_json) = serde_json::from_str::<RetryContext>(err) {
+        match err_json.message {
+            "MODEL_OOM" => {
+                let backoff = 100 * (attempt + 1) as u64;
+                return CrashAction::Retry {
+                    backoff_ms: backoff,
+                    reason: err_json.reason.to_string(),
+                };
+            }
+            "MODEL_FATAL" => {
+                return CrashAction::Fatal;
+            }
+            _ => {}
+        }
+    }
+    CrashAction::Ignore
+}
+
+/// Returns true if the error or any of its sources is a connection error (BrokenPipe, ConnectionReset, ConnectionAborted, NotConnected)
+pub fn is_connection_error(e: &(dyn StdError + 'static)) -> bool {
+    if let Some(io_err) = e.downcast_ref::<std::io::Error>() {
+        matches!(
+            io_err.kind(),
+            ErrorKind::BrokenPipe
+                | ErrorKind::ConnectionReset
+                | ErrorKind::ConnectionAborted
+                | ErrorKind::NotConnected
+        )
+    } else if let Some(source) = e.source() {
+        is_connection_error(source)
+    } else {
+        false
     }
 }

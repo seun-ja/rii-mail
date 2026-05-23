@@ -4,6 +4,7 @@ use tokio::net::TcpStream;
 
 use crate::error::Error;
 
+#[derive(Debug)]
 pub enum ImapCommand {
     Logout,
     FetchEmails(u32),

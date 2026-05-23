@@ -6,18 +6,28 @@ use tokio::net::TcpStream;
 
 use crate::{db::populate_storage, email_cache::Email, error::Error};
 
+pub enum FetchResult {
+    EmptyMailbox,
+    Populated,
+    Fetched(u16),
+}
+
 #[tracing::instrument(name = "emails.fetch", skip(session, pool))]
 pub async fn fetch_emails(
     session: &mut Session<TlsStream<TcpStream>>,
     size: u32,
     pool: &SqlitePool,
-) -> Result<u16, Error> {
+) -> Result<FetchResult, Error> {
+    if crate::db::check_email_db_empty(pool).await? {
+        return Ok(FetchResult::Populated);
+    }
+
     let mailbox = session.select("INBOX").await?;
 
     let mut emails: Vec<Email> = Vec::new();
     if mailbox.exists == 0 {
         tracing::info!("No emails found");
-        return Ok(0);
+        return Ok(FetchResult::EmptyMailbox);
     }
 
     let end = mailbox.exists;
@@ -37,5 +47,5 @@ pub async fn fetch_emails(
     let emails_len = emails.len();
 
     populate_storage(pool, emails).await?;
-    Ok(emails_len as u16)
+    Ok(FetchResult::Fetched(emails_len as u16))
 }

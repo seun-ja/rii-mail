@@ -9,27 +9,27 @@ use schemars::JsonSchema;
 
 use crate::{
     error::Error,
-    llm::{tools::ToolWrapper, CompletionProvider},
+    llm::{_CompletionProvider, tools::_ToolWrapper},
 };
 
-struct OpenAIProvider {
+struct _OpenAIProvider {
     api_key: String,
     model: String,
 }
 
-impl OpenAIProvider {
-    fn new(api_key: String, model: String) -> Self {
+impl _OpenAIProvider {
+    fn _new(api_key: String, model: String) -> Self {
         Self { api_key, model }
     }
 
-    fn build<T: Tool + 'static>(
+    fn _build<T: Tool + 'static>(
         &self,
         system_message: Option<&str>,
         temperature: Option<f64>,
         max_tokens: Option<u64>,
-        tool: Option<ToolWrapper<T>>,
-    ) -> Result<OpenAI, Error> {
-        let builder = builder(
+        tool: Option<_ToolWrapper<T>>,
+    ) -> Result<_OpenAI, Error> {
+        let builder = _builder(
             &self.api_key,
             &self.model,
             system_message,
@@ -38,12 +38,12 @@ impl OpenAIProvider {
         )?;
 
         let agent = if let Some(tool) = tool {
-            builder_with_tools(builder, tool)?.build()
+            _builder_with_tools(builder, tool)?.build()
         } else {
             builder.build()
         };
 
-        Ok(OpenAI { agent })
+        Ok(_OpenAI { agent })
     }
 
     fn _build_with_schema<J: JsonSchema, T: Tool + 'static>(
@@ -51,9 +51,9 @@ impl OpenAIProvider {
         system_message: Option<&str>,
         temperature: Option<f64>,
         max_tokens: Option<u64>,
-        tool: Option<ToolWrapper<T>>,
-    ) -> Result<OpenAI, Error> {
-        let builder = builder(
+        tool: Option<_ToolWrapper<T>>,
+    ) -> Result<_OpenAI, Error> {
+        let builder = _builder(
             &self.api_key,
             &self.model,
             system_message,
@@ -63,32 +63,32 @@ impl OpenAIProvider {
         .output_schema::<J>();
 
         let agent = if let Some(tool) = tool {
-            builder_with_tools(builder, tool)?.build()
+            _builder_with_tools(builder, tool)?.build()
         } else {
             builder.build()
         };
 
-        Ok(OpenAI { agent })
+        Ok(_OpenAI { agent })
     }
 }
 
 #[derive(Clone)]
-pub struct OpenAI {
+pub struct _OpenAI {
     agent: Agent<ResponsesCompletionModel>,
 }
 
-impl OpenAI {
-    pub fn new<T: Tool + 'static>(
+impl _OpenAI {
+    pub fn _new<T: Tool + 'static>(
         api_key: &str,
         model: &str,
         system_message: Option<&str>,
         temperature: Option<f64>,
         max_tokens: Option<u64>,
-        tool: Option<ToolWrapper<T>>,
+        tool: Option<_ToolWrapper<T>>,
     ) -> Result<Self, Error> {
-        let provider = OpenAIProvider::new(api_key.to_string(), model.to_string());
+        let provider = _OpenAIProvider::_new(api_key.to_string(), model.to_string());
 
-        provider.build(system_message, temperature, max_tokens, tool)
+        provider._build(system_message, temperature, max_tokens, tool)
     }
 
     pub fn _new_with_schema<J: JsonSchema, T: Tool + 'static>(
@@ -97,16 +97,16 @@ impl OpenAI {
         system_message: Option<&str>,
         temperature: Option<f64>,
         max_tokens: Option<u64>,
-        tool: Option<ToolWrapper<T>>,
+        tool: Option<_ToolWrapper<T>>,
     ) -> Result<Self, Error> {
-        let provider = OpenAIProvider::new(api_key.to_string(), model.to_string());
+        let provider = _OpenAIProvider::_new(api_key.to_string(), model.to_string());
 
         provider._build_with_schema::<J, T>(system_message, temperature, max_tokens, tool)
     }
 }
 
 #[async_trait::async_trait]
-impl CompletionProvider for OpenAI {
+impl _CompletionProvider for _OpenAI {
     #[tracing::instrument(name = "openai.chat", skip(self, prompt))]
     async fn chat(&self, prompt: &str) -> Result<String, Error> {
         let response = self.agent.prompt(prompt).await?;
@@ -114,7 +114,7 @@ impl CompletionProvider for OpenAI {
     }
 }
 
-fn builder(
+fn _builder(
     api_key: &str,
     model: &str,
     system_message: Option<&str>,
@@ -132,11 +132,11 @@ fn builder(
     Ok(builder)
 }
 
-fn builder_with_tools<T: Tool + 'static>(
+fn _builder_with_tools<T: Tool + 'static>(
     builder: AgentBuilder<ResponsesCompletionModel>,
-    tool: ToolWrapper<T>,
+    tool: _ToolWrapper<T>,
 ) -> Result<AgentBuilder<ResponsesCompletionModel, (), WithBuilderTools>, Error> {
-    let builder = builder.tool(*tool.tool());
+    let builder = builder.tool(*tool._tool());
 
     Ok(builder)
 }

@@ -8,37 +8,39 @@ use crate::{
     error::Error,
     llm::{
         providers::{local_inference, ollama, openai, sagemaker},
-        tools::ToolWrapper,
+        rpc::MessageType,
+        tools::_ToolWrapper,
     },
 };
 
 mod providers;
+mod rpc;
 mod tools;
 
-pub use providers::ProviderBuilder;
+pub use rpc::{caller, AgentWorkerClient};
 
 // #[cfg(test)]
 // pub use providers::local_inference::LocalInferenceAI;
 
-pub struct LlmProvider {
-    providers: Box<dyn CompletionProvider>,
+pub struct _LlmProvider {
+    providers: Box<dyn _CompletionProvider>,
 }
 
-impl LlmProvider {
+impl _LlmProvider {
     #[tracing::instrument(name = "agent.message", skip(self, email))]
-    pub async fn chat(&self, email: EmailRequest) -> Result<String, Error> {
+    pub async fn _chat(&self, email: EmailRequest) -> Result<String, Error> {
         self.providers.chat(&email.to_string()).await
     }
 }
 
 #[async_trait::async_trait]
-pub trait CompletionProvider: Send + Sync {
+pub trait _CompletionProvider: Send + Sync {
     /// Returns a chat response for the given prompt.
     async fn chat(&self, prompt: &str) -> Result<String, Error>;
 }
 
 /// Supported AI providers for the agent server.
-pub enum Providers {
+pub enum _Providers {
     /// Ollama provider: local AI model inference.
     Ollama,
     /// OpenAI provider: cloud-based AI model inference.
@@ -53,24 +55,24 @@ pub enum Providers {
     LocalInference,
 }
 
-impl Display for Providers {
+impl Display for _Providers {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Providers::Ollama => write!(f, "ollama"),
-            Providers::OpenAI => write!(f, "openai"),
-            Providers::CustomSageMakerAI => write!(f, "sagemaker"),
-            Providers::LocalInference => write!(f, "local"),
+            _Providers::Ollama => write!(f, "ollama"),
+            _Providers::OpenAI => write!(f, "openai"),
+            _Providers::CustomSageMakerAI => write!(f, "sagemaker"),
+            _Providers::LocalInference => write!(f, "local"),
         }
     }
 }
 
-impl From<&str> for Providers {
+impl From<&str> for _Providers {
     fn from(value: &str) -> Self {
         match value.to_lowercase().as_str() {
-            "ollama" => Providers::Ollama,
-            "openai" => Providers::OpenAI,
-            "sagemaker" => Providers::CustomSageMakerAI,
-            "local" => Providers::LocalInference,
+            "ollama" => _Providers::Ollama,
+            "openai" => _Providers::OpenAI,
+            "sagemaker" => _Providers::CustomSageMakerAI,
+            "local" => _Providers::LocalInference,
             _ => panic!(
                 "unknown provider: {}. Currently supported providers are: ollama, openai, sagemaker, local",
                 value
@@ -79,22 +81,22 @@ impl From<&str> for Providers {
     }
 }
 
-impl Providers {
+impl _Providers {
     #[allow(clippy::too_many_arguments)]
-    pub(crate) async fn init<T: Tool + 'static>(
-        provider: Providers,
+    pub(crate) async fn _init<T: Tool + 'static>(
+        provider: _Providers,
         model: &str,
         api_key: Option<&str>,
         system_message: String,
         temperature: Option<f64>,
         max_tokens: Option<u64>,
-        tool: Option<ToolWrapper<T>>,
+        tool: Option<_ToolWrapper<T>>,
         script_name: Option<String>,
         function_handler: Option<String>,
-    ) -> Result<Box<dyn CompletionProvider>, Error> {
-        let client: Box<dyn CompletionProvider> = match provider {
-            Providers::Ollama => {
-                let client = ollama::OllamaAI::new(
+    ) -> Result<Box<dyn _CompletionProvider>, Error> {
+        let client: Box<dyn _CompletionProvider> = match provider {
+            _Providers::Ollama => {
+                let client = ollama::_OllamaAI::_new(
                     model,
                     Some(&system_message),
                     temperature,
@@ -103,12 +105,12 @@ impl Providers {
                 )?;
                 Box::new(client)
             }
-            Providers::OpenAI => {
+            _Providers::OpenAI => {
                 let api_key = api_key.ok_or_else(|| {
                     Error::Authentication("api_key is required for openai provider".to_string())
                 })?;
 
-                let client = openai::OpenAI::new(
+                let client = openai::_OpenAI::_new(
                     api_key,
                     model,
                     Some(&system_message),
@@ -118,12 +120,12 @@ impl Providers {
                 )?;
                 Box::new(client)
             }
-            Providers::CustomSageMakerAI => {
-                let client = sagemaker::CustomSageMakerAI::build_sagemaker_client(model).await;
+            _Providers::CustomSageMakerAI => {
+                let client = sagemaker::_CustomSageMakerAI::_build_sagemaker_client(model).await;
                 Box::new(client)
             }
-            Providers::LocalInference => {
-                let client = local_inference::LocalInferenceAI::setup(
+            _Providers::LocalInference => {
+                let client = local_inference::_LocalInferenceAI::_setup(
                     script_name.unwrap_or("inference".to_owned()),
                     function_handler.unwrap_or("predict".to_owned()), // Function name
                 )
@@ -137,17 +139,17 @@ impl Providers {
     }
 
     pub(crate) fn _init_with_schema<J: JsonSchema, T: Tool + 'static>(
-        provider: Providers,
+        provider: _Providers,
         model: &str,
         api_key: Option<&str>,
         system_message: String,
         temperature: Option<f64>,
         max_tokens: Option<u64>,
-        tool: Option<ToolWrapper<T>>,
-    ) -> Result<Box<dyn CompletionProvider>, Error> {
+        tool: Option<_ToolWrapper<T>>,
+    ) -> Result<Box<dyn _CompletionProvider>, Error> {
         match provider {
-            Providers::Ollama => {
-                let client = ollama::OllamaAI::_new_with_schema::<J, T>(
+            _Providers::Ollama => {
+                let client = ollama::_OllamaAI::_new_with_schema::<J, T>(
                     model,
                     Some(&system_message),
                     temperature,
@@ -156,12 +158,12 @@ impl Providers {
                 )?;
                 Ok(Box::new(client))
             }
-            Providers::OpenAI => {
+            _Providers::OpenAI => {
                 let api_key = api_key.ok_or_else(|| {
                     Error::Authentication("api_key is required for openai provider".to_string())
                 })?;
 
-                let client = openai::OpenAI::_new_with_schema::<J, T>(
+                let client = openai::_OpenAI::_new_with_schema::<J, T>(
                     api_key,
                     model,
                     Some(&system_message),
@@ -171,10 +173,10 @@ impl Providers {
                 )?;
                 Ok(Box::new(client))
             }
-            Providers::CustomSageMakerAI => {
+            _Providers::CustomSageMakerAI => {
                 unimplemented!("Does not support Schema responses")
             }
-            Providers::LocalInference => {
+            _Providers::LocalInference => {
                 unimplemented!("Does not support Schema responses")
             }
         }
@@ -195,6 +197,14 @@ impl Display for EmailRequest {
             "From: {}\nSubject: {}\nBody: {}",
             self.from, self.subject, self.body
         )
+    }
+}
+
+impl MessageType for EmailRequest {
+    fn msg_type(&self) -> Result<rpc_agent::Message, Error> {
+        let message = serde_json::to_value(self).map_err(|e| Error::Other(e.to_string()))?;
+
+        Ok(rpc_agent::Message::Struct(message))
     }
 }
 

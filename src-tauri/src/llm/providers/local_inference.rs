@@ -5,24 +5,24 @@ use pyo3::{
 };
 
 use crate::error::Error;
-use crate::llm::CompletionProvider;
+use crate::llm::_CompletionProvider;
 
 #[derive(Clone)]
 /// A custom SageMaker AI client that wraps the AWS SDK for SageMaker.
-pub struct LocalInferenceAI {
-    pub local_model: LocalModel,
+pub struct _LocalInferenceAI {
+    pub local_model: _LocalModel,
 }
 
-impl LocalInferenceAI {
-    /// Sets up a new LocalInferenceAI client using the provided model directory.
-    pub async fn setup(script_name: String, function: String) -> Self {
+impl _LocalInferenceAI {
+    /// Sets up a new _LocalInferenceAI client using the provided model directory.
+    pub async fn _setup(script_name: String, function: String) -> Self {
         Self {
-            local_model: LocalModel::new(&script_name, &function).unwrap(),
+            local_model: _LocalModel::_new(&script_name, &function).unwrap(),
         }
     }
 
     /// Invokes the local inference model with the given prompt and returns the response.
-    async fn invoke(&self, prompt: &str) -> Result<String, Error> {
+    async fn _invoke(&self, prompt: &str) -> Result<String, Error> {
         let p: PyResult<LocalInferenceResult> = Python::with_gil(|py| {
             let func = self.local_model.predict_fn.bind(py);
             let inference = func.call1((prompt,))?;
@@ -61,12 +61,12 @@ impl TryFrom<LocalInferenceResult> for String {
 }
 
 #[derive(Clone)]
-pub struct LocalModel {
+pub struct _LocalModel {
     predict_fn: Py<PyAny>,
 }
 
-impl LocalModel {
-    pub fn new(script_name: &str, function: &str) -> PyResult<Self> {
+impl _LocalModel {
+    pub fn _new(script_name: &str, function: &str) -> PyResult<Self> {
         Python::with_gil(|py| {
             let module = PyModule::import_bound(py, script_name)?;
             let func = module.getattr(function)?;
@@ -79,9 +79,9 @@ impl LocalModel {
 }
 
 #[async_trait::async_trait]
-impl CompletionProvider for LocalInferenceAI {
+impl _CompletionProvider for _LocalInferenceAI {
     #[tracing::instrument(name = "local_inference.chat", skip(self, prompt))]
     async fn chat(&self, prompt: &str) -> Result<String, Error> {
-        self.invoke(prompt).await
+        self._invoke(prompt).await
     }
 }

@@ -2,7 +2,7 @@ mod emails_db;
 
 use std::{fs, path::PathBuf};
 
-pub use emails_db::{cleanup, populate_storage};
+pub use emails_db::{check_email_db_empty, cleanup, populate_storage};
 
 use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 

@@ -4,7 +4,7 @@ use tauri::Manager as _;
 use crate::{
     config::AppState,
     error::Error,
-    llm::{EmailRequest, SpamRating},
+    llm::{EmailRequest, SpamRating, caller},
 };
 
 #[tauri::command]
@@ -25,7 +25,7 @@ pub async fn rater(
         body,
     };
 
-    let rating = initialized.llm_client.chat(email).await?;
+    let rating = caller(&initialized.rpc_llm_client.clone(), email).await?;
 
-    rating.try_into()
+    Ok(rating)
 }

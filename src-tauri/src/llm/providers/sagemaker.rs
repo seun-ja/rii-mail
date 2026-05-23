@@ -1,22 +1,22 @@
 use aws_sdk_sagemaker::primitives::Blob;
 
-use crate::{error::Error, llm::CompletionProvider};
+use crate::{error::Error, llm::_CompletionProvider};
 
 #[derive(Clone)]
 /// A custom SageMaker AI client that wraps the AWS SDK for SageMaker.
-pub struct CustomSageMakerAI {
+pub struct _CustomSageMakerAI {
     sagemaker_client: aws_sdk_sagemakerruntime::Client,
     endpoint_name: String,
 }
 
 #[derive(serde::Serialize)]
-struct Prompt<'a> {
+struct _Prompt<'a> {
     inputs: &'a str,
 }
 
-impl CustomSageMakerAI {
+impl _CustomSageMakerAI {
     /// Builds a new SageMaker client using the provided endpoint name.
-    pub async fn build_sagemaker_client(endpoint_name: &str) -> Self {
+    pub async fn _build_sagemaker_client(endpoint_name: &str) -> Self {
         let config = aws_config::load_from_env().await;
         let sagemaker_client = aws_sdk_sagemakerruntime::Client::new(&config);
 
@@ -27,8 +27,8 @@ impl CustomSageMakerAI {
     }
 
     /// Invokes the SageMaker endpoint with the given prompt and returns the response.
-    async fn invoke(&self, prompt: &str) -> Result<String, Error> {
-        let payload = serde_json::to_vec(&Prompt { inputs: prompt })?;
+    async fn _invoke(&self, prompt: &str) -> Result<String, Error> {
+        let payload = serde_json::to_vec(&_Prompt { inputs: prompt })?;
 
         let resp = self
             .sagemaker_client
@@ -60,9 +60,9 @@ impl CustomSageMakerAI {
 }
 
 #[async_trait::async_trait]
-impl CompletionProvider for CustomSageMakerAI {
+impl _CompletionProvider for _CustomSageMakerAI {
     #[tracing::instrument(name = "sagemaker.chat", skip(self, prompt))]
     async fn chat(&self, prompt: &str) -> Result<String, Error> {
-        self.invoke(prompt).await
+        self._invoke(prompt).await
     }
 }
