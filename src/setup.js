@@ -3,8 +3,9 @@ const { invoke } = window.__TAURI__.core;
 async function checkAlreadyInitialized() {
   try {
     const status = await invoke("check_init_status");
+    const isSignedIn = status === "signed_in" || status === "signedin";
 
-    if (status === "signed_in") {
+    if (isSignedIn) {
       // User already signed in, redirect to main app
       window.location.replace("/");
     } else if (status === "login") {

@@ -347,7 +347,18 @@ body.home-page {
 .reader-body {
     font-size: 0.9rem;
     line-height: 1.56;
+}
+
+.reader-body-text {
     white-space: pre-wrap;
+}
+
+.reader-html-frame {
+    width: 100%;
+    min-height: 560px;
+    border: 1px solid #e6ecf4;
+    border-radius: 10px;
+    background: #fff;
 }
 
 .status-toast {

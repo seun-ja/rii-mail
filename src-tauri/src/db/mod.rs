@@ -8,7 +8,7 @@ use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 
 use crate::error::Error;
 
-pub async fn init_db(app_dir: PathBuf, db: &str) -> Result<SqlitePool, Error> {
+pub async fn init_db(app_dir: PathBuf, db: &str, has_logged_in: bool) -> Result<SqlitePool, Error> {
     fs::create_dir_all(&app_dir)?;
 
     let data_dir = app_dir.join("data");
@@ -22,18 +22,20 @@ pub async fn init_db(app_dir: PathBuf, db: &str) -> Result<SqlitePool, Error> {
 
     let pool = SqlitePool::connect_with(options).await?;
 
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS emails (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT,
-            body BLOB,
-            labels TEXT
-        );
-        "#,
-    )
-    .execute(&pool)
-    .await?;
+    if !has_logged_in {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS emails (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT,
+                body BLOB,
+                labels TEXT
+            );
+            "#,
+        )
+        .execute(&pool)
+        .await?;
+    }
 
     Ok(pool)
 }

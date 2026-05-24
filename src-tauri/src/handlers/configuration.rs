@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use arc_swap::ArcSwap;
 use tauri::{LogicalSize, Manager as _, Size, WebviewUrl, WebviewWindowBuilder};
@@ -8,7 +8,7 @@ use tokio::{
 };
 
 use crate::{
-    config::{self, AppState, Config, ImapClientConfig, InitStatus},
+    config::{self, AppState, Config, ImapClientConfig, InitStatus, InitializedState},
     db,
     error::Error,
     imap::ImapCommand,
@@ -43,6 +43,7 @@ pub async fn config_setup(
         rust_log: Some(rust_log),
         otlp_collector_endpoint: Some(otlp_collector_endpoint),
         email_cache_size,
+        has_logged_in: false,
     };
 
     let config_dir = app.path().app_config_dir()?;
@@ -69,8 +70,13 @@ pub async fn check_init_status(app: tauri::AppHandle) -> Result<InitStatus, Erro
     let config_dir = app.path().app_config_dir()?;
     let config_path = config_dir.join("config.json");
 
-    if Config::init(&config_path).await.is_err() {
-        return Ok(InitStatus::Setup);
+    let config = match Config::init(&config_path).await {
+        Ok(config) => config,
+        Err(_) => return Ok(InitStatus::Setup),
+    };
+
+    if !config.has_logged_in {
+        return Ok(InitStatus::Login);
     }
 
     // Config exists, check if user is already signed in
@@ -78,9 +84,37 @@ pub async fn check_init_status(app: tauri::AppHandle) -> Result<InitStatus, Erro
     let current_state = app_state.load();
 
     match current_state.as_ref() {
-        AppState::Initialized(_) => Ok(InitStatus::SignedIn),
-        AppState::Fresh => Ok(InitStatus::Login),
+        AppState::Initialized(_) => {
+            ensure_expanded_startup_window(&app)?;
+            Ok(InitStatus::SignedIn)
+        }
+        AppState::Fresh => match handle_initialization(config.clone(), config_dir).await {
+            Ok(initialized_state) => {
+                app_state.store(Arc::new(AppState::Initialized(Arc::new(initialized_state))));
+                ensure_expanded_startup_window(&app)?;
+
+                Ok(InitStatus::SignedIn)
+            }
+            Err(err) => {
+                ::tracing::warn!(error = ?err, "Could not restore full app state from config");
+                Ok(InitStatus::Login)
+            }
+        },
     }
+}
+
+fn ensure_expanded_startup_window(app: &tauri::AppHandle) -> Result<(), Error> {
+    if let Some(window) = app.get_webview_window("main") {
+        let expanded_size = Size::Logical(LogicalSize::new(1100.0, 760.0));
+        let expanded_min_size = Size::Logical(LogicalSize::new(900.0, 620.0));
+
+        window.set_resizable(true)?;
+        window.set_max_size::<Size>(None)?;
+        window.set_min_size(Some(expanded_min_size))?;
+        window.set_size(expanded_size)?;
+    }
+
+    Ok(())
 }
 
 /// Login command - used when config exists but user needs to authenticate
@@ -91,17 +125,11 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
     let config_dir = app.path().app_config_dir()?;
     let config_path = config_dir.join("config.json");
 
-    let config = Config::init(&config_path).await.map_err(|_| {
+    let mut config = Config::init(&config_path).await.map_err(|_| {
         Error::Other("Configuration not found. Please run setup first.".to_string())
     })?;
 
-    init_subscriber(
-        &config.rust_log.unwrap_or_default(),
-        &config.otlp_collector_endpoint.unwrap_or_default(),
-    )
-    .expect("Failed to initialize subscriber");
-
-    let sqlite_pool = db::init_db(config_dir, &config.sqlite_db).await?;
+    let initialized_state = handle_initialization(config.clone(), config_dir).await?;
 
     let imap_client_channel_tx = app.state::<UnboundedSender<ImapClientConfig>>();
     let imap_cmd_channel_tx = app.state::<UnboundedSender<ImapCommand>>();
@@ -112,7 +140,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
         password,
         imap_server: config.imap_server.clone(),
         imap_port: config.imap_port,
-        sqlite_pool: sqlite_pool.clone(),
+        sqlite_pool: initialized_state.sqlite_pool.clone(),
         login_result_tx: Some(login_result_tx),
     };
     imap_client_channel_tx.send(imap_client_config)?;
@@ -150,16 +178,20 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
     //     .build()
     //     .await?;
 
-    let rpc_llm_client = config::init_rpc(&config.rpc_server).await?;
-
     let initialized_state = config::InitializedState {
         // _llm_client: llm_client,
-        rpc_llm_client,
-        sqlite_pool,
+        rpc_llm_client: initialized_state.rpc_llm_client,
+        sqlite_pool: initialized_state.sqlite_pool,
     };
 
     let app_state = app.state::<ArcSwap<AppState>>();
     app_state.store(Arc::new(AppState::Initialized(Arc::new(initialized_state))));
+
+    if !config.has_logged_in {
+        config.has_logged_in = true;
+        let config_json = serde_json::to_string_pretty(&config)?;
+        fs::write(config_path, config_json).await?;
+    }
 
     Ok(())
 }
@@ -197,4 +229,26 @@ pub async fn open_main_window(
     }
 
     Ok(())
+}
+
+async fn handle_initialization(
+    config: Config,
+    config_dir: PathBuf,
+) -> Result<InitializedState, Error> {
+    init_subscriber(
+        &config.rust_log.clone().unwrap_or_default(),
+        &config.otlp_collector_endpoint.clone().unwrap_or_default(),
+    )
+    .map_err(|_| Error::Other("Failed to initialize subscriber".to_string()))?;
+
+    let sqlite_pool = db::init_db(config_dir, &config.sqlite_db, config.has_logged_in).await?;
+
+    let rpc_llm_client = config::init_rpc(&config.rpc_server).await?;
+
+    let initialized_state = config::InitializedState {
+        rpc_llm_client,
+        sqlite_pool,
+    };
+
+    Ok(initialized_state)
 }

@@ -6,6 +6,8 @@ const INITIAL_EMPTY_RETRY_DELAY_MS = 1500;
 const INITIAL_EMPTY_RETRY_MAX = 30;
 const AUTO_BOOTSTRAP_REFRESH_INTERVAL_MS = 3000;
 const AUTO_BOOTSTRAP_REFRESH_MAX = 20;
+const EMAIL_CACHE_KEY = "pemail.cachedEmails.v1";
+const MAX_CACHED_EMAILS = 1200;
 
 window.addEventListener("DOMContentLoaded", () => {
   const folderButtons = document.querySelectorAll(".folder-btn");
@@ -32,6 +34,7 @@ window.addEventListener("DOMContentLoaded", () => {
     activeFolder: "inbox",
     selectedId: null,
     query: "",
+    isAppReady: false,
     nextOffset: 0,
     isLoadingEmails: false,
     hasMoreEmails: true,
@@ -44,6 +47,33 @@ window.addEventListener("DOMContentLoaded", () => {
 
   function getEmails() {
     return state.emails;
+  }
+
+  function loadCachedEmails() {
+    try {
+      const raw = window.localStorage.getItem(EMAIL_CACHE_KEY);
+      if (!raw) {
+        return [];
+      }
+
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+
+      return parsed;
+    } catch (_error) {
+      return [];
+    }
+  }
+
+  function saveCachedEmails() {
+    try {
+      const payload = state.emails.slice(0, MAX_CACHED_EMAILS);
+      window.localStorage.setItem(EMAIL_CACHE_KEY, JSON.stringify(payload));
+    } catch (_error) {
+      // Ignore storage failures (quota/privacy mode).
+    }
   }
 
   function showMessage(text, isError = false) {
@@ -135,6 +165,12 @@ window.addEventListener("DOMContentLoaded", () => {
 
     selected.read = true;
 
+    const hasHtmlBody = typeof selected.htmlBody === "string" && selected.htmlBody.trim().length > 0;
+    const textBody =
+      (typeof selected.textBody === "string" && selected.textBody.trim().length > 0
+        ? selected.textBody
+        : selected.body) || "No message body";
+
     mailReaderEl.className = "mail-reader";
     mailReaderEl.innerHTML = `
       <div class="reader-head">
@@ -145,8 +181,19 @@ window.addEventListener("DOMContentLoaded", () => {
           <span><strong>Received:</strong> ${selected.time}</span>
         </div>
       </div>
-      <div class="reader-body">${selected.body}</div>
+      ${
+        hasHtmlBody
+          ? '<iframe class="reader-html-frame" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe>'
+          : `<div class="reader-body reader-body-text">${textBody}</div>`
+      }
     `;
+
+    if (hasHtmlBody) {
+      const frame = mailReaderEl.querySelector(".reader-html-frame");
+      if (frame) {
+        frame.srcdoc = selected.htmlBody;
+      }
+    }
   }
 
   function renderList() {
@@ -207,6 +254,10 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   async function loadMoreEmails(batchSize, { reset = false } = {}) {
+    if (!state.isAppReady) {
+      return;
+    }
+
     if (state.isLoadingEmails) {
       return;
     }
@@ -216,8 +267,11 @@ window.addEventListener("DOMContentLoaded", () => {
     }
 
     if (reset) {
-      state.emails = [];
-      state.selectedId = null;
+      const hasExistingData = state.emails.length > 0;
+      if (!hasExistingData) {
+        state.emails = [];
+        state.selectedId = null;
+      }
       state.nextOffset = 0;
       state.hasMoreEmails = true;
       state.initialEmptyRetries = 0;
@@ -249,6 +303,10 @@ window.addEventListener("DOMContentLoaded", () => {
         state.emails.push(...uniquePage);
       }
 
+      if (page.length > 0 || reset) {
+        saveCachedEmails();
+      }
+
       state.nextOffset += page.length;
 
       if (page.length === 0 && minRange === 0 && state.initialEmptyRetries < INITIAL_EMPTY_RETRY_MAX) {
@@ -266,13 +324,17 @@ window.addEventListener("DOMContentLoaded", () => {
       }
 
       if (page.length === 0 && minRange === 0) {
-        if (state.initialEmptyRetries >= INITIAL_EMPTY_RETRY_MAX) {
+        if (state.initialEmptyRetries >= INITIAL_EMPTY_RETRY_MAX && state.emails.length === 0) {
           showMessage("No emails found in local database.");
         }
       }
     } catch (error) {
       const message = error?.message || error?.msg || String(error);
-      showMessage(`Failed to load emails: ${message}`, true);
+      if (state.emails.length > 0) {
+        showMessage("Showing cached emails while reconnecting.");
+      } else {
+        showMessage(`Failed to load emails: ${message}`, true);
+      }
     } finally {
       state.isLoadingEmails = false;
       renderList();
@@ -282,6 +344,7 @@ window.addEventListener("DOMContentLoaded", () => {
   async function checkInitStatus() {
     try {
       const status = await invoke("check_init_status");
+      const isSignedIn = status === "signed_in" || status === "signedin";
 
       if (status === "setup") {
         window.location.replace("/setup.html");
@@ -293,7 +356,7 @@ window.addEventListener("DOMContentLoaded", () => {
         return false;
       }
 
-      return status === "signed_in";
+      return isSignedIn;
     } catch (_err) {
       showMessage("Failed to check initialization status.", true);
       return false;
@@ -360,6 +423,7 @@ window.addEventListener("DOMContentLoaded", () => {
     });
     state.selectedId = draftId;
     renderList();
+    saveCachedEmails();
     showMessage("Draft created in Sent.");
   });
 
@@ -378,6 +442,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
     selected.read = true;
     renderList();
+    saveCachedEmails();
     showMessage("Marked as read.");
   });
 
@@ -392,6 +457,7 @@ window.addEventListener("DOMContentLoaded", () => {
     selected.folder = "archive";
     state.selectedId = null;
     renderList();
+    saveCachedEmails();
     showMessage("Email moved to archive.");
   });
 
@@ -423,8 +489,19 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  loadMoreEmails(INITIAL_BATCH_SIZE, { reset: true });
-  startBootstrapRefresh();
+  state.emails = loadCachedEmails();
+  if (state.emails.length > 0) {
+    renderList();
+  }
 
-  checkInitStatus();
+  (async () => {
+    const isReady = await checkInitStatus();
+    if (!isReady) {
+      return;
+    }
+
+    state.isAppReady = true;
+    loadMoreEmails(INITIAL_BATCH_SIZE, { reset: true });
+    startBootstrapRefresh();
+  })();
 });

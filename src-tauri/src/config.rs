@@ -7,7 +7,7 @@ use tarpc::{client, serde_transport::tcp, tokio_serde::formats::Json};
 use tokio::fs;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum InitStatus {
     /// Configuration file doesn't exist - user needs to complete full setup
     Setup,
@@ -19,7 +19,7 @@ pub enum InitStatus {
     ReturningSigned,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Config {
     pub rpc_server: String,
     pub imap_server: String,
@@ -29,6 +29,8 @@ pub struct Config {
     pub rust_log: Option<String>,
     pub otlp_collector_endpoint: Option<String>,
     pub email_cache_size: u32,
+    #[serde(default)]
+    pub has_logged_in: bool,
 }
 
 impl Config {

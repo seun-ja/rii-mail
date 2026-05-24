@@ -135,31 +135,30 @@ impl CompleteEmail {
         let labels = self.labels.unwrap_or_default();
         let (folder, starred) = map_folder_and_starred(&labels);
 
-        let (subject, sender_name, email_from, preview, body) = if let Some(content) = self.body {
-            let body = if !content.text_body.trim().is_empty() {
-                content.text_body.clone()
-            } else if !content.html_body.trim().is_empty() {
-                content.html_body.clone()
-            } else {
-                "No message body".to_string()
-            };
+        let (subject, sender_name, email_from, preview, body, text_body, html_body) =
+            match self.body {
+                Some(content) => {
+                    let body = match (
+                        content.text_body.trim().is_empty(),
+                        content.html_body.trim().is_empty(),
+                    ) {
+                        (false, _) => content.text_body.clone(),
+                        (true, false) => content.html_body.clone(),
+                        _ => "No message body".to_string(),
+                    };
 
-            (
-                content.subject,
-                content.sender_name,
-                content.email_from,
-                content.preview,
-                normalize_text(&body, 2000),
-            )
-        } else {
-            (
-                "No Subject".to_string(),
-                "Unknown Sender".to_string(),
-                "unknown@local".to_string(),
-                "No preview available".to_string(),
-                "No message body".to_string(),
-            )
-        };
+                    (
+                        normalize_text(&content.subject, 160),
+                        content.sender_name,
+                        content.email_from,
+                        normalize_text(&content.preview, 120),
+                        normalize_text(&body, 2000),
+                        content.text_body,
+                        content.html_body,
+                    )
+                }
+                None => Default::default(),
+            };
 
         let time = self
             .date
@@ -171,9 +170,11 @@ impl CompleteEmail {
             folder,
             sender_name,
             email_from,
-            subject: normalize_text(&subject, 160),
-            preview: normalize_text(&preview, 120),
+            subject,
+            preview,
             body,
+            text_body,
+            html_body,
             time,
             starred,
             read: false,
@@ -228,6 +229,8 @@ pub struct FrontendEmail {
     pub subject: String,
     pub preview: String,
     pub body: String,
+    pub text_body: String,
+    pub html_body: String,
     pub time: String,
     pub starred: bool,
     pub read: bool,
