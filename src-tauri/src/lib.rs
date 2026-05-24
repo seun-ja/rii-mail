@@ -4,7 +4,7 @@ use std::fs;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Emitter as _, LogicalSize, Manager as _, Size};
 
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 
 use crate::config::ImapClientConfig;
 use crate::handlers::fetch_emails_handler;
@@ -36,12 +36,15 @@ pub async fn run() {
 
     let (imap_cmd_channel_tx, imap_cmd_channel_rx) = mpsc::unbounded_channel::<ImapCommand>();
 
-    session_thread(imap_client_channel_rx, imap_cmd_channel_rx);
+    let (logout_state_tx, logout_state_rx) = mpsc::unbounded_channel::<()>();
+
+    session_thread(imap_client_channel_rx, imap_cmd_channel_rx, logout_state_tx);
 
     tauri::Builder::default()
         .manage(ArcSwap::from_pointee(AppState::Fresh))
         .manage(imap_client_channel_tx)
         .manage(imap_cmd_channel_tx)
+        .manage(Mutex::new(logout_state_rx))
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let app_about = PredefinedMenuItem::about(app, None, None)?;
@@ -117,15 +120,27 @@ pub async fn run() {
                     ::tracing::warn!(error = ?err, "Menu logout failed");
                 }
 
-                if let Some(window) = app_handle.get_webview_window("main-app") {
+                let target_window = app_handle
+                    .get_webview_window("main-app")
+                    .or_else(|| app_handle.get_webview_window("main"));
+
+                if let Some(window) = target_window {
                     let compact_size = Size::Logical(LogicalSize::new(500.0, 700.0));
 
-                    if let Err(err) = window.set_resizable(false) {
-                        ::tracing::warn!(error = ?err, "Failed to set compact window resizable state");
+                    if let Err(err) = window.set_max_size::<Size>(None) {
+                        ::tracing::warn!(error = ?err, "Failed to reset compact window max size");
+                    }
+
+                    if let Err(err) = window.set_min_size(Some(compact_size)) {
+                        ::tracing::warn!(error = ?err, "Failed to set compact window min size");
                     }
 
                     if let Err(err) = window.set_size(compact_size) {
                         ::tracing::warn!(error = ?err, "Failed to set compact window size");
+                    }
+
+                    if let Err(err) = window.set_resizable(false) {
+                        ::tracing::warn!(error = ?err, "Failed to set compact window resizable state");
                     }
 
                     if let Err(err) = window.eval("window.location.replace('/setup.html')") {

@@ -2,12 +2,12 @@ use async_imap::Client;
 use async_native_tls::TlsStream;
 use tokio::net::TcpStream;
 
-use crate::error::Error;
+use crate::{db, error::Error};
 
 #[derive(Debug)]
 pub enum ImapCommand {
     Logout,
-    FetchEmails(u32),
+    FetchEmails(u32, db::MailBox, db::Providers),
 }
 
 pub async fn init_imap_client(

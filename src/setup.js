@@ -45,6 +45,13 @@ window.addEventListener("DOMContentLoaded", () => {
         imapServer: imapServer,
         imapPort: imapPort,
       });
+
+      const normalizedProvider = imapServer.toLowerCase().includes("yahoo")
+        ? "yahoo"
+        : "gmail";
+      window.localStorage.setItem("pemail.provider", normalizedProvider);
+      window.localStorage.setItem("pemail.imapServer", imapServer);
+
       setupMsgEl.textContent = "Configuration saved. Redirecting to login...";
 
       // Redirect to login page after setup completes

@@ -10,6 +10,15 @@
 
     <body class="home-page">
         <div class="mail-app">
+            <div id="sync-overlay" class="sync-overlay hidden" aria-live="polite" aria-busy="true">
+                <div class="sync-overlay-card">
+                    <div id="sync-message" class="sync-message">Syncing...</div>
+                    <div class="sync-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                        <div id="sync-progress-bar" class="sync-progress-bar"></div>
+                    </div>
+                </div>
+            </div>
+
             <header class="mail-topbar">
                 <div class="topbar-brand">
                     <span class="brand-icon" aria-hidden="true">
@@ -36,21 +45,33 @@
 
             <div class="mail-body">
                 <aside class="mail-sidebar">
-                    <div class="sidebar-group">
-                        <button class="folder-btn active" type="button" data-folder="inbox">
-                            Inbox
+                    <div class="sidebar-head">
+                        <h2 class="sidebar-title">Mailboxes</h2>
+                        <button
+                            id="sidebar-toggle-btn"
+                            class="sidebar-toggle-btn"
+                            type="button"
+                            aria-expanded="true"
+                            aria-label="Collapse mailbox section"
+                        >
+                            <img src="/assets/collapse.png" alt="" class="sidebar-toggle-icon" />
+                        </button>
+                    </div>
+                    <div class="sidebar-group" id="folder-section">
+                        <button class="folder-btn active" type="button" data-folder="INBOX">
+                            <span class="folder-label">Inbox</span>
                             <span class="folder-count" id="count-inbox">0</span>
                         </button>
                         <button class="folder-btn" type="button" data-folder="starred">
-                            Starred
+                            <span class="folder-label">Starred</span>
                             <span class="folder-count" id="count-starred">0</span>
                         </button>
-                        <button class="folder-btn" type="button" data-folder="sent">
-                            Sent
+                        <button class="folder-btn" type="button" data-folder="Sent">
+                            <span class="folder-label">Sent</span>
                             <span class="folder-count" id="count-sent">0</span>
                         </button>
-                        <button class="folder-btn" type="button" data-folder="archive">
-                            Archive
+                        <button class="folder-btn" type="button" data-folder="Trash">
+                            <span class="folder-label">Trash</span>
                             <span class="folder-count" id="count-archive">0</span>
                         </button>
                     </div>
@@ -73,6 +94,14 @@
                     </div>
                     <ul id="mail-list" class="mail-list" aria-label="Email list"></ul>
                 </section>
+
+                <div
+                    id="reader-resizer"
+                    class="mail-resizer"
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="Resize email list and reader"
+                ></div>
 
                 <section class="mail-reader-panel">
                     <div id="mail-reader" class="mail-reader empty-state">

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::{config::AppState, db, error::Error, imap::ImapCommand};
 use arc_swap::ArcSwap;
 use tauri::Manager as _;
-use tokio::{fs, sync::mpsc::UnboundedSender};
+use tokio::{fs, sync::{mpsc::UnboundedSender, Mutex}};
 
 #[tracing::instrument(name = "command.logout.menu", skip(app))]
 pub async fn logout_with_state(app: tauri::AppHandle) -> Result<(), Error> {
@@ -19,20 +19,20 @@ pub async fn logout_with_state(app: tauri::AppHandle) -> Result<(), Error> {
         }
     }
 
-    let state = app.state::<ArcSwap<AppState>>();
-    let sqlite_pool = {
-        let current_state = state.load();
-        match current_state.as_ref() {
-            AppState::Initialized(initialized) => Some(initialized.sqlite_pool.clone()),
-            AppState::Fresh => None,
-        }
-    };
+    let app_state = app.state::<ArcSwap<AppState>>();
+    let logout_state_rx = app.state::<Mutex<tokio::sync::mpsc::UnboundedReceiver<()>>>();
 
-    if let Some(pool) = sqlite_pool {
-        db::cleanup(&pool).await?;
-    }
+    let db_path = config_dir.join("data");
+    db::cleanup(db_path).await?;
 
-    state.store(Arc::new(AppState::Fresh));
+    tracing::info!("Waiting for logout confirmation from session thread");
+
+    let mut logout_state_rx = logout_state_rx.lock().await;
+    let _ = logout_state_rx.recv().await;
+
+    tracing::info!("Received logout confirmation from session thread");
+
+    app_state.store(Arc::new(AppState::Fresh));
 
     Ok(())
 }

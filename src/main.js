@@ -2,7 +2,7 @@ const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 const INITIAL_BATCH_SIZE = 300;
 const NEXT_BATCH_SIZE = 50;
-const INITIAL_EMPTY_RETRY_DELAY_MS = 1500;
+const INITIAL_EMPTY_RETRY_DELAY_MS = 3000;
 const INITIAL_EMPTY_RETRY_MAX = 30;
 const AUTO_BOOTSTRAP_REFRESH_INTERVAL_MS = 3000;
 const AUTO_BOOTSTRAP_REFRESH_MAX = 20;
@@ -11,8 +11,12 @@ const MAX_CACHED_EMAILS = 1200;
 
 window.addEventListener("DOMContentLoaded", () => {
   const folderButtons = document.querySelectorAll(".folder-btn");
+  const mailBodyEl = document.querySelector(".mail-body");
+  const mailListPanelEl = document.querySelector(".mail-list-panel");
   const mailListEl = document.querySelector("#mail-list");
   const mailReaderEl = document.querySelector("#mail-reader");
+  const sidebarToggleBtnEl = document.querySelector("#sidebar-toggle-btn");
+  const readerResizerEl = document.querySelector("#reader-resizer");
   const searchInputEl = document.querySelector("#mail-search");
   const composeBtnEl = document.querySelector("#compose-btn");
   const refreshBtnEl = document.querySelector("#refresh-btn");
@@ -20,9 +24,21 @@ window.addEventListener("DOMContentLoaded", () => {
   const markReadBtnEl = document.querySelector("#mark-read-btn");
   const archiveBtnEl = document.querySelector("#archive-btn");
   const resultMsgEl = document.querySelector("#result-msg");
+  const syncOverlayEl = document.querySelector("#sync-overlay");
+  const syncMessageEl = document.querySelector("#sync-message");
+  const syncProgressBarEl = document.querySelector("#sync-progress-bar");
 
   if (listen) {
     listen("app://logged-out", () => {
+      state.allowFetch = false;
+      state.isAppReady = false;
+      stopBootstrapRefresh();
+      clearInitialEmptyRetry();
+      clearInitialSyncPoll();
+      window.localStorage.removeItem(EMAIL_CACHE_KEY);
+      state.cachedByFolder.INBOX = [];
+      state.cachedByFolder.Sent = [];
+      state.cachedByFolder.Trash = [];
       window.location.replace("/setup.html");
     }).catch(() => {
       // Ignore listener setup failures in non-Tauri contexts.
@@ -31,7 +47,12 @@ window.addEventListener("DOMContentLoaded", () => {
 
   const state = {
     emails: [],
-    activeFolder: "inbox",
+    cachedByFolder: {
+      INBOX: [],
+      Sent: [],
+      Trash: [],
+    },
+    activeFolder: "INBOX",
     selectedId: null,
     query: "",
     isAppReady: false,
@@ -39,14 +60,92 @@ window.addEventListener("DOMContentLoaded", () => {
     isLoadingEmails: false,
     hasMoreEmails: true,
     initialEmptyRetries: 0,
+    initialEmptyRetryTimer: null,
     bootstrapRefreshAttempts: 0,
     bootstrapRefreshTimer: null,
+    isSidebarCollapsed: false,
+    isResizingReader: false,
+    lastFetchSignature: null,
+    lastFetchAt: 0,
+    syncProgressPercent: 0,
+    allowFetch: true,
+    isInitialSyncComplete: false,
+    initialSyncPollTimer: null,
   };
 
   let toastTimer = null;
 
+  function setSyncUiState(locked, message = "Syncing...", percent = 0) {
+    if (!syncOverlayEl || !syncMessageEl || !syncProgressBarEl) {
+      return;
+    }
+
+    syncOverlayEl.classList.toggle("hidden", !locked);
+    syncMessageEl.textContent = message;
+    syncProgressBarEl.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+    syncOverlayEl
+      .querySelector("[role='progressbar']")
+      ?.setAttribute("aria-valuenow", String(Math.round(Math.max(0, Math.min(100, percent)))));
+
+    document.querySelector(".mail-app")?.classList.toggle("sync-locked", locked);
+  }
+
+  function delay(ms) {
+    return new Promise((resolve) => {
+      window.setTimeout(resolve, ms);
+    });
+  }
+
+  function clearInitialSyncPoll() {
+    if (state.initialSyncPollTimer) {
+      clearTimeout(state.initialSyncPollTimer);
+      state.initialSyncPollTimer = null;
+    }
+  }
+
   function getEmails() {
-    return state.emails;
+    return [
+      ...state.cachedByFolder.INBOX,
+      ...state.cachedByFolder.Sent,
+      ...state.cachedByFolder.Trash,
+    ];
+  }
+
+  function getActiveBackendFolderKey() {
+    if (state.activeFolder === "Sent") {
+      return "Sent";
+    }
+
+    if (state.activeFolder === "Trash") {
+      return "Trash";
+    }
+
+    return "INBOX";
+  }
+
+  function getActiveMailboxLiteral() {
+    return getActiveBackendFolderKey();
+  }
+
+  function getProviderLiteral() {
+    const savedImapServer = (window.localStorage.getItem("pemail.imapServer") || "").toLowerCase();
+
+    if (savedImapServer.includes("yahoo")) {
+      window.localStorage.setItem("pemail.provider", "yahoo");
+      return "yahoo";
+    }
+
+    if (savedImapServer.includes("gmail")) {
+      window.localStorage.setItem("pemail.provider", "gmail");
+      return "gmail";
+    }
+
+    const savedProvider = window.localStorage.getItem("pemail.provider");
+    if (savedProvider === "gmail" || savedProvider === "yahoo") {
+      return savedProvider;
+    }
+
+    return "yahoo";
   }
 
   function loadCachedEmails() {
@@ -69,11 +168,34 @@ window.addEventListener("DOMContentLoaded", () => {
 
   function saveCachedEmails() {
     try {
-      const payload = state.emails.slice(0, MAX_CACHED_EMAILS);
+      const payload = getEmails().slice(0, MAX_CACHED_EMAILS);
       window.localStorage.setItem(EMAIL_CACHE_KEY, JSON.stringify(payload));
     } catch (_error) {
       // Ignore storage failures (quota/privacy mode).
     }
+  }
+
+  function hydrateFolderCachesFromStorage() {
+    const cached = loadCachedEmails();
+
+    state.cachedByFolder.INBOX = [];
+    state.cachedByFolder.Sent = [];
+    state.cachedByFolder.Trash = [];
+
+    cached.forEach((mail) => {
+      const folder = String(mail?.folder || "").toLowerCase();
+
+      if (
+        folder === "sent" ||
+        (typeof mail?.id === "string" && mail.id.startsWith("db-Sent-"))
+      ) {
+        state.cachedByFolder.Sent.push({ ...mail, folder: "Sent" });
+      } else if (folder === "trash" || folder === "archive") {
+        state.cachedByFolder.Trash.push({ ...mail, folder: "Trash" });
+      } else {
+        state.cachedByFolder.INBOX.push({ ...mail, folder: "INBOX" });
+      }
+    });
   }
 
   function showMessage(text, isError = false) {
@@ -90,10 +212,84 @@ window.addEventListener("DOMContentLoaded", () => {
     }, 2800);
   }
 
+  function syncLayoutState() {
+    if (!mailBodyEl) {
+      return;
+    }
+
+    mailBodyEl.classList.toggle("sidebar-collapsed", state.isSidebarCollapsed);
+
+    if (sidebarToggleBtnEl) {
+      sidebarToggleBtnEl.setAttribute("aria-expanded", String(!state.isSidebarCollapsed));
+      sidebarToggleBtnEl.setAttribute(
+        "aria-label",
+        state.isSidebarCollapsed ? "Expand mailbox section" : "Collapse mailbox section"
+      );
+      sidebarToggleBtnEl.classList.toggle("is-collapsed", state.isSidebarCollapsed);
+    }
+
+    if (window.innerWidth > 980 && mailListPanelEl) {
+      setReaderListWidth(mailListPanelEl.getBoundingClientRect().width);
+    }
+  }
+
+  function setReaderListWidth(nextWidthPx) {
+    if (!mailBodyEl) {
+      return;
+    }
+
+    const bodyRect = mailBodyEl.getBoundingClientRect();
+    const sidebarWidth = state.isSidebarCollapsed ? 74 : 220;
+    const resizerWidth = 10;
+    const minListWidth = 260;
+    const minReaderWidth = 360;
+    const maxListWidth = Math.max(
+      minListWidth,
+      bodyRect.width - sidebarWidth - resizerWidth - minReaderWidth
+    );
+    const clamped = Math.max(minListWidth, Math.min(nextWidthPx, maxListWidth));
+
+    mailBodyEl.style.setProperty("--list-panel-width", `${Math.round(clamped)}px`);
+  }
+
+  function onReaderResizeMove(event) {
+    if (!state.isResizingReader || !mailBodyEl) {
+      return;
+    }
+
+    const bodyRect = mailBodyEl.getBoundingClientRect();
+    const sidebarWidth = state.isSidebarCollapsed ? 74 : 220;
+    const relativeX = event.clientX - bodyRect.left - sidebarWidth;
+
+    setReaderListWidth(relativeX);
+  }
+
+  function onReaderResizeEnd() {
+    if (!state.isResizingReader) {
+      return;
+    }
+
+    state.isResizingReader = false;
+    document.body.style.cursor = "";
+    if (readerResizerEl) {
+      readerResizerEl.classList.remove("is-dragging");
+    }
+    window.removeEventListener("pointermove", onReaderResizeMove);
+    window.removeEventListener("pointerup", onReaderResizeEnd);
+    window.removeEventListener("pointercancel", onReaderResizeEnd);
+  }
+
   function stopBootstrapRefresh() {
     if (state.bootstrapRefreshTimer) {
       clearInterval(state.bootstrapRefreshTimer);
       state.bootstrapRefreshTimer = null;
+    }
+  }
+
+  function clearInitialEmptyRetry() {
+    if (state.initialEmptyRetryTimer) {
+      clearTimeout(state.initialEmptyRetryTimer);
+      state.initialEmptyRetryTimer = null;
     }
   }
 
@@ -102,7 +298,7 @@ window.addEventListener("DOMContentLoaded", () => {
     state.bootstrapRefreshAttempts = 0;
 
     state.bootstrapRefreshTimer = setInterval(() => {
-      if (state.emails.length > 0 || state.bootstrapRefreshAttempts >= AUTO_BOOTSTRAP_REFRESH_MAX) {
+      if (getEmails().length > 0 || state.bootstrapRefreshAttempts >= AUTO_BOOTSTRAP_REFRESH_MAX) {
         stopBootstrapRefresh();
         return;
       }
@@ -122,7 +318,7 @@ window.addEventListener("DOMContentLoaded", () => {
         return mail.starred;
       }
 
-      return mail.folder === state.activeFolder;
+      return String(mail.folder || "").toLowerCase() === state.activeFolder.toLowerCase();
     });
 
     if (!query) {
@@ -137,10 +333,13 @@ window.addEventListener("DOMContentLoaded", () => {
 
   function updateCounts() {
     const counts = {
-      inbox: getEmails().filter((mail) => mail.folder === "inbox").length,
+      inbox: getEmails().filter((mail) => String(mail.folder || "").toLowerCase() === "inbox").length,
       starred: getEmails().filter((mail) => mail.starred).length,
-      sent: getEmails().filter((mail) => mail.folder === "sent").length,
-      archive: getEmails().filter((mail) => mail.folder === "archive").length,
+      sent: getEmails().filter((mail) => String(mail.folder || "").toLowerCase() === "sent").length,
+      archive: getEmails().filter((mail) => {
+        const folder = String(mail.folder || "").toLowerCase();
+        return folder === "trash" || folder === "archive";
+      }).length,
     };
 
     document.querySelector("#count-inbox").textContent = String(counts.inbox);
@@ -201,10 +400,14 @@ window.addEventListener("DOMContentLoaded", () => {
 
     if (visibleEmails.length === 0) {
       if (state.isLoadingEmails) {
+        const syncLabel =
+          state.syncProgressPercent > 0
+            ? `Syncing... ${state.syncProgressPercent}%`
+            : "Loading emails...";
         mailListEl.innerHTML = `
           <li class="mail-item">
             <div class="mail-item-content">
-              <div class="mail-item-subject">Loading emails...</div>
+              <div class="mail-item-subject">${syncLabel}</div>
               <div class="mail-item-preview">Please wait while we fetch your mailbox.</div>
             </div>
           </li>
@@ -253,7 +456,14 @@ window.addEventListener("DOMContentLoaded", () => {
     updateCounts();
   }
 
-  async function loadMoreEmails(batchSize, { reset = false } = {}) {
+  async function loadMoreEmails(
+    batchSize,
+    { reset = false, preserveEmptyRetryState = false } = {}
+  ) {
+    if (!state.allowFetch) {
+      return;
+    }
+
     if (!state.isAppReady) {
       return;
     }
@@ -266,41 +476,64 @@ window.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    const folderKey = getActiveBackendFolderKey();
+
     if (reset) {
-      const hasExistingData = state.emails.length > 0;
+      const hasExistingData = state.cachedByFolder[folderKey].length > 0;
       if (!hasExistingData) {
-        state.emails = [];
         state.selectedId = null;
       }
       state.nextOffset = 0;
       state.hasMoreEmails = true;
-      state.initialEmptyRetries = 0;
+
+      if (!preserveEmptyRetryState) {
+        state.initialEmptyRetries = 0;
+        clearInitialEmptyRetry();
+      }
     }
 
     const minRange = state.nextOffset;
     const maxRange = minRange + batchSize;
+    const fetchSignature = `${state.activeFolder}:${minRange}:${maxRange}`;
+    const now = Date.now();
+
+    // Guard against back-to-back duplicate retries for the same page.
+    if (state.lastFetchSignature === fetchSignature && now - state.lastFetchAt < 1200) {
+      return;
+    }
+
+    state.lastFetchSignature = fetchSignature;
+    state.lastFetchAt = now;
 
     state.isLoadingEmails = true;
     renderList();
 
     try {
+      const mailbox = getActiveMailboxLiteral();
+      const provider = getProviderLiteral();
+
       const fetched = await invoke("fetch_emails_handler", {
         minRange,
         maxRange,
+        mailbox,
+        provider,
       });
 
       const page = Array.isArray(fetched) ? fetched : [];
 
       if (page.length > 0) {
         stopBootstrapRefresh();
+        clearInitialEmptyRetry();
+        state.initialEmptyRetries = 0;
+        state.syncProgressPercent = 100;
       }
 
       if (reset) {
-        state.emails = page;
+        state.cachedByFolder[folderKey] = page;
       } else {
-        const existingIds = new Set(state.emails.map((mail) => mail.id));
+        const existingIds = new Set(state.cachedByFolder[folderKey].map((mail) => mail.id));
         const uniquePage = page.filter((mail) => !existingIds.has(mail.id));
-        state.emails.push(...uniquePage);
+        state.cachedByFolder[folderKey].push(...uniquePage);
       }
 
       if (page.length > 0 || reset) {
@@ -309,28 +542,13 @@ window.addEventListener("DOMContentLoaded", () => {
 
       state.nextOffset += page.length;
 
-      if (page.length === 0 && minRange === 0 && state.initialEmptyRetries < INITIAL_EMPTY_RETRY_MAX) {
-        state.initialEmptyRetries += 1;
-        state.hasMoreEmails = true;
-
-        const attemptLabel = `${state.initialEmptyRetries}/${INITIAL_EMPTY_RETRY_MAX}`;
-        showMessage(`Syncing emails... (${attemptLabel})`);
-
-        setTimeout(() => {
-          loadMoreEmails(INITIAL_BATCH_SIZE, { reset: true });
-        }, INITIAL_EMPTY_RETRY_DELAY_MS);
-      } else if (page.length < batchSize) {
+      if (page.length < batchSize) {
         state.hasMoreEmails = false;
       }
 
-      if (page.length === 0 && minRange === 0) {
-        if (state.initialEmptyRetries >= INITIAL_EMPTY_RETRY_MAX && state.emails.length === 0) {
-          showMessage("No emails found in local database.");
-        }
-      }
     } catch (error) {
       const message = error?.message || error?.msg || String(error);
-      if (state.emails.length > 0) {
+      if (getEmails().length > 0) {
         showMessage("Showing cached emails while reconnecting.");
       } else {
         showMessage(`Failed to load emails: ${message}`, true);
@@ -341,17 +559,85 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  async function runInitialSync() {
+    const folders = ["INBOX", "Sent"];
+    setSyncUiState(true, "Syncing mailbox...", 2);
+
+    for (let i = 0; i < folders.length; i += 1) {
+      const folder = folders[i];
+      let page = [];
+
+      for (let attempt = 1; attempt <= INITIAL_EMPTY_RETRY_MAX; attempt += 1) {
+        if (!state.allowFetch) {
+          return;
+        }
+
+        const progress = Math.round(((i + attempt / INITIAL_EMPTY_RETRY_MAX) / folders.length) * 100);
+        setSyncUiState(true, `Syncing ${folder}...`, progress);
+
+        try {
+          const fetched = await invoke("fetch_emails_handler", {
+            minRange: 0,
+            maxRange: INITIAL_BATCH_SIZE,
+            mailbox: folder,
+            provider: getProviderLiteral(),
+          });
+          page = Array.isArray(fetched) ? fetched : [];
+        } catch (_error) {
+          page = [];
+        }
+
+        if (page.length > 0) {
+          break;
+        }
+
+        await delay(INITIAL_EMPTY_RETRY_DELAY_MS);
+      }
+
+      state.cachedByFolder[folder] = page;
+      saveCachedEmails();
+      renderList();
+      updateCounts();
+    }
+
+    const hasAnySyncedData =
+      state.cachedByFolder.INBOX.length > 0 || state.cachedByFolder.Sent.length > 0;
+
+    state.isInitialSyncComplete = hasAnySyncedData;
+
+    if (hasAnySyncedData) {
+      clearInitialSyncPoll();
+      setSyncUiState(false);
+      return;
+    }
+
+    setSyncUiState(true, "Syncing mailbox... waiting for first data", 99);
+
+    clearInitialSyncPoll();
+    state.initialSyncPollTimer = setTimeout(async () => {
+      state.initialSyncPollTimer = null;
+
+      if (!state.allowFetch || state.isInitialSyncComplete) {
+        return;
+      }
+
+      await runInitialSync();
+    }, INITIAL_EMPTY_RETRY_DELAY_MS);
+  }
+
   async function checkInitStatus() {
     try {
       const status = await invoke("check_init_status");
       const isSignedIn = status === "signed_in" || status === "signedin";
 
       if (status === "setup") {
+        window.localStorage.removeItem(EMAIL_CACHE_KEY);
         window.location.replace("/setup.html");
         return false;
       }
 
       if (status === "login") {
+        window.localStorage.removeItem(EMAIL_CACHE_KEY);
         window.location.replace("/login.html");
         return false;
       }
@@ -365,11 +651,55 @@ window.addEventListener("DOMContentLoaded", () => {
 
   folderButtons.forEach((button) => {
     button.addEventListener("click", () => {
+      clearInitialEmptyRetry();
+      state.initialEmptyRetries = 0;
+      state.syncProgressPercent = 0;
       state.activeFolder = button.dataset.folder;
       folderButtons.forEach((otherButton) => otherButton.classList.remove("active"));
       button.classList.add("active");
       renderList();
+
+      if (state.activeFolder === "INBOX" || state.activeFolder === "Sent") {
+        const folderKey = getActiveBackendFolderKey();
+        if (state.cachedByFolder[folderKey].length === 0) {
+          loadMoreEmails(INITIAL_BATCH_SIZE, { reset: true });
+        }
+      }
     });
+  });
+
+  if (sidebarToggleBtnEl) {
+    sidebarToggleBtnEl.addEventListener("click", () => {
+      state.isSidebarCollapsed = !state.isSidebarCollapsed;
+      syncLayoutState();
+    });
+  }
+
+  if (readerResizerEl) {
+    readerResizerEl.addEventListener("pointerdown", (event) => {
+      if (window.innerWidth <= 980) {
+        return;
+      }
+
+      event.preventDefault();
+      state.isResizingReader = true;
+      document.body.style.cursor = "col-resize";
+      readerResizerEl.classList.add("is-dragging");
+
+      window.addEventListener("pointermove", onReaderResizeMove);
+      window.addEventListener("pointerup", onReaderResizeEnd);
+      window.addEventListener("pointercancel", onReaderResizeEnd);
+    });
+  }
+
+  window.addEventListener("resize", () => {
+    if (window.innerWidth <= 980) {
+      return;
+    }
+
+    if (mailListPanelEl) {
+      setReaderListWidth(mailListPanelEl.getBoundingClientRect().width);
+    }
   });
 
   mailListEl.addEventListener("click", (event) => {
@@ -404,9 +734,9 @@ window.addEventListener("DOMContentLoaded", () => {
 
   composeBtnEl.addEventListener("click", () => {
     const draftId = `draft-${Date.now()}`;
-    state.emails.unshift({
+    state.cachedByFolder.Sent.unshift({
       id: draftId,
-      folder: "sent",
+      folder: "Sent",
       senderName: "You",
       emailFrom: "you@company.com",
       subject: "Draft: New message",
@@ -417,9 +747,9 @@ window.addEventListener("DOMContentLoaded", () => {
       read: true,
     });
 
-    state.activeFolder = "sent";
+    state.activeFolder = "Sent";
     folderButtons.forEach((otherButton) => {
-      otherButton.classList.toggle("active", otherButton.dataset.folder === "sent");
+      otherButton.classList.toggle("active", otherButton.dataset.folder === "Sent");
     });
     state.selectedId = draftId;
     renderList();
@@ -454,7 +784,7 @@ window.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    selected.folder = "archive";
+    selected.folder = "Trash";
     state.selectedId = null;
     renderList();
     saveCachedEmails();
@@ -489,19 +819,27 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  state.emails = loadCachedEmails();
-  if (state.emails.length > 0) {
+  hydrateFolderCachesFromStorage();
+  syncLayoutState();
+  if (getEmails().length > 0) {
     renderList();
   }
 
   (async () => {
+    setSyncUiState(true, "Syncing mailbox...", 0);
+
     const isReady = await checkInitStatus();
     if (!isReady) {
       return;
     }
 
     state.isAppReady = true;
-    loadMoreEmails(INITIAL_BATCH_SIZE, { reset: true });
-    startBootstrapRefresh();
+    await runInitialSync();
+
+    if (!state.isInitialSyncComplete) {
+      return;
+    }
+
+    setSyncUiState(false);
   })();
 });

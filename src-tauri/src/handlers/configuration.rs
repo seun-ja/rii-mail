@@ -9,10 +9,9 @@ use tokio::{
 
 use crate::{
     config::{self, AppState, Config, ImapClientConfig, InitStatus, InitializedState},
-    db,
+    db::{self, MailBox, Providers},
     error::Error,
     imap::ImapCommand,
-    // llm::{self, Providers},
     tracing::init_subscriber,
 };
 
@@ -89,7 +88,7 @@ pub async fn check_init_status(app: tauri::AppHandle) -> Result<InitStatus, Erro
             Ok(InitStatus::SignedIn)
         }
         AppState::Fresh => match handle_initialization(config.clone(), config_dir).await {
-            Ok(initialized_state) => {
+            Ok((initialized_state, _provider)) => {
                 app_state.store(Arc::new(AppState::Initialized(Arc::new(initialized_state))));
                 ensure_expanded_startup_window(&app)?;
 
@@ -129,7 +128,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
         Error::Other("Configuration not found. Please run setup first.".to_string())
     })?;
 
-    let initialized_state = handle_initialization(config.clone(), config_dir).await?;
+    let (initialized_state, provider) = handle_initialization(config.clone(), config_dir).await?;
 
     let imap_client_channel_tx = app.state::<UnboundedSender<ImapClientConfig>>();
     let imap_cmd_channel_tx = app.state::<UnboundedSender<ImapCommand>>();
@@ -157,7 +156,18 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
         }
     }
 
-    imap_cmd_channel_tx.send(ImapCommand::FetchEmails(config.email_cache_size))?;
+    imap_cmd_channel_tx.send(ImapCommand::FetchEmails(
+        config.email_cache_size,
+        MailBox::Inbox,
+        provider.clone(),
+    ))?;
+
+    // move to another thread
+    imap_cmd_channel_tx.send(ImapCommand::FetchEmails(
+        config.email_cache_size,
+        MailBox::Sent,
+        provider,
+    ))?;
 
     // TODO: Make configurable
     // let provider = Providers::LocalInference;
@@ -234,14 +244,26 @@ pub async fn open_main_window(
 async fn handle_initialization(
     config: Config,
     config_dir: PathBuf,
-) -> Result<InitializedState, Error> {
+) -> Result<(InitializedState, Providers), Error> {
     init_subscriber(
         &config.rust_log.clone().unwrap_or_default(),
         &config.otlp_collector_endpoint.clone().unwrap_or_default(),
     )
     .map_err(|_| Error::Other("Failed to initialize subscriber".to_string()))?;
 
-    let sqlite_pool = db::init_db(config_dir, &config.sqlite_db, config.has_logged_in).await?;
+    let provider = if config.imap_server.contains("yahoo") {
+        db::Providers::Yahoo
+    } else {
+        db::Providers::Gmail
+    };
+
+    let sqlite_pool = db::init_db(
+        config_dir,
+        &config.sqlite_db,
+        config.has_logged_in,
+        &provider,
+    )
+    .await?;
 
     let rpc_llm_client = config::init_rpc(&config.rpc_server).await?;
 
@@ -250,5 +272,5 @@ async fn handle_initialization(
         sqlite_pool,
     };
 
-    Ok(initialized_state)
+    Ok((initialized_state, provider))
 }

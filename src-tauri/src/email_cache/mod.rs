@@ -8,6 +8,20 @@ mod fetcher;
 pub use fetcher::fetch_emails;
 use sqlx::prelude::FromRow;
 
+fn extract_date_from_message(message: &Message<'_>) -> Option<DateTime<FixedOffset>> {
+    message
+        .date()
+        .map(|date| date.to_rfc3339())
+        .and_then(|date| DateTime::parse_from_rfc3339(&date).ok())
+}
+
+fn extract_date_from_raw_message(raw: &[u8]) -> Option<DateTime<FixedOffset>> {
+    MessageParser::default()
+        .parse(raw)
+        .as_ref()
+        .and_then(extract_date_from_message)
+}
+
 #[derive(FromRow)]
 pub struct Email {
     pub date: Option<DateTime<FixedOffset>>,
@@ -17,7 +31,9 @@ pub struct Email {
 
 impl From<Fetch> for Email {
     fn from(fetch: Fetch) -> Self {
-        let date = fetch.internal_date();
+        let date = fetch
+            .internal_date()
+            .or_else(|| fetch.body().and_then(extract_date_from_raw_message));
 
         let body = fetch.body().map(|b| b.to_vec());
 
@@ -31,12 +47,16 @@ impl From<Fetch> for Email {
 
 impl From<Email> for CompleteEmail {
     fn from(value: Email) -> Self {
-        let body = value
+        let parsed_message = value
             .body
-            .and_then(|b| MessageParser::default().parse(&b).map(|m| m.into()));
+            .as_deref()
+            .and_then(|raw| MessageParser::default().parse(raw));
+
+        let parsed_date = parsed_message.as_ref().and_then(extract_date_from_message);
+        let body = parsed_message.map(EmailContent::from);
 
         Self {
-            date: value.date,
+            date: value.date.or(parsed_date),
             body,
             labels: value.labels,
         }
