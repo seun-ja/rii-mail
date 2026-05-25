@@ -35,8 +35,11 @@ pub async fn fetch_emails_handler(
         .into_iter()
         .enumerate()
         .map(|(idx, email)| {
-            let mut frontend =
-                email.into_frontend(format!("db-{}-{}", mailbox.as_ref(), min_range + idx as u32));
+            let mut frontend = email.into_frontend(format!(
+                "db-{}-{}",
+                mailbox.as_ref(),
+                min_range + idx as u32
+            ));
             frontend.folder = frontend_folder.clone();
             frontend
         })

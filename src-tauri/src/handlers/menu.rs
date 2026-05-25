@@ -3,7 +3,10 @@ use std::sync::Arc;
 use crate::{config::AppState, db, error::Error, imap::ImapCommand};
 use arc_swap::ArcSwap;
 use tauri::Manager as _;
-use tokio::{fs, sync::{mpsc::UnboundedSender, Mutex}};
+use tokio::{
+    fs,
+    sync::{mpsc::UnboundedSender, Mutex},
+};
 
 #[tracing::instrument(name = "command.logout.menu", skip(app))]
 pub async fn logout_with_state(app: tauri::AppHandle) -> Result<(), Error> {
@@ -25,8 +28,6 @@ pub async fn logout_with_state(app: tauri::AppHandle) -> Result<(), Error> {
     let db_path = config_dir.join("data");
     db::cleanup(db_path).await?;
 
-    tracing::info!("Waiting for logout confirmation from session thread");
-
     let mut logout_state_rx = logout_state_rx.lock().await;
     let _ = logout_state_rx.recv().await;
 
@@ -35,10 +36,4 @@ pub async fn logout_with_state(app: tauri::AppHandle) -> Result<(), Error> {
     app_state.store(Arc::new(AppState::Fresh));
 
     Ok(())
-}
-
-#[tauri::command]
-#[tracing::instrument(name = "command.logout", skip(app))]
-pub async fn logout(app: tauri::AppHandle) -> Result<(), Error> {
-    logout_with_state(app).await
 }

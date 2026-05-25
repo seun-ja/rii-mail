@@ -13,7 +13,7 @@ use crate::workers::session_thread;
 use crate::{
     config::{AppState, Config},
     handlers::{
-        check_init_status, config_setup, login, logout, logout_with_state, open_main_window, rater,
+        check_init_status, config_setup, login, logout_with_state, open_main_window, rater,
     },
 };
 
@@ -118,6 +118,8 @@ pub async fn run() {
             tauri::async_runtime::spawn(async move {
                 if let Err(err) = logout_with_state(app_handle.clone()).await {
                     ::tracing::warn!(error = ?err, "Menu logout failed");
+                } else {
+                    ::tracing::info!("Logout succeeded");
                 }
 
                 let target_window = app_handle
@@ -158,7 +160,6 @@ pub async fn run() {
             config_setup,
             fetch_emails_handler,
             login,
-            logout,
             open_main_window,
             rater,
         ])
