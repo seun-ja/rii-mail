@@ -1,7 +1,7 @@
 use std::{path::PathBuf, sync::Arc};
 
 use arc_swap::ArcSwap;
-use tauri::{LogicalSize, Manager as _, Size, WebviewUrl, WebviewWindowBuilder};
+use tauri::{LogicalSize, Manager as _, Size};
 use tokio::{
     fs::{self, create_dir_all},
     sync::{mpsc::UnboundedSender, oneshot},
@@ -42,7 +42,6 @@ pub async fn config_setup(
         rust_log: Some(rust_log),
         otlp_collector_endpoint: Some(otlp_collector_endpoint),
         email_cache_size,
-        has_logged_in: false,
     };
 
     let config_dir = app.path().app_config_dir()?;
@@ -69,37 +68,17 @@ pub async fn check_init_status(app: tauri::AppHandle) -> Result<InitStatus, Erro
     let config_dir = app.path().app_config_dir()?;
     let config_path = config_dir.join("config.json");
 
-    let config = match Config::init(&config_path).await {
-        Ok(config) => config,
-        Err(_) => return Ok(InitStatus::Setup),
-    };
-
-    if !config.has_logged_in {
-        return Ok(InitStatus::Login);
+    if Config::init(&config_path).await.is_err() {
+        return Ok(InitStatus::Setup);
     }
 
-    // Config exists, check if user is already signed in
-    let app_state = app.state::<ArcSwap<AppState>>();
-    let current_state = app_state.load();
-
-    match current_state.as_ref() {
-        AppState::Initialized(_) => {
-            ensure_expanded_startup_window(&app)?;
-            Ok(InitStatus::SignedIn)
-        }
-        AppState::Fresh => match handle_initialization(config.clone(), config_dir).await {
-            Ok((initialized_state, _provider)) => {
-                app_state.store(Arc::new(AppState::Initialized(Arc::new(initialized_state))));
-                ensure_expanded_startup_window(&app)?;
-
-                Ok(InitStatus::SignedIn)
-            }
-            Err(err) => {
-                ::tracing::warn!(error = ?err, "Could not restore full app state from config");
-                Ok(InitStatus::Login)
-            }
-        },
+    if config_dir.join("data").exists() {
+        ensure_expanded_startup_window(&app)?;
+        // Update app state to reflect already authenticated user
+        return Ok(InitStatus::SignedIn);
     }
+
+    Ok(InitStatus::Login)
 }
 
 fn ensure_expanded_startup_window(app: &tauri::AppHandle) -> Result<(), Error> {
@@ -124,7 +103,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
     let config_dir = app.path().app_config_dir()?;
     let config_path = config_dir.join("config.json");
 
-    let mut config = Config::init(&config_path).await.map_err(|_| {
+    let config = Config::init(&config_path).await.map_err(|_| {
         Error::Other("Configuration not found. Please run setup first.".to_string())
     })?;
 
@@ -148,7 +127,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
         Error::Other("Login worker failed to send authentication result".to_string())
     })? {
         Ok(()) => {
-            ::tracing::info!("Login successful, initializing app state");
+            ::tracing::info!("IMAP Login successful");
         }
         Err(message) => {
             ::tracing::error!(error = ?message, "Login failed: {message}");
@@ -169,25 +148,6 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
         provider,
     ))?;
 
-    // TODO: Make configurable
-    // let provider = Providers::LocalInference;
-    // let model = "";
-    // let system_message = "";
-    // let api_key = "";
-    // let max_tokens = None;
-    // let temperature = None;
-
-    // let llm_client_builder = llm::ProviderBuilder::new(provider, system_message, model);
-
-    // let llm_client = llm_client_builder
-    //     .api_key(api_key)
-    //     .temperature(temperature)
-    //     .max_tokens(max_tokens)
-    //     .function_handler("predict".to_string())
-    //     .script_name("local_inference".to_string())
-    //     .build()
-    //     .await?;
-
     let initialized_state = config::InitializedState {
         // _llm_client: llm_client,
         rpc_llm_client: initialized_state.rpc_llm_client,
@@ -197,11 +157,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
     let app_state = app.state::<ArcSwap<AppState>>();
     app_state.store(Arc::new(AppState::Initialized(Arc::new(initialized_state))));
 
-    if !config.has_logged_in {
-        config.has_logged_in = true;
-        let config_json = serde_json::to_string_pretty(&config)?;
-        fs::write(config_path, config_json).await?;
-    }
+    ::tracing::info!("User Logged in and emails fetching initiated");
 
     Ok(())
 }
@@ -209,34 +165,19 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
 /// Open a dedicated, larger main app window after successful login
 /// and close the compact auth window.
 #[tauri::command]
-#[tracing::instrument(name = "command.window.open_main", skip(app, current_window))]
-pub async fn open_main_window(
-    app: tauri::AppHandle,
-    current_window: tauri::WebviewWindow,
-) -> Result<(), Error> {
+#[tracing::instrument(name = "command.window.open_main", skip_all)]
+pub async fn open_main_window(current_window: tauri::WebviewWindow) -> Result<(), Error> {
     let expanded_size = Size::Logical(LogicalSize::new(1100.0, 760.0));
     let expanded_min_size = Size::Logical(LogicalSize::new(900.0, 620.0));
 
-    if let Some(main_window) = app.get_webview_window("main-app") {
-        main_window.set_resizable(true)?;
-        main_window.set_max_size::<Size>(None)?;
-        main_window.set_min_size(Some(expanded_min_size))?;
-        main_window.set_size(expanded_size)?;
-        main_window.eval("window.location.replace('/')")?;
-        main_window.show()?;
-        main_window.set_focus()?;
-    } else {
-        WebviewWindowBuilder::new(&app, "main-app", WebviewUrl::App("index.html".into()))
-            .title("PhisherMan")
-            .inner_size(1100.0, 760.0)
-            .min_inner_size(900.0, 620.0)
-            .resizable(true)
-            .build()?;
-    }
-
-    if current_window.label() != "main-app" {
-        current_window.close()?;
-    }
+    // Reuse the current auth window for post-login to avoid close/create race conditions.
+    current_window.set_resizable(true)?;
+    current_window.set_max_size::<Size>(None)?;
+    current_window.set_min_size(Some(expanded_min_size))?;
+    current_window.set_size(expanded_size)?;
+    current_window.eval("window.location.replace('/')")?;
+    current_window.show()?;
+    current_window.set_focus()?;
 
     Ok(())
 }
@@ -257,13 +198,7 @@ async fn handle_initialization(
         db::Providers::Gmail
     };
 
-    let sqlite_pool = db::init_db(
-        config_dir,
-        &config.sqlite_db,
-        config.has_logged_in,
-        &provider,
-    )
-    .await?;
+    let sqlite_pool = db::init_db(config_dir, &config.sqlite_db, &provider).await?;
 
     let rpc_llm_client = config::init_rpc(&config.rpc_server).await?;
 

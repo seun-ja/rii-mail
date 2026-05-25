@@ -29,8 +29,6 @@ pub struct Config {
     pub rust_log: Option<String>,
     pub otlp_collector_endpoint: Option<String>,
     pub email_cache_size: u32,
-    #[serde(default)]
-    pub has_logged_in: bool,
 }
 
 impl Config {

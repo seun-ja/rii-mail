@@ -1,5 +1,4 @@
 use arc_swap::ArcSwap;
-use std::fs;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Emitter as _, LogicalSize, Manager as _, Size};
@@ -11,7 +10,7 @@ use crate::handlers::fetch_emails_handler;
 use crate::imap::ImapCommand;
 use crate::workers::session_thread;
 use crate::{
-    config::{AppState, Config},
+    config::AppState,
     handlers::{
         check_init_status, config_setup, login, logout_with_state, open_main_window, rater,
     },
@@ -90,19 +89,15 @@ pub async fn run() {
             // On app relaunch for an already authenticated user, immediately expand
             // the default startup window to main-app dimensions.
             if let Some(window) = app.get_webview_window("main") {
-                let config_path = app.path().app_config_dir()?.join("config.json");
+                let config_dir = app.path().app_config_dir()?;
 
-                if let Ok(config_json) = fs::read_to_string(config_path) {
-                    if let Ok(config) = serde_json::from_str::<Config>(&config_json) {
-                        if config.has_logged_in {
-                            let expanded_size = Size::Logical(LogicalSize::new(1100.0, 760.0));
-                            let expanded_min_size = Size::Logical(LogicalSize::new(900.0, 620.0));
+                if config_dir.join("data").exists() {
+                    let expanded_size = Size::Logical(LogicalSize::new(1100.0, 760.0));
+                    let expanded_min_size = Size::Logical(LogicalSize::new(900.0, 620.0));
 
-                            window.set_resizable(true)?;
-                            window.set_min_size(Some(expanded_min_size))?;
-                            window.set_size(expanded_size)?;
-                        }
-                    }
+                    window.set_resizable(true)?;
+                    window.set_min_size(Some(expanded_min_size))?;
+                    window.set_size(expanded_size)?;
                 }
             }
 

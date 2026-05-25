@@ -11,7 +11,6 @@ use crate::error::Error;
 pub async fn init_db(
     app_dir: PathBuf,
     db: &str,
-    _has_logged_in: bool,
     provider: &Providers,
 ) -> Result<SqlitePool, Error> {
     fs::create_dir_all(&app_dir)?;

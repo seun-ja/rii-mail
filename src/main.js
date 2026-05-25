@@ -85,9 +85,14 @@ window.addEventListener("DOMContentLoaded", () => {
     syncProgressBarEl.style.width = `${Math.max(0, Math.min(100, percent))}%`;
     syncOverlayEl
       .querySelector("[role='progressbar']")
-      ?.setAttribute("aria-valuenow", String(Math.round(Math.max(0, Math.min(100, percent)))));
+      ?.setAttribute(
+        "aria-valuenow",
+        String(Math.round(Math.max(0, Math.min(100, percent)))),
+      );
 
-    document.querySelector(".mail-app")?.classList.toggle("sync-locked", locked);
+    document
+      .querySelector(".mail-app")
+      ?.classList.toggle("sync-locked", locked);
   }
 
   function delay(ms) {
@@ -128,7 +133,9 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   function getProviderLiteral() {
-    const savedImapServer = (window.localStorage.getItem("pemail.imapServer") || "").toLowerCase();
+    const savedImapServer = (
+      window.localStorage.getItem("pemail.imapServer") || ""
+    ).toLowerCase();
 
     if (savedImapServer.includes("yahoo")) {
       window.localStorage.setItem("pemail.provider", "yahoo");
@@ -220,12 +227,20 @@ window.addEventListener("DOMContentLoaded", () => {
     mailBodyEl.classList.toggle("sidebar-collapsed", state.isSidebarCollapsed);
 
     if (sidebarToggleBtnEl) {
-      sidebarToggleBtnEl.setAttribute("aria-expanded", String(!state.isSidebarCollapsed));
+      sidebarToggleBtnEl.setAttribute(
+        "aria-expanded",
+        String(!state.isSidebarCollapsed),
+      );
       sidebarToggleBtnEl.setAttribute(
         "aria-label",
-        state.isSidebarCollapsed ? "Expand mailbox section" : "Collapse mailbox section"
+        state.isSidebarCollapsed
+          ? "Expand mailbox section"
+          : "Collapse mailbox section",
       );
-      sidebarToggleBtnEl.classList.toggle("is-collapsed", state.isSidebarCollapsed);
+      sidebarToggleBtnEl.classList.toggle(
+        "is-collapsed",
+        state.isSidebarCollapsed,
+      );
     }
 
     if (window.innerWidth > 980 && mailListPanelEl) {
@@ -245,11 +260,14 @@ window.addEventListener("DOMContentLoaded", () => {
     const minReaderWidth = 360;
     const maxListWidth = Math.max(
       minListWidth,
-      bodyRect.width - sidebarWidth - resizerWidth - minReaderWidth
+      bodyRect.width - sidebarWidth - resizerWidth - minReaderWidth,
     );
     const clamped = Math.max(minListWidth, Math.min(nextWidthPx, maxListWidth));
 
-    mailBodyEl.style.setProperty("--list-panel-width", `${Math.round(clamped)}px`);
+    mailBodyEl.style.setProperty(
+      "--list-panel-width",
+      `${Math.round(clamped)}px`,
+    );
   }
 
   function onReaderResizeMove(event) {
@@ -298,7 +316,10 @@ window.addEventListener("DOMContentLoaded", () => {
     state.bootstrapRefreshAttempts = 0;
 
     state.bootstrapRefreshTimer = setInterval(() => {
-      if (getEmails().length > 0 || state.bootstrapRefreshAttempts >= AUTO_BOOTSTRAP_REFRESH_MAX) {
+      if (
+        getEmails().length > 0 ||
+        state.bootstrapRefreshAttempts >= AUTO_BOOTSTRAP_REFRESH_MAX
+      ) {
         stopBootstrapRefresh();
         return;
       }
@@ -318,7 +339,10 @@ window.addEventListener("DOMContentLoaded", () => {
         return mail.starred;
       }
 
-      return String(mail.folder || "").toLowerCase() === state.activeFolder.toLowerCase();
+      return (
+        String(mail.folder || "").toLowerCase() ===
+        state.activeFolder.toLowerCase()
+      );
     });
 
     if (!query) {
@@ -326,16 +350,21 @@ window.addEventListener("DOMContentLoaded", () => {
     }
 
     return inFolder.filter((mail) => {
-      const haystack = `${mail.senderName} ${mail.subject} ${mail.preview}`.toLowerCase();
+      const haystack =
+        `${mail.senderName} ${mail.subject} ${mail.preview}`.toLowerCase();
       return haystack.includes(query);
     });
   }
 
   function updateCounts() {
     const counts = {
-      inbox: getEmails().filter((mail) => String(mail.folder || "").toLowerCase() === "inbox").length,
+      inbox: getEmails().filter(
+        (mail) => String(mail.folder || "").toLowerCase() === "inbox",
+      ).length,
       starred: getEmails().filter((mail) => mail.starred).length,
-      sent: getEmails().filter((mail) => String(mail.folder || "").toLowerCase() === "sent").length,
+      sent: getEmails().filter(
+        (mail) => String(mail.folder || "").toLowerCase() === "sent",
+      ).length,
       archive: getEmails().filter((mail) => {
         const folder = String(mail.folder || "").toLowerCase();
         return folder === "trash" || folder === "archive";
@@ -343,9 +372,13 @@ window.addEventListener("DOMContentLoaded", () => {
     };
 
     document.querySelector("#count-inbox").textContent = String(counts.inbox);
-    document.querySelector("#count-starred").textContent = String(counts.starred);
+    document.querySelector("#count-starred").textContent = String(
+      counts.starred,
+    );
     document.querySelector("#count-sent").textContent = String(counts.sent);
-    document.querySelector("#count-archive").textContent = String(counts.archive);
+    document.querySelector("#count-archive").textContent = String(
+      counts.archive,
+    );
   }
 
   function renderReader() {
@@ -364,9 +397,12 @@ window.addEventListener("DOMContentLoaded", () => {
 
     selected.read = true;
 
-    const hasHtmlBody = typeof selected.htmlBody === "string" && selected.htmlBody.trim().length > 0;
+    const hasHtmlBody =
+      typeof selected.htmlBody === "string" &&
+      selected.htmlBody.trim().length > 0;
     const textBody =
-      (typeof selected.textBody === "string" && selected.textBody.trim().length > 0
+      (typeof selected.textBody === "string" &&
+      selected.textBody.trim().length > 0
         ? selected.textBody
         : selected.body) || "No message body";
 
@@ -458,7 +494,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
   async function loadMoreEmails(
     batchSize,
-    { reset = false, preserveEmptyRetryState = false } = {}
+    { reset = false, preserveEmptyRetryState = false } = {},
   ) {
     if (!state.allowFetch) {
       return;
@@ -498,7 +534,10 @@ window.addEventListener("DOMContentLoaded", () => {
     const now = Date.now();
 
     // Guard against back-to-back duplicate retries for the same page.
-    if (state.lastFetchSignature === fetchSignature && now - state.lastFetchAt < 1200) {
+    if (
+      state.lastFetchSignature === fetchSignature &&
+      now - state.lastFetchAt < 1200
+    ) {
       return;
     }
 
@@ -531,7 +570,9 @@ window.addEventListener("DOMContentLoaded", () => {
       if (reset) {
         state.cachedByFolder[folderKey] = page;
       } else {
-        const existingIds = new Set(state.cachedByFolder[folderKey].map((mail) => mail.id));
+        const existingIds = new Set(
+          state.cachedByFolder[folderKey].map((mail) => mail.id),
+        );
         const uniquePage = page.filter((mail) => !existingIds.has(mail.id));
         state.cachedByFolder[folderKey].push(...uniquePage);
       }
@@ -545,7 +586,6 @@ window.addEventListener("DOMContentLoaded", () => {
       if (page.length < batchSize) {
         state.hasMoreEmails = false;
       }
-
     } catch (error) {
       const message = error?.message || error?.msg || String(error);
       if (getEmails().length > 0) {
@@ -572,7 +612,9 @@ window.addEventListener("DOMContentLoaded", () => {
           return;
         }
 
-        const progress = Math.round(((i + attempt / INITIAL_EMPTY_RETRY_MAX) / folders.length) * 100);
+        const progress = Math.round(
+          ((i + attempt / INITIAL_EMPTY_RETRY_MAX) / folders.length) * 100,
+        );
         setSyncUiState(true, `Syncing ${folder}...`, progress);
 
         try {
@@ -601,7 +643,8 @@ window.addEventListener("DOMContentLoaded", () => {
     }
 
     const hasAnySyncedData =
-      state.cachedByFolder.INBOX.length > 0 || state.cachedByFolder.Sent.length > 0;
+      state.cachedByFolder.INBOX.length > 0 ||
+      state.cachedByFolder.Sent.length > 0;
 
     state.isInitialSyncComplete = hasAnySyncedData;
 
@@ -628,7 +671,7 @@ window.addEventListener("DOMContentLoaded", () => {
   async function checkInitStatus() {
     try {
       const status = await invoke("check_init_status");
-      const isSignedIn = status === "signed_in" || status === "signedin";
+      const isSignedIn = status === "signed_in";
 
       if (status === "setup") {
         window.localStorage.removeItem(EMAIL_CACHE_KEY);
@@ -655,7 +698,9 @@ window.addEventListener("DOMContentLoaded", () => {
       state.initialEmptyRetries = 0;
       state.syncProgressPercent = 0;
       state.activeFolder = button.dataset.folder;
-      folderButtons.forEach((otherButton) => otherButton.classList.remove("active"));
+      folderButtons.forEach((otherButton) =>
+        otherButton.classList.remove("active"),
+      );
       button.classList.add("active");
       renderList();
 
@@ -725,7 +770,8 @@ window.addEventListener("DOMContentLoaded", () => {
 
     const threshold = 40;
     const reachedBottom =
-      mailListEl.scrollTop + mailListEl.clientHeight >= mailListEl.scrollHeight - threshold;
+      mailListEl.scrollTop + mailListEl.clientHeight >=
+      mailListEl.scrollHeight - threshold;
 
     if (reachedBottom) {
       loadMoreEmails(NEXT_BATCH_SIZE);
@@ -740,7 +786,8 @@ window.addEventListener("DOMContentLoaded", () => {
       senderName: "You",
       emailFrom: "you@company.com",
       subject: "Draft: New message",
-      preview: "This is a placeholder draft. Wire this to your compose modal later.",
+      preview:
+        "This is a placeholder draft. Wire this to your compose modal later.",
       body: "Draft created from the home UI. Replace this with your backend compose flow.",
       time: "Now",
       starred: false,
@@ -749,7 +796,10 @@ window.addEventListener("DOMContentLoaded", () => {
 
     state.activeFolder = "Sent";
     folderButtons.forEach((otherButton) => {
-      otherButton.classList.toggle("active", otherButton.dataset.folder === "Sent");
+      otherButton.classList.toggle(
+        "active",
+        otherButton.dataset.folder === "Sent",
+      );
     });
     state.selectedId = draftId;
     renderList();
@@ -811,7 +861,8 @@ window.addEventListener("DOMContentLoaded", () => {
         body: selected.body,
       });
 
-      const score = typeof rating?.score === "number" ? rating.score.toFixed(2) : "N/A";
+      const score =
+        typeof rating?.score === "number" ? rating.score.toFixed(2) : "N/A";
       const label = rating?.label ?? "Unknown";
       showMessage(`Spam rating: ${label} (score: ${score})`);
     } catch (error) {

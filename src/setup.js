@@ -1,5 +1,6 @@
 const { invoke } = window.__TAURI__.core;
 
+// TODO: This might not be needed
 async function checkAlreadyInitialized() {
   try {
     const status = await invoke("check_init_status");
