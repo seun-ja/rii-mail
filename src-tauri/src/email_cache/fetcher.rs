@@ -50,6 +50,11 @@ pub async fn fetch_emails(
     while let Some(email) = messages_stream.next().await {
         let email = email?;
         emails.push(email.into());
+
+        if emails.len() == 50 {
+            populate_storage(pool, emails.clone(), &table_name).await?;
+            emails.clear();
+        }
     }
 
     tracing::info!("{} email(s) found", emails.len());

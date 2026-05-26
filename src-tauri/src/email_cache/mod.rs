@@ -22,7 +22,7 @@ fn extract_date_from_raw_message(raw: &[u8]) -> Option<DateTime<FixedOffset>> {
         .and_then(extract_date_from_message)
 }
 
-#[derive(FromRow)]
+#[derive(FromRow, Clone)]
 pub struct Email {
     pub date: Option<DateTime<FixedOffset>>,
     pub body: Option<Vec<u8>>,

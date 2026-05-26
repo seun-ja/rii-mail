@@ -1,4 +1,3 @@
-use async_imap::Session;
 use async_native_tls::TlsStream;
 use sqlx::SqlitePool;
 use tokio::sync::mpsc::UnboundedSender;
@@ -7,7 +6,6 @@ use tokio::{net::TcpStream, sync::mpsc::UnboundedReceiver};
 
 use crate::auth;
 use crate::config::{ImapClientConfig, ReturningUserImapClientConfig};
-use crate::db::MailBox;
 use crate::imap::{init_imap_client, ImapCommand};
 
 fn friendly_login_error_message(stage: &str, raw: &str) -> String {
@@ -44,28 +42,6 @@ fn friendly_login_error_message(stage: &str, raw: &str) -> String {
         }
         "login" => "Login failed due to a server error. Please try again shortly.".to_string(),
         _ => "Login failed. Please try again.".to_string(),
-    }
-}
-
-#[tracing::instrument(name = "background.get.emails", skip(session, pool))]
-async fn get_emails(
-    session: &mut Session<TlsStream<TcpStream>>,
-    pool: &SqlitePool,
-    size: u32,
-    mailbox: &MailBox,
-    provider: &crate::db::Providers,
-) {
-    let mut attempt = 0;
-    while attempt < 3 {
-        if let Err(e) =
-            crate::email_cache::fetch_emails(session, size, pool, mailbox, provider).await
-        {
-            tracing::error!("Failed to fetch emails: {}", e);
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-            attempt += 1;
-        } else {
-            break;
-        }
     }
 }
 
@@ -159,7 +135,7 @@ pub fn session_thread(
                                 continue;
                             };
 
-                            get_emails(session, pool_ref, size, &mail_box, &provider).await;
+                            let _ = crate::email_cache::fetch_emails(session, size, pool_ref, &mail_box, &provider).await;
                         }
                         ImapCommand::Logout => {
                             if let Some(session) = initialized_session.as_mut() {

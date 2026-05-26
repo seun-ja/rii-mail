@@ -1,14 +1,23 @@
-const { invoke } = window.__TAURI__.core;
+import { getErrorMessage } from "./shared/errors.js";
+import { tauriInvoke as invoke } from "./shared/tauri.js";
 
 window.addEventListener("DOMContentLoaded", () => {
   const loginForm = document.querySelector("#login-form");
   const loginMsgEl = document.querySelector("#login-msg");
+  const usernameInput = document.querySelector("#username-input");
+  const passwordInput = document.querySelector("#password-input");
+
+  if (!loginForm || !loginMsgEl || !usernameInput || !passwordInput) {
+    return;
+  }
+
+  if (!invoke) {
+    loginMsgEl.textContent = "Backend connection is unavailable.";
+    return;
+  }
 
   loginForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-
-    const usernameInput = document.querySelector("#username-input");
-    const passwordInput = document.querySelector("#password-input");
 
     const username = usernameInput?.value?.trim() || "";
     const password = passwordInput?.value?.trim() || "";
@@ -30,16 +39,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
       await invoke("open_main_window");
     } catch (error) {
-      let errorMessage = "Unknown error";
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      } else if (typeof error === "string") {
-        errorMessage = error;
-      } else if (error && typeof error === "object") {
-        // Handle Rust Error struct serialized as object with 'message' field
-        errorMessage = error.message || error.msg || JSON.stringify(error);
-      }
-
+      const errorMessage = getErrorMessage(error);
       loginMsgEl.textContent = `Login failed: ${errorMessage}`;
     }
   });

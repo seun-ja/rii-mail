@@ -1,7 +1,7 @@
-const { invoke } = window.__TAURI__.core;
+import { getErrorMessage } from "./shared/errors.js";
+import { tauriInvoke as invoke } from "./shared/tauri.js";
 
-// TODO: This might not be needed
-async function checkAlreadyInitialized() {
+async function checkAlreadyInitialized(setupMsgEl) {
   try {
     const status = await invoke("check_init_status");
     const isSignedIn = status === "signed_in" || status === "signedin";
@@ -15,21 +15,29 @@ async function checkAlreadyInitialized() {
     }
     // If status === "setup", we're on the right page, continue
   } catch (error) {
-    setupMsgEl.textContent = `Could not check initialization status`;
+    setupMsgEl.textContent = "Could not check initialization status.";
   }
 }
 
 window.addEventListener("DOMContentLoaded", () => {
   const setupForm = document.querySelector("#setup-form");
   const setupMsgEl = document.querySelector("#setup-msg");
+  const imapServerInput = document.querySelector("#imap-server-input");
+  const imapPortInput = document.querySelector("#imap-port-input");
 
-  checkAlreadyInitialized();
+  if (!setupForm || !setupMsgEl || !imapServerInput || !imapPortInput) {
+    return;
+  }
+
+  if (!invoke) {
+    setupMsgEl.textContent = "Backend connection is unavailable.";
+    return;
+  }
+
+  checkAlreadyInitialized(setupMsgEl);
 
   setupForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-
-    const imapServerInput = document.querySelector("#imap-server-input");
-    const imapPortInput = document.querySelector("#imap-port-input");
 
     const imapServer = imapServerInput?.value?.trim() || "";
     const imapPortValue = imapPortInput?.value?.trim() || "";
@@ -42,6 +50,8 @@ window.addEventListener("DOMContentLoaded", () => {
     }
 
     try {
+      setupMsgEl.textContent = "Saving configuration...";
+
       await invoke("config_setup", {
         imapServer: imapServer,
         imapPort: imapPort,
@@ -60,14 +70,7 @@ window.addEventListener("DOMContentLoaded", () => {
         window.location.replace("/login.html");
       }, 500);
     } catch (error) {
-      let errorMessage = "Unknown error";
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      } else if (typeof error === "string") {
-        errorMessage = error;
-      } else if (error && typeof error === "object") {
-        errorMessage = error.message || error.msg || JSON.stringify(error);
-      }
+      setupMsgEl.textContent = `Setup failed: ${getErrorMessage(error)}`;
     }
   });
 });
