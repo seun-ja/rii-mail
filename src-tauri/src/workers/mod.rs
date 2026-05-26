@@ -2,10 +2,11 @@ use async_imap::Session;
 use async_native_tls::TlsStream;
 use sqlx::SqlitePool;
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::oneshot::Sender;
 use tokio::{net::TcpStream, sync::mpsc::UnboundedReceiver};
 
 use crate::auth;
-use crate::config::ImapClientConfig;
+use crate::config::{ImapClientConfig, ReturningUserImapClientConfig};
 use crate::db::MailBox;
 use crate::imap::{init_imap_client, ImapCommand};
 
@@ -70,6 +71,7 @@ async fn get_emails(
 
 pub fn session_thread(
     mut imap_client_channel_rx: UnboundedReceiver<ImapClientConfig>,
+    mut imap_client_returning_user_channel_rx: UnboundedReceiver<ReturningUserImapClientConfig>,
     mut imap_cmd_channel_rx: UnboundedReceiver<ImapCommand>,
     logout_result_tx: UnboundedSender<()>,
 ) {
@@ -92,36 +94,46 @@ pub fn session_thread(
 
                     match init_imap_client(&config.imap_server, config.imap_port).await {
                         Ok(imap_client) => {
-                            match auth::login(&config.username, &config.password, imap_client).await {
-                                Ok(imap_session) => {
-                                    if let Some(existing_session) = initialized_session.as_mut() {
-                                        if let Err(err) = existing_session.logout().await {
-                                            ::tracing::warn!(error = ?err, "Failed to logout previous IMAP session before re-login");
-                                        }
-                                    }
+                            login(&config.username, &config.password, &mut initialized_session, login_result_tx, imap_client, &mut pool, config.sqlite_pool).await;
 
-                                    initialized_session = Some(imap_session);
-                                    pool = Some(config.sqlite_pool);
-                                    ::tracing::info!("IMAP session initialized");
-
-                                    if let Some(tx) = login_result_tx.take() {
-                                        let _ = tx.send(Ok(()));
-                                    }
-                                }
-                                Err(err) => {
-                                    ::tracing::error!(error = ?err, "IMAP login failed");
-
-                                    if let Some(tx) = login_result_tx.take() {
-                                        let _ = tx.send(Err(friendly_login_error_message(
-                                            "login",
-                                            &err.to_string(),
-                                        )));
-                                    }
-                                }
-                            }
+                            ::tracing::info!("IMAP session initialized");
                         }
                         Err(err) => {
                             ::tracing::error!(error = ?err, "Failed to initialize IMAP client");
+
+                            if let Some(tx) = login_result_tx.take() {
+                                let _ = tx.send(Err(friendly_login_error_message("init", &err.to_string())));
+                            }
+                        }
+                    }
+                }
+                maybe_returning_user_config = imap_client_returning_user_channel_rx.recv() => {
+                    let Some(config) = maybe_returning_user_config else {
+                        ::tracing::warn!("Returning user IMAP config channel closed");
+                        continue;
+                    };
+
+                    let mut login_result_tx = config.login_result_tx;
+
+                    match init_imap_client(&config.imap_server, config.imap_port).await {
+                        Ok(imap_client) => {
+                            let password = match config.apple_keychain_manager.retrieve_password(&config.username) {
+                                Ok(pw) => pw,
+                                Err(err) => {
+                                    ::tracing::error!(error = ?err, "Failed to retrieve password from Apple Keychain for returning user");
+                                    if let Some(tx) = login_result_tx.take() {
+                                        let _ = tx.send(Err("Failed to retrieve credentials for returning user. Please log in again.".to_string()));
+                                    }
+                                    continue;
+                                }
+                            };
+
+                            login(&config.username, &password, &mut initialized_session, login_result_tx, imap_client, &mut pool, config.sqlite_pool).await;
+
+                            ::tracing::info!("IMAP session initialized for returning user");
+                        }
+                        Err(err) => {
+                            ::tracing::error!(error = ?err, "Failed to initialize IMAP client for returning user");
 
                             if let Some(tx) = login_result_tx.take() {
                                 let _ = tx.send(Err(friendly_login_error_message("init", &err.to_string())));
@@ -169,4 +181,38 @@ pub fn session_thread(
 
         ::tracing::info!("IMAP worker task stopped");
     });
+}
+
+async fn login(
+    username: &str,
+    password: &str,
+    initialized_session: &mut Option<async_imap::Session<TlsStream<TcpStream>>>,
+    mut login_result_tx: Option<Sender<Result<(), String>>>,
+    imap_client: async_imap::Client<TlsStream<TcpStream>>,
+    pool: &mut Option<SqlitePool>,
+    sqlite_pool: SqlitePool,
+) {
+    match auth::login(username, password, imap_client).await {
+        Ok(imap_session) => {
+            if let Some(existing_session) = initialized_session.as_mut() {
+                if let Err(err) = existing_session.logout().await {
+                    ::tracing::warn!(error = ?err, "Failed to logout previous IMAP session before re-login");
+                }
+            }
+
+            *initialized_session = Some(imap_session);
+            *pool = Some(sqlite_pool);
+
+            if let Some(tx) = login_result_tx.take() {
+                let _ = tx.send(Ok(()));
+            }
+        }
+        Err(err) => {
+            ::tracing::error!(error = ?err, "IMAP login failed");
+
+            if let Some(tx) = login_result_tx.take() {
+                let _ = tx.send(Err(friendly_login_error_message("login", &err.to_string())));
+            }
+        }
+    }
 }

@@ -1,6 +1,6 @@
 use std::{path::PathBuf, sync::Arc};
 
-use crate::{error::Error, llm::AgentWorkerClient};
+use crate::{auth::AppleKeychainManager, error::Error, llm::AgentWorkerClient};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use tarpc::{client, serde_transport::tcp, tokio_serde::formats::Json};
@@ -25,6 +25,7 @@ pub struct Config {
     pub imap_server: String,
     pub imap_port: u16,
     pub sqlite_db: String,
+    pub accounts: Vec<String>,
     #[serde(default)]
     pub rust_log: Option<String>,
     pub otlp_collector_endpoint: Option<String>,
@@ -62,6 +63,7 @@ pub struct InitializedState {
     // pub _llm_client: LlmProvider,
     pub rpc_llm_client: AgentWorkerClient,
     pub sqlite_pool: SqlitePool,
+    pub apple_keychain_manager: AppleKeychainManager,
 }
 
 pub async fn init_rpc(rpc_server: &str) -> Result<AgentWorkerClient, Error> {
@@ -77,6 +79,15 @@ pub struct ImapClientConfig {
     pub password: String,
     pub imap_server: String,
     pub imap_port: u16,
+    pub sqlite_pool: SqlitePool,
+    pub login_result_tx: Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
+}
+
+pub struct ReturningUserImapClientConfig {
+    pub username: String,
+    pub imap_server: String,
+    pub imap_port: u16,
+    pub apple_keychain_manager: AppleKeychainManager,
     pub sqlite_pool: SqlitePool,
     pub login_result_tx: Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
 }

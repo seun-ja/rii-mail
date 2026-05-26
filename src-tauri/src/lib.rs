@@ -5,7 +5,7 @@ use tauri::{Emitter as _, LogicalSize, Manager as _, Size};
 
 use tokio::sync::{mpsc, Mutex};
 
-use crate::config::ImapClientConfig;
+use crate::config::{ImapClientConfig, ReturningUserImapClientConfig};
 use crate::handlers::fetch_emails_handler;
 use crate::imap::ImapCommand;
 use crate::workers::session_thread;
@@ -33,15 +33,24 @@ pub async fn run() {
     let (imap_client_channel_tx, imap_client_channel_rx) =
         mpsc::unbounded_channel::<ImapClientConfig>();
 
+    let (imap_client_returning_user_channel_tx, imap_client_returning_user_channel_rx) =
+        mpsc::unbounded_channel::<ReturningUserImapClientConfig>();
+
     let (imap_cmd_channel_tx, imap_cmd_channel_rx) = mpsc::unbounded_channel::<ImapCommand>();
 
     let (logout_state_tx, logout_state_rx) = mpsc::unbounded_channel::<()>();
 
-    session_thread(imap_client_channel_rx, imap_cmd_channel_rx, logout_state_tx);
+    session_thread(
+        imap_client_channel_rx,
+        imap_client_returning_user_channel_rx,
+        imap_cmd_channel_rx,
+        logout_state_tx,
+    );
 
     tauri::Builder::default()
         .manage(ArcSwap::from_pointee(AppState::Fresh))
         .manage(imap_client_channel_tx)
+        .manage(imap_client_returning_user_channel_tx)
         .manage(imap_cmd_channel_tx)
         .manage(Mutex::new(logout_state_rx))
         .plugin(tauri_plugin_opener::init())

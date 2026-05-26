@@ -4064,6 +4064,7 @@ dependencies = [
  "rig-core",
  "rpc-agent",
  "schemars 1.2.1",
+ "security-framework",
  "serde",
  "serde_json",
  "sqlx",

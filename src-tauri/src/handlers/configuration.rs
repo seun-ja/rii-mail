@@ -8,7 +8,11 @@ use tokio::{
 };
 
 use crate::{
-    config::{self, AppState, Config, ImapClientConfig, InitStatus, InitializedState},
+    auth::AppleKeychainManager,
+    config::{
+        self, AppState, Config, ImapClientConfig, InitStatus, InitializedState,
+        ReturningUserImapClientConfig,
+    },
     db::{self, MailBox, Providers},
     error::Error,
     imap::ImapCommand,
@@ -39,6 +43,7 @@ pub async fn config_setup(
         imap_server,
         imap_port,
         sqlite_db,
+        accounts: vec![],
         rust_log: Some(rust_log),
         otlp_collector_endpoint: Some(otlp_collector_endpoint),
         email_cache_size,
@@ -68,12 +73,68 @@ pub async fn check_init_status(app: tauri::AppHandle) -> Result<InitStatus, Erro
     let config_dir = app.path().app_config_dir()?;
     let config_path = config_dir.join("config.json");
 
-    if Config::init(&config_path).await.is_err() {
+    let config = Config::init(&config_path).await.ok();
+
+    if config.is_none() {
         return Ok(InitStatus::Setup);
     }
 
+    // If database exists, we can attempt to authenticate user with stored credentials and skip login page
     if config_dir.join("data").exists() {
+        let config = config.unwrap();
+
+        let imap_client_channel_tx = app.state::<UnboundedSender<ReturningUserImapClientConfig>>();
+        let (login_result_tx, login_result_rx) = oneshot::channel::<Result<(), String>>();
+
+        let app_service_name = app.config().identifier.clone();
+        let apple_keychain_manager = AppleKeychainManager::new(&app_service_name);
+
+        let provider = if config.imap_server.contains("yahoo") {
+            db::Providers::Yahoo
+        } else {
+            db::Providers::Gmail
+        };
+
+        let sqlite_pool = db::init_db(config_dir, &config.sqlite_db, &provider).await?;
+
+        if config.accounts.is_empty() {
+            ::tracing::warn!("Config accounts field is empty, cannot attempt returning user login");
+            return Ok(InitStatus::Login);
+        }
+
+        let imap_client_config = ReturningUserImapClientConfig {
+            imap_server: config.imap_server.clone(),
+            imap_port: config.imap_port,
+            username: config.accounts.first().cloned().unwrap_or_default(),
+            sqlite_pool: sqlite_pool.clone(),
+            apple_keychain_manager: apple_keychain_manager.clone(),
+            login_result_tx: Some(login_result_tx),
+        };
+
+        imap_client_channel_tx.send(imap_client_config)?;
         ensure_expanded_startup_window(&app)?;
+
+        match login_result_rx.await.map_err(|_| {
+            Error::Other("Login worker failed to send authentication result".to_string())
+        })? {
+            Ok(()) => {
+                ::tracing::info!("Returning user IMAP Login successful");
+            }
+            Err(message) => {
+                ::tracing::error!(error = ?message, "Returning user login failed: {message}");
+                return Ok(InitStatus::Login);
+            }
+        }
+
+        let initialized_state = config::InitializedState {
+            rpc_llm_client: config::init_rpc(&config.rpc_server).await?,
+            sqlite_pool,
+            apple_keychain_manager,
+        };
+
+        let app_state = app.state::<ArcSwap<AppState>>();
+        app_state.store(Arc::new(AppState::Initialized(Arc::new(initialized_state))));
+
         // Update app state to reflect already authenticated user
         return Ok(InitStatus::SignedIn);
     }
@@ -100,14 +161,26 @@ fn ensure_expanded_startup_window(app: &tauri::AppHandle) -> Result<(), Error> {
 #[tauri::command]
 #[tracing::instrument(name = "command.user.login", skip(app, password))]
 pub async fn login(app: tauri::AppHandle, username: String, password: String) -> Result<(), Error> {
+    let app_service_name = app.config().identifier.clone();
     let config_dir = app.path().app_config_dir()?;
     let config_path = config_dir.join("config.json");
 
-    let config = Config::init(&config_path).await.map_err(|_| {
+    let mut config = Config::init(&config_path).await.map_err(|_| {
         Error::Other("Configuration not found. Please run setup first.".to_string())
     })?;
 
-    let (initialized_state, provider) = handle_initialization(config.clone(), config_dir).await?;
+    config.accounts = vec![username.clone()];
+
+    fs::write(config_path, serde_json::to_string_pretty(&config)?).await?;
+
+    let (initialized_state, provider) =
+        handle_initialization(config.clone(), config_dir, &app_service_name).await?;
+
+    // TODO: Make it OS agnostic to store credentials securely - for now we only have Apple Keychain implemented, but we can add Windows Credential Manager and Linux Secret Service in the future.
+    // Store credentials securely in Apple Keychain
+    initialized_state
+        .apple_keychain_manager
+        .store_password(&username, &password)?;
 
     let imap_client_channel_tx = app.state::<UnboundedSender<ImapClientConfig>>();
     let imap_cmd_channel_tx = app.state::<UnboundedSender<ImapCommand>>();
@@ -149,9 +222,9 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
     ))?;
 
     let initialized_state = config::InitializedState {
-        // _llm_client: llm_client,
         rpc_llm_client: initialized_state.rpc_llm_client,
         sqlite_pool: initialized_state.sqlite_pool,
+        apple_keychain_manager: initialized_state.apple_keychain_manager,
     };
 
     let app_state = app.state::<ArcSwap<AppState>>();
@@ -185,6 +258,7 @@ pub async fn open_main_window(current_window: tauri::WebviewWindow) -> Result<()
 async fn handle_initialization(
     config: Config,
     config_dir: PathBuf,
+    app_service_name: &str,
 ) -> Result<(InitializedState, Providers), Error> {
     init_subscriber(
         &config.rust_log.clone().unwrap_or_default(),
@@ -202,9 +276,12 @@ async fn handle_initialization(
 
     let rpc_llm_client = config::init_rpc(&config.rpc_server).await?;
 
+    let apple_keychain_manager = AppleKeychainManager::new(app_service_name);
+
     let initialized_state = config::InitializedState {
         rpc_llm_client,
         sqlite_pool,
+        apple_keychain_manager,
     };
 
     Ok((initialized_state, provider))

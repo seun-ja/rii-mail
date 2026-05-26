@@ -3,11 +3,11 @@ use std::{error::Error as StdError, io::ErrorKind};
 use aws_sdk_sagemakerruntime::{error::SdkError, operation::invoke_endpoint::InvokeEndpointError};
 use pyo3::PyErr;
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::error::SendError;
 use tracing::{error, warn};
 
 use crate::{
-    config::{ImapClientConfig, InitializedState},
+    config::{ImapClientConfig, InitializedState, ReturningUserImapClientConfig},
     imap::ImapCommand,
 };
 
@@ -32,11 +32,13 @@ pub enum Error {
     #[error("SQLx Error: {0}")]
     Sqlx(#[from] sqlx::Error),
     #[error("State Channel Send Error: {0}")]
-    StateChannelSend(#[from] mpsc::error::SendError<InitializedState>),
+    StateChannelSend(#[from] SendError<InitializedState>),
     #[error("Imap Config Channel Send Error: {0}")]
-    ImapConfigChannelSend(#[from] mpsc::error::SendError<ImapClientConfig>),
+    ImapConfigChannelSend(#[from] SendError<ImapClientConfig>),
+    #[error("Returning User Imap Config Channel Send Error: {0}")]
+    ReturningUserImapConfigChannelSend(#[from] SendError<ReturningUserImapClientConfig>),
     #[error("Imap Command Channel Send Error: {0}")]
-    ImapCommandChannelSend(#[from] mpsc::error::SendError<ImapCommand>),
+    ImapCommandChannelSend(#[from] SendError<ImapCommand>),
     /// Authentication error: the provider returned an authentication error.
     #[error("authentication error: {0}")]
     Authentication(String),
@@ -51,6 +53,12 @@ pub enum Error {
     /// Invoke error: an AWS error occurred during the invoke endpoint operation.
     #[error("invoke error: an AWS error occurred during the invoke endpoint operation: {0:?}")]
     Invoke(#[from] Box<SdkError<InvokeEndpointError>>),
+    /// Keychain error: an error occurred while accessing the Apple keychain.
+    #[error("keychain error: {0}")]
+    Keychain(#[from] security_framework::base::Error),
+    /// Byte conversion error: an error occurred while converting bytes to a string.
+    #[error("byte conversion error: {0}")]
+    ByteConversion(#[from] std::string::FromUtf8Error),
 }
 
 impl Serialize for Error {
@@ -70,12 +78,17 @@ impl Serialize for Error {
             Error::Sqlx(e) => ("SQLx", e.to_string()),
             Error::StateChannelSend(e) => ("StateChannelSend", e.to_string()),
             Error::ImapConfigChannelSend(e) => ("ImapConfigChannelSend", e.to_string()),
+            Error::ReturningUserImapConfigChannelSend(e) => {
+                ("ReturningUserImapConfigChannelSend", e.to_string())
+            }
             Error::ImapCommandChannelSend(e) => ("ImapCommandChannelSend", e.to_string()),
-            Error::Authentication(e) => ("AuthenticationError", e.to_string()),
-            Error::Http(e) => ("HttpError", e.to_string()),
-            Error::Prompt(e) => ("PromptError", e.to_string()),
-            Error::LocalInference(e) => ("LocalInferenceError", e.to_string()),
-            Error::Invoke(e) => ("InvokeError", e.to_string()),
+            Error::Authentication(e) => ("Authentication", e.to_string()),
+            Error::Http(e) => ("Http", e.to_string()),
+            Error::Prompt(e) => ("Prompt", e.to_string()),
+            Error::LocalInference(e) => ("LocalInference", e.to_string()),
+            Error::Invoke(e) => ("Invoke", e.to_string()),
+            Error::Keychain(e) => ("Keychain", e.to_string()),
+            Error::ByteConversion(e) => ("ByteConversion", e.to_string()),
         };
 
         use serde::ser::SerializeStruct;
@@ -100,13 +113,16 @@ impl Error {
             | Error::Tauri(_)
             | Error::StateChannelSend(_)
             | Error::ImapConfigChannelSend(_)
+            | Error::ReturningUserImapConfigChannelSend(_)
             | Error::ImapCommandChannelSend(_)
             | Error::Sqlx(_)
             | Error::Tls(_)
             | Error::Http(_)
             | Error::Prompt(_)
             | Error::LocalInference(_)
-            | Error::Invoke(_) => {
+            | Error::Invoke(_)
+            | Error::Keychain(_)
+            | Error::ByteConversion(_) => {
                 error!(error = ?self, "Error occurred: {}", self);
             }
             Error::NotFound | Error::Other(_) | Error::Authentication(_) => {
