@@ -6,7 +6,11 @@ import { createLayoutController } from "./layout.js";
 import { createRenderer } from "./render.js";
 import { createSyncController } from "./sync.js";
 import { clearCachedEmails, getEmails, hydrateFolderCachesFromStorage, saveCachedEmails } from "./cache.js";
-import { getActiveBackendFolderKey } from "./helpers.js";
+import {
+  getActiveBackendFolderKey,
+  getFolderPaginationState,
+  resetFolderPagination,
+} from "./helpers.js";
 
 export function initializeMailApp({ invoke, listen, storage = window.localStorage }) {
   const dom = getMailAppDom();
@@ -49,6 +53,9 @@ export function initializeMailApp({ invoke, listen, storage = window.localStorag
       state.cachedByFolder.INBOX = [];
       state.cachedByFolder.Sent = [];
       state.cachedByFolder.Trash = [];
+      resetFolderPagination(state, "INBOX");
+      resetFolderPagination(state, "Sent");
+      resetFolderPagination(state, "Trash");
       window.location.replace("/setup.html");
     }).catch(() => {
       // Ignore listener setup failures in non-Tauri contexts.
@@ -93,7 +100,10 @@ export function initializeMailApp({ invoke, listen, storage = window.localStorag
   });
 
   dom.mailListEl.addEventListener("scroll", () => {
-    if (state.isLoadingEmails || !state.hasMoreEmails) {
+    const folderKey = getActiveBackendFolderKey(state);
+    const pagination = getFolderPaginationState(state, folderKey);
+
+    if (state.isLoadingEmails || !pagination.hasMoreEmails) {
       return;
     }
 

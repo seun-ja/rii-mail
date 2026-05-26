@@ -7,7 +7,13 @@ import {
   INITIAL_EMPTY_RETRY_MAX,
 } from "./constants.js";
 import { getEmails, saveCachedEmails } from "./cache.js";
-import { delay, getActiveBackendFolderKey, getActiveMailboxLiteral } from "./helpers.js";
+import {
+  delay,
+  getActiveBackendFolderKey,
+  getActiveMailboxLiteral,
+  getFolderPaginationState,
+  resetFolderPagination,
+} from "./helpers.js";
 import { getProviderLiteral } from "./provider.js";
 
 export function createSyncController(state, renderer, ui, invoke, storage = window.localStorage) {
@@ -55,19 +61,19 @@ export function createSyncController(state, renderer, ui, invoke, storage = wind
       return;
     }
 
-    if (!reset && !state.hasMoreEmails) {
+    const folderKey = getActiveBackendFolderKey(state);
+    const pagination = getFolderPaginationState(state, folderKey);
+
+    if (!reset && !pagination.hasMoreEmails) {
       return;
     }
-
-    const folderKey = getActiveBackendFolderKey(state);
 
     if (reset) {
       const hasExistingData = state.cachedByFolder[folderKey].length > 0;
       if (!hasExistingData) {
         state.selectedId = null;
       }
-      state.nextOffset = 0;
-      state.hasMoreEmails = true;
+      resetFolderPagination(state, folderKey);
 
       if (!preserveEmptyRetryState) {
         state.initialEmptyRetries = 0;
@@ -75,17 +81,17 @@ export function createSyncController(state, renderer, ui, invoke, storage = wind
       }
     }
 
-    const minRange = state.nextOffset;
+    const minRange = pagination.nextOffset;
     const maxRange = minRange + batchSize;
     const fetchSignature = `${state.activeFolder}:${minRange}:${maxRange}`;
     const now = Date.now();
 
-    if (state.lastFetchSignature === fetchSignature && now - state.lastFetchAt < 1200) {
+    if (pagination.lastFetchSignature === fetchSignature && now - pagination.lastFetchAt < 1200) {
       return;
     }
 
-    state.lastFetchSignature = fetchSignature;
-    state.lastFetchAt = now;
+    pagination.lastFetchSignature = fetchSignature;
+    pagination.lastFetchAt = now;
 
     state.isLoadingEmails = true;
     renderer.renderList();
@@ -122,10 +128,10 @@ export function createSyncController(state, renderer, ui, invoke, storage = wind
         saveCachedEmails(state, storage);
       }
 
-      state.nextOffset += page.length;
+      pagination.nextOffset += page.length;
 
       if (page.length < batchSize) {
-        state.hasMoreEmails = false;
+        pagination.hasMoreEmails = false;
       }
     } catch (error) {
       const message = error?.message || error?.msg || String(error);
@@ -141,20 +147,25 @@ export function createSyncController(state, renderer, ui, invoke, storage = wind
   }
 
   async function runInitialSync() {
-    const folders = ["INBOX", "Sent"];
-    ui.setSyncUiState(true, "Syncing mailbox...", 2);
-
-    for (let i = 0; i < folders.length; i += 1) {
-      const folder = folders[i];
+    async function syncFolderWithRetries(folder, {
+      maxAttempts = INITIAL_EMPTY_RETRY_MAX,
+      showProgress = true,
+      progressBase = 0,
+      progressSpan = 100,
+      progressLabel = folder,
+    } = {}) {
       let page = [];
 
-      for (let attempt = 1; attempt <= INITIAL_EMPTY_RETRY_MAX; attempt += 1) {
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         if (!state.allowFetch) {
-          return;
+          return { page, aborted: true };
         }
 
-        const progress = Math.round(((i + attempt / INITIAL_EMPTY_RETRY_MAX) / folders.length) * 100);
-        ui.setSyncUiState(true, `Syncing ${folder}...`, progress);
+        if (showProgress) {
+          const ratio = attempt / maxAttempts;
+          const progress = Math.round(progressBase + ratio * progressSpan);
+          ui.setSyncUiState(true, `Syncing ${progressLabel}...`, progress);
+        }
 
         try {
           const fetched = await invoke("fetch_emails_handler", {
@@ -176,13 +187,57 @@ export function createSyncController(state, renderer, ui, invoke, storage = wind
       }
 
       state.cachedByFolder[folder] = page;
-      if (folder === getActiveBackendFolderKey(state)) {
-        state.nextOffset = page.length;
-      }
+      const folderPagination = getFolderPaginationState(state, folder);
+      folderPagination.nextOffset = page.length;
+      folderPagination.hasMoreEmails = page.length >= INITIAL_BATCH_SIZE;
+      folderPagination.lastFetchSignature = null;
+      folderPagination.lastFetchAt = 0;
 
       saveCachedEmails(state, storage);
       renderer.renderList();
       renderer.updateCounts();
+
+      return { page, aborted: false };
+    }
+
+    ui.setSyncUiState(true, "Syncing inbox...", 2);
+
+    const inboxSync = await syncFolderWithRetries("INBOX", {
+      showProgress: true,
+      progressBase: 0,
+      progressSpan: 95,
+      progressLabel: "INBOX",
+    });
+
+    if (inboxSync.aborted) {
+      return;
+    }
+
+    if (inboxSync.page.length > 0) {
+      state.isInitialSyncComplete = true;
+      clearInitialSyncPoll();
+      ui.setSyncUiState(false);
+
+      // Sent sync should not block first render when inbox is already ready.
+      void syncFolderWithRetries("Sent", {
+        showProgress: false,
+      }).catch(() => {
+        // Ignore background sync failures; manual refresh can retry.
+      });
+
+      return;
+    }
+
+    const sentSync = await syncFolderWithRetries("Sent", {
+      maxAttempts: Math.max(1, Math.floor(INITIAL_EMPTY_RETRY_MAX / 3)),
+      showProgress: true,
+      progressBase: 95,
+      progressSpan: 5,
+      progressLabel: "Sent",
+    });
+
+    if (sentSync.aborted) {
+      return;
     }
 
     const hasAnySyncedData =
