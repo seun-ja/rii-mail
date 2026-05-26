@@ -1,128 +1,136 @@
-# Email Desktop Client
+# PhisherMan (Email Desktop Client)
 
-A Tauri-based desktop application for analyzing and rating emails for spam/phishing content. The app integrates with an RPC-based AI agent service and IMAP for email management.
+PhisherMan is a Tauri 2 desktop app for triaging email with IMAP sync and AI-assisted phishing/spam checks.
 
-## Features
+## What It Does
 
-- **Email Spam Rating**: Analyze email subject, sender, and body to determine spam/phishing likelihood
-- **Setup Wizard**: First-run configuration for IMAP and RPC server settings
-- **Dynamic Initialization**: Backend services initialize on demand after configuration
-- **Configuration Management**: File-based config with environment variable defaults
-- **Secure IMAP Connection**: TLS-encrypted IMAP sessions for email access
+- Connects to an IMAP account (for example Gmail or Yahoo)
+- Syncs and caches mailbox data locally (Inbox/Sent)
+- Displays a desktop inbox experience
+- Runs a spam/phishing rating workflow through an RPC AI service
+- Persists config and login state between launches
 
-## Project Structure
+## Tech Stack
 
+- Frontend: Vanilla JavaScript, HTML, CSS (served by Tauri webview)
+- Backend: Rust + Tauri 2
+- Mail: `async-imap` + TLS
+- Storage: SQLite via `sqlx`
+- AI calls: tarpc client (`rpc-agent`)
+
+## Repository Layout
+
+```text
+src/
+   index.html                # Main mailbox UI
+   login.html                # Login screen
+   setup.html                # First-run IMAP setup screen
+   main.js                   # Frontend entry point (mail app init)
+   login.js                  # Login flow (username/password)
+   setup.js                  # Setup flow (IMAP server + port)
+   mail-app/                 # Mail UI state, rendering, syncing, provider logic
+   shared/                   # Shared frontend helpers
+
+src-tauri/
+   Cargo.toml                # Rust dependencies and crate metadata
+   tauri.conf.json           # Tauri app/window/bundle config
+   src/
+      lib.rs                  # Tauri app bootstrap + command registration
+      config.rs               # App config and init status types
+      handlers/               # Tauri commands (setup, login, rater, email fetch)
+      workers/                # Background IMAP worker loop
+      db/                     # SQLite initialization and queries
+      llm/                    # LLM provider/rpc integration
 ```
-src/                    # Frontend (HTML, CSS, JavaScript)
-├── index.html         # Main app page (email input)
-├── setup.html         # Setup/configuration page
-├── main.js            # Main app logic and email rating
-├── setup.js           # Setup form handling
-└── styles.css         # Shared styling
 
-src-tauri/             # Rust backend
-├── src/
-│   ├── lib.rs         # Main entry point and Tauri command handlers
-│   ├── config.rs      # Configuration management and state
-│   ├── error.rs       # Error types and serialization
-│   ├── handlers/      # Tauri command handlers
-│   ├── rpc/           # RPC agent client and communication
-│   ├── session/       # IMAP session management
-│   └── tracing.rs     # Logging configuration
-└── Cargo.toml         # Rust dependencies
-```
+## Prerequisites
 
-## Getting Started
-
-### Prerequisites
-
-- Node.js 16+ and npm/yarn
-- Rust 1.70+ (install via [rustup](https://rustup.rs/))
-- Tauri CLI (`cargo install tauri-cli`)
-
-### Installation
-
-1. **Clone and install dependencies:**
-   ```bash
-   git clone https://github.com/seun-ja/email-desktop-client.git
-   cd Pemail
-   npm install
-   ```
-
-2. **Create `.env` file** with configuration defaults:
-   ```bash
-   VITE_RPC_SERVER=0.0.0.0:5500
-   VITE_RUST_LOG=info
-   VITE_OTLP_COLLECTOR_ENDPOINT=http://otel-collector:4317
-   ```
-
-3. **Build and run the app:**
-   ```bash
-   npm run tauri dev
-   ```
-
-## Configuration
-
-On first run, the app will redirect to `/setup.html` to configure:
-- **IMAP Server**: Email server hostname (default: `imap.gmail.com`)
-- **IMAP Port**: Email server port (default: `993`)
-- Other defaults (RPC Server, logging, OTLP) are sourced from `.env`
-
-Configuration is saved to `~/.config/Pemail/config.json` and persists across sessions.
-
-## Usage
-
-1. **Setup Phase**: Fill in IMAP credentials and settings → Click "Save Setup" → App reloads
-2. **Main App**: 
-   - Enter email subject, sender email, and body
-   - Click "Test Input" to send to the RPC agent for spam rating
-   - View results: Spam rating label (Ham/Spam/Phishing) and confidence score
-
-## Architecture
-
-### Frontend
-- Vanilla JavaScript with Tauri IPC for command invocation
-- Setup page handles first-run configuration
-- Main page submits emails and displays spam ratings
-
-### Backend (Rust + Tauri)
-- **AppState**: RwLock-wrapped optional initialized state (async-safe)
-- **Config**: File-based (JSON) with environment variable fallbacks
-- **Tauri Commands**:
-  - `check_init_status()`: Check initialization status and return one of:
-    - `"setup"`: Config file doesn't exist, show setup page
-    - `"login"`: Config exists but user not authenticated, show login page
-    - `"signed_in"`: User is authenticated, proceed to main app
-  - `config_setup(imap_server, imap_port, username, password)`: Save config and initialize services
-  - `login(username, password)`: Authenticate with existing config
-  - `rater(subject, emailFrom, body)`: Rate email for spam
-- **RPC Client**: Async tarpc-based communication with ML agent service
-- **IMAP Client**: async_imap for email session management
-
-## Development
-
-### Recommended IDE Setup
-
-- [VS Code](https://code.visualstudio.com/)
-- [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) extension
-- [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
-
-### Build Commands
+- Rust toolchain (stable) via rustup
+- Tauri CLI:
 
 ```bash
-npm run tauri dev       # Development with hot-reload
-npm run tauri build     # Production binary
-npm run tauri build --target universal-apple-darwin  # Universal macOS
+cargo install tauri-cli
 ```
+
+On macOS, ensure Xcode Command Line Tools are installed.
+
+## Environment Variables
+
+Create a `.env` file in the repository root:
+
+```bash
+RPC_SERVER=0.0.0.0:5500
+RUST_LOG=info
+OTLP_COLLECTOR_ENDPOINT=http://0.0.0.0:4317
+EMAIL_CACHE_SIZE=100
+```
+
+Notes:
+
+- `RPC_SERVER` must point to your running RPC agent service.
+- `EMAIL_CACHE_SIZE` controls how many messages are cached per mailbox fetch.
+
+## Run Locally
+
+From the project root:
+
+```bash
+cd src-tauri
+cargo tauri dev
+```
+
+Build a distributable app:
+
+```bash
+cd src-tauri
+cargo tauri build
+```
+
+## First-Run Flow
+
+1. `check_init_status` decides where to route the user:
+    - `setup`: no config yet
+    - `login`: config exists, user not authenticated
+    - `signed_in`: user already authenticated
+2. Setup page collects:
+    - IMAP server hostname
+    - IMAP port
+3. Login page collects:
+    - Username (email)
+    - Password
+4. After successful login, app opens the main mailbox window and starts background sync.
+
+## Key Tauri Commands
+
+- `check_init_status()`
+- `config_setup(imap_server, imap_port)`
+- `login(username, password)`
+- `open_main_window()`
+- `fetch_emails_handler(...)`
+- `rater(subject, email_from, body)`
+
+## Config and Data Storage
+
+- App config directory: managed via Tauri `app_config_dir`
+- Config file: `config.json`
+- Mail database and cached data: under app config `data/`
+- Credentials: stored through Apple Keychain integration on macOS
 
 ## Troubleshooting
 
-- **Stuck on login/setup page**: 
-  - For setup: Verify IMAP credentials and port are correct
-  - For login: Ensure `check_init_status()` returns "login" when config exists
-  - Check that app state is properly transitioned to `Initialized` after successful authentication
-- **RPC connection fails**: Ensure RPC server is running at the address specified in `RPC_SERVER` environment variable.
-- **IMAP connection fails**: Verify IMAP credentials and port in config; some providers require app-specific passwords.
+- Stuck on setup/login:
+   - Delete app config directory and relaunch to reset onboarding state.
+- Login fails with auth errors:
+   - Re-check username/password and provider IMAP access settings.
+   - For Gmail/Yahoo, app-specific passwords may be required.
+- RPC rating fails:
+   - Confirm your RPC service is running and reachable at `RPC_SERVER`.
+
+## Development Notes
+
+- Frontend assets are served from `src/` (`frontendDist` in `src-tauri/tauri.conf.json`).
+- The app starts in a compact auth window and expands after successful login.
+- Logout clears local state and returns the UI to setup/login flow.
 
 ## License
 
