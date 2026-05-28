@@ -162,4 +162,8 @@ What is covered now:
 
 ## License
 
-MIT
+Proprietary - All Rights Reserved.
+
+This project is not open source. No part of this software may be copied,
+reproduced, modified, distributed, published, sublicensed, or used without
+prior written permission from the copyright owner.
