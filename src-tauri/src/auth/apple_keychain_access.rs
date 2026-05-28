@@ -1,3 +1,4 @@
+#[cfg(target_os = "macos")]
 use security_framework::passwords::{
     delete_generic_password, get_generic_password, set_generic_password,
 };
@@ -16,12 +17,21 @@ impl AppleKeychainManager {
         &self.0
     }
 
+    #[cfg(target_os = "macos")]
     pub fn store_password(&self, account: &str, password: &str) -> Result<(), Error> {
         set_generic_password(self.service_name(), account, password.as_bytes())?;
 
         Ok(())
     }
 
+    #[cfg(not(target_os = "macos"))]
+    pub fn store_password(&self, _account: &str, _password: &str) -> Result<(), Error> {
+        Err(Error::Keychain(
+            "Apple Keychain is only supported on macOS".to_string(),
+        ))
+    }
+
+    #[cfg(target_os = "macos")]
     pub fn retrieve_password(&self, account: &str) -> Result<String, Error> {
         let password_bytes = get_generic_password(self.service_name(), account)?;
 
@@ -30,9 +40,24 @@ impl AppleKeychainManager {
         Ok(password)
     }
 
+    #[cfg(not(target_os = "macos"))]
+    pub fn retrieve_password(&self, _account: &str) -> Result<String, Error> {
+        Err(Error::Keychain(
+            "Apple Keychain is only supported on macOS".to_string(),
+        ))
+    }
+
+    #[cfg(target_os = "macos")]
     pub fn delete_password(&self, account: &str) -> Result<(), Error> {
         delete_generic_password(self.service_name(), account)?;
 
         Ok(())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn delete_password(&self, _account: &str) -> Result<(), Error> {
+        Err(Error::Keychain(
+            "Apple Keychain is only supported on macOS".to_string(),
+        ))
     }
 }

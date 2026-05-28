@@ -55,7 +55,12 @@ pub enum Error {
     Invoke(#[from] Box<SdkError<InvokeEndpointError>>),
     /// Keychain error: an error occurred while accessing the Apple keychain.
     #[error("keychain error: {0}")]
+    #[cfg(target_os = "macos")]
     Keychain(#[from] security_framework::base::Error),
+    /// Keychain error: Apple Keychain is only supported on macOS.
+    #[error("keychain error: {0}")]
+    #[cfg(not(target_os = "macos"))]
+    Keychain(String),
     /// Byte conversion error: an error occurred while converting bytes to a string.
     #[error("byte conversion error: {0}")]
     ByteConversion(#[from] std::string::FromUtf8Error),

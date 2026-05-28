@@ -50,7 +50,7 @@ pub async fn fetch_emails(
         return Ok(FetchResult::EmptyMailbox);
     }
 
-    let mut emails: Vec<Email> = Vec::with_capacity(mailbox.exists as usize);
+    let mut emails: Vec<Email> = Vec::new();
 
     let all_uids = session.uid_search("ALL").await?;
     let uid_set = uid_vec_to_set(&all_uids);

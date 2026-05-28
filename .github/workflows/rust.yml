@@ -37,7 +37,7 @@ jobs:
       with:
         workspaces: src-tauri -> target
     - name: Build
-      run: cargo build --verbose
+      run: cargo build
     - name: Run tests
-      run: PYO3_PYTHON=python3 cargo test --verbose
+      run: PYO3_PYTHON=python3 cargo test
 
