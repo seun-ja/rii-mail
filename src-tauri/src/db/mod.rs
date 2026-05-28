@@ -2,7 +2,9 @@ mod emails_db;
 
 use std::{fs, path::PathBuf};
 
-pub use emails_db::{check_email_db_empty, cleanup, get_emails, populate_storage};
+pub use emails_db::{
+    check_email_db_empty, cleanup, get_emails, get_last_uid, populate_storage, set_last_uid,
+};
 
 use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 
@@ -26,6 +28,18 @@ pub async fn init_db(
 
     let pool = SqlitePool::connect_with(options).await?;
 
+    sqlx::query("PRAGMA journal_mode = WAL;")
+        .execute(&pool)
+        .await?;
+
+    sqlx::query("PRAGMA synchronous = NORMAL;")
+        .execute(&pool)
+        .await?;
+
+    sqlx::query("PRAGMA foreign_keys = ON;")
+        .execute(&pool)
+        .await?;
+
     create_table_for_provider(&pool, provider).await?;
 
     Ok(pool)
@@ -38,30 +52,54 @@ async fn create_table_for_provider(
     let inbox_table_name = format!("{}_{}", provider.as_ref(), MailBox::Inbox.as_ref());
     let sent_table_name = format!("{}_{}", provider.as_ref(), MailBox::Sent.as_ref());
 
-    let create_inbox_sql = format!(
-        "CREATE TABLE IF NOT EXISTS {inbox_table_name} (\
-            id INTEGER PRIMARY KEY AUTOINCREMENT,\
-            date TEXT,\
-            body BLOB,\
-            labels TEXT\
-        );"
-    );
-    sqlx::query(&create_inbox_sql).execute(pool).await?;
+    let inbox_uid_index = format!("idx_{}_{}_uid", provider.as_ref(), MailBox::Inbox.as_ref());
+    let inbox_date_index = format!("idx_{}_{}_date", provider.as_ref(), MailBox::Inbox.as_ref());
 
-    let create_sent_sql = format!(
-        "CREATE TABLE IF NOT EXISTS {sent_table_name} (\
-            id INTEGER PRIMARY KEY AUTOINCREMENT,\
-            date TEXT,\
-            body BLOB,\
-            labels TEXT\
-        );"
+    let sent_uid_index = format!("idx_{}_{}_uid", provider.as_ref(), MailBox::Sent.as_ref());
+    let sent_date_index = format!("idx_{}_{}_date", provider.as_ref(), MailBox::Sent.as_ref());
+
+    let sql = format!(
+        r#"
+        CREATE TABLE IF NOT EXISTS {inbox_table_name} (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid INTEGER NOT NULL UNIQUE,
+            date INTEGER,
+            body BLOB,
+            labels TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS {sent_table_name} (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid INTEGER NOT NULL UNIQUE,
+            date TEXT,
+            body BLOB,
+            labels TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS mailbox_sync_state (
+            mailbox TEXT PRIMARY KEY,
+            last_uid INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS {inbox_uid_index}
+        ON {inbox_table_name}(uid);
+
+        CREATE INDEX IF NOT EXISTS {inbox_date_index}
+        ON {inbox_table_name}(date);
+
+        CREATE INDEX IF NOT EXISTS {sent_uid_index}
+        ON {sent_table_name}(uid);
+
+        CREATE INDEX IF NOT EXISTS {sent_date_index}
+        ON {sent_table_name}(date);
+        "#
     );
-    sqlx::query(&create_sent_sql).execute(pool).await?;
+    sqlx::query(&sql).execute(pool).await?;
 
     Ok(())
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, Hash, PartialEq)]
 pub enum Providers {
     Yahoo,
     Gmail,

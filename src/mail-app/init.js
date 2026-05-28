@@ -143,9 +143,18 @@ export function initializeMailApp({ invoke, listen, storage = window.localStorag
     ui.showMessage("Draft created in Sent.");
   });
 
-  dom.refreshBtnEl.addEventListener("click", () => {
-    sync.loadMoreEmails(INITIAL_BATCH_SIZE, { reset: true });
-    ui.showMessage("Mailbox refreshed.");
+  dom.refreshBtnEl.addEventListener("click", async () => {
+    try {
+      const newCount = await sync.refreshActiveMailbox();
+      if (newCount > 0) {
+        ui.showMessage(`Mailbox refreshed. ${newCount} new email${newCount === 1 ? "" : "s"}.`);
+      } else {
+        ui.showMessage("Mailbox refreshed. No new emails.");
+      }
+    } catch (error) {
+      const message = error?.message || error?.msg || String(error);
+      ui.showMessage(`Failed to refresh mailbox: ${message}`, true);
+    }
   });
 
   dom.markReadBtnEl.addEventListener("click", () => {

@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 
 mod fetcher;
 
-pub use fetcher::fetch_emails;
+pub use fetcher::{fetch_emails, fetch_latest};
+#[cfg(test)]
+pub(crate) use fetcher::{uid_vec_to_set, FetchResult};
 use sqlx::prelude::FromRow;
 
 fn extract_date_from_message(message: &Message<'_>) -> Option<DateTime<FixedOffset>> {
@@ -24,6 +26,7 @@ fn extract_date_from_raw_message(raw: &[u8]) -> Option<DateTime<FixedOffset>> {
 
 #[derive(FromRow, Clone)]
 pub struct Email {
+    pub uid: Option<u32>,
     pub date: Option<DateTime<FixedOffset>>,
     pub body: Option<Vec<u8>>,
     pub labels: Option<Vec<String>>,
@@ -41,7 +44,12 @@ impl From<Fetch> for Email {
             .gmail_labels()
             .map(|labels| labels.iter().map(|s| s.to_string()).collect());
 
-        Self { date, body, labels }
+        Self {
+            uid: fetch.uid,
+            date,
+            body,
+            labels,
+        }
     }
 }
 
@@ -83,7 +91,7 @@ pub struct EmailContent {
     pub raw_message: String,
 }
 
-fn normalize_text(value: &str, max_chars: usize) -> String {
+pub(crate) fn normalize_text(value: &str, max_chars: usize) -> String {
     let normalized = value.split_whitespace().collect::<Vec<_>>().join(" ");
 
     if normalized.chars().count() <= max_chars {
@@ -127,7 +135,7 @@ fn extract_first_from(address: Option<&Address<'_>>) -> (String, String) {
     }
 }
 
-fn map_folder_and_starred(labels: &[String]) -> (String, bool) {
+pub(crate) fn map_folder_and_starred(labels: &[String]) -> (String, bool) {
     let mut folder = "inbox".to_string();
     let mut starred = false;
 

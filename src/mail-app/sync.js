@@ -265,6 +265,53 @@ export function createSyncController(state, renderer, ui, invoke, storage = wind
     }, INITIAL_EMPTY_RETRY_DELAY_MS);
   }
 
+  async function refreshActiveMailbox() {
+    if (!state.allowFetch || !state.isAppReady || state.isLoadingEmails) {
+      return 0;
+    }
+
+    const folderKey = getActiveBackendFolderKey(state);
+    const mailbox = getActiveMailboxLiteral(state);
+    const provider = getProviderLiteral(storage);
+    const pagination = getFolderPaginationState(state, folderKey);
+
+    state.isLoadingEmails = true;
+    renderer.renderList();
+
+    try {
+      const fetched = await invoke("refresh_emails_handler", {
+        mailbox,
+        provider,
+      });
+
+      const latest = Array.isArray(fetched) ? fetched : [];
+
+      if (latest.length === 0) {
+        return 0;
+      }
+
+      const existingIds = new Set(state.cachedByFolder[folderKey].map((mail) => mail.id));
+      const uniqueLatest = latest.filter((mail) => !existingIds.has(mail.id));
+
+      if (uniqueLatest.length === 0) {
+        return 0;
+      }
+
+      state.cachedByFolder[folderKey] = [...uniqueLatest, ...state.cachedByFolder[folderKey]];
+
+      pagination.nextOffset += uniqueLatest.length;
+      pagination.lastFetchSignature = null;
+      pagination.lastFetchAt = 0;
+
+      saveCachedEmails(state, storage);
+
+      return uniqueLatest.length;
+    } finally {
+      state.isLoadingEmails = false;
+      renderer.renderList();
+    }
+  }
+
   async function checkInitStatus() {
     try {
       const status = await invoke("check_init_status");
@@ -294,6 +341,7 @@ export function createSyncController(state, renderer, ui, invoke, storage = wind
     clearInitialEmptyRetry,
     clearInitialSyncPoll,
     loadMoreEmails,
+    refreshActiveMailbox,
     runInitialSync,
     startBootstrapRefresh,
     stopBootstrapRefresh,

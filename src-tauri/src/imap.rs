@@ -7,7 +7,12 @@ use crate::{db, error::Error};
 #[derive(Debug)]
 pub enum ImapCommand {
     Logout,
-    FetchEmails(u32, db::MailBox, db::Providers),
+    FetchEmails(db::MailBox, db::Providers),
+    RefreshEmails(
+        db::MailBox,
+        db::Providers,
+        tokio::sync::oneshot::Sender<Result<u16, String>>,
+    ),
 }
 
 pub async fn init_imap_client(

@@ -1,0 +1,28 @@
+use crate::db::Providers;
+use crate::handlers::configuration::provider_from_imap_server;
+
+#[test]
+fn provider_from_imap_server_maps_yahoo_case_insensitively() {
+    assert!(matches!(
+        provider_from_imap_server("imap.mail.yahoo.com"),
+        Providers::Yahoo
+    ));
+
+    assert!(matches!(
+        provider_from_imap_server("IMAP.MAIL.YAHOO.COM"),
+        Providers::Yahoo
+    ));
+}
+
+#[test]
+fn provider_from_imap_server_defaults_to_gmail_for_non_yahoo() {
+    assert!(matches!(
+        provider_from_imap_server("imap.gmail.com"),
+        Providers::Gmail
+    ));
+
+    assert!(matches!(
+        provider_from_imap_server("imap.example.com"),
+        Providers::Gmail
+    ));
+}

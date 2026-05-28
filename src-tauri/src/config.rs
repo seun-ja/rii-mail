@@ -26,10 +26,6 @@ pub struct Config {
     pub imap_port: u16,
     pub sqlite_db: String,
     pub accounts: Vec<String>,
-    #[serde(default)]
-    pub rust_log: Option<String>,
-    pub otlp_collector_endpoint: Option<String>,
-    pub email_cache_size: u32,
 }
 
 impl Config {

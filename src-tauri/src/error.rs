@@ -3,7 +3,7 @@ use std::{error::Error as StdError, io::ErrorKind};
 use aws_sdk_sagemakerruntime::{error::SdkError, operation::invoke_endpoint::InvokeEndpointError};
 use pyo3::PyErr;
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc::error::SendError;
+use tokio::sync::{mpsc::error::SendError, oneshot::error::RecvError};
 use tracing::{error, warn};
 
 use crate::{
@@ -59,6 +59,8 @@ pub enum Error {
     /// Byte conversion error: an error occurred while converting bytes to a string.
     #[error("byte conversion error: {0}")]
     ByteConversion(#[from] std::string::FromUtf8Error),
+    #[error("Oneshot channel receive error: {0}")]
+    OneShotRecv(#[from] RecvError),
 }
 
 impl Serialize for Error {
@@ -89,6 +91,7 @@ impl Serialize for Error {
             Error::Invoke(e) => ("Invoke", e.to_string()),
             Error::Keychain(e) => ("Keychain", e.to_string()),
             Error::ByteConversion(e) => ("ByteConversion", e.to_string()),
+            Error::OneShotRecv(e) => ("OneShotRecv", e.to_string()),
         };
 
         use serde::ser::SerializeStruct;
@@ -122,6 +125,7 @@ impl Error {
             | Error::LocalInference(_)
             | Error::Invoke(_)
             | Error::Keychain(_)
+            | Error::OneShotRecv(_)
             | Error::ByteConversion(_) => {
                 error!(error = ?self, "Error occurred: {}", self);
             }

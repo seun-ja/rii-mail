@@ -6,7 +6,7 @@ use tauri::{Emitter as _, LogicalSize, Manager as _, Size};
 use tokio::sync::{mpsc, Mutex};
 
 use crate::config::{ImapClientConfig, ReturningUserImapClientConfig};
-use crate::handlers::fetch_emails_handler;
+use crate::handlers::{fetch_emails_handler, refresh_emails_handler};
 use crate::imap::ImapCommand;
 use crate::workers::session_thread;
 use crate::{
@@ -25,8 +25,11 @@ mod error;
 mod handlers;
 mod imap;
 mod llm;
-mod tracing;
+pub mod tracing;
 mod workers;
+
+#[cfg(test)]
+mod tests;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub async fn run() {
@@ -166,6 +169,7 @@ pub async fn run() {
             login,
             open_main_window,
             rater,
+            refresh_emails_handler,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

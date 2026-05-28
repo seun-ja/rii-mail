@@ -1,11 +1,14 @@
 use arc_swap::ArcSwap;
+use sqlx::SqlitePool;
 use tauri::Manager as _;
+use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use crate::{
     config::AppState,
     db::{get_emails, MailBox, Providers},
     email_cache::{CompleteEmail, FrontendEmail},
     error::Error,
+    imap::ImapCommand,
 };
 
 #[tauri::command]
@@ -24,10 +27,70 @@ pub async fn fetch_emails_handler(
     let provider = Providers::from(provider);
     let mailbox = MailBox::from(mailbox);
 
+    get_emails_as_front_end_from_pool(
+        provider,
+        mailbox,
+        min_range as u16,
+        max_range as u16,
+        &initialized.sqlite_pool,
+    )
+    .await
+}
+
+#[tauri::command]
+#[tracing::instrument(name = "command.email.refresh", skip(app))]
+pub async fn refresh_emails_handler(
+    app: tauri::AppHandle,
+    mailbox: String,
+    provider: String,
+) -> Result<Vec<FrontendEmail>, Error> {
+    let state = app.state::<ArcSwap<AppState>>();
+    let current_state = state.load();
+    let initialized = current_state.state();
+
+    let imap_cmd_channel_tx = app.state::<UnboundedSender<ImapCommand>>();
+    let (fetch_update_tx, fetch_update_rx) = oneshot::channel::<Result<u16, String>>();
+
+    let provider = Providers::from(provider);
+    let mailbox = MailBox::from(mailbox);
+
+    imap_cmd_channel_tx
+        .send(ImapCommand::RefreshEmails(
+            mailbox.clone(),
+            provider.clone(),
+            fetch_update_tx,
+        ))?;
+
+    match fetch_update_rx.await? {
+        Ok(new_emails_count) => {
+            tracing::info!("Fetched {} new email(s)", new_emails_count);
+            get_emails_as_front_end_from_pool(
+                provider,
+                mailbox,
+                0,
+                new_emails_count,
+                &initialized.sqlite_pool,
+            )
+            .await
+        }
+        Err(err) => {
+            tracing::error!(error = %err, "Failed to fetch new emails");
+            Err(Error::Other(format!("Failed to fetch new emails: {}", err)))
+        }
+    }
+}
+
+pub(crate) async fn get_emails_as_front_end_from_pool(
+    provider: Providers,
+    mailbox: MailBox,
+    min_range: u16,
+    max_range: u16,
+    sqlite_pool: &SqlitePool,
+) -> Result<Vec<FrontendEmail>, Error> {
     let table_name = format!("{}_{}", provider.as_ref(), mailbox.as_ref());
 
     let emails: Vec<CompleteEmail> =
-        get_emails(&initialized.sqlite_pool, &table_name, min_range, max_range).await?;
+        get_emails(sqlite_pool, &table_name, min_range, max_range).await?;
 
     let frontend_folder = mailbox.as_ref().to_string();
 
@@ -38,7 +101,7 @@ pub async fn fetch_emails_handler(
             let mut frontend = email.into_frontend(format!(
                 "db-{}-{}",
                 mailbox.as_ref(),
-                min_range + idx as u32
+                min_range + idx as u16
             ));
             frontend.folder = frontend_folder.clone();
             frontend

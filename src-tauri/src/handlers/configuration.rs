@@ -16,8 +16,15 @@ use crate::{
     db::{self, MailBox, Providers},
     error::Error,
     imap::ImapCommand,
-    tracing::init_subscriber,
 };
+
+pub(crate) fn provider_from_imap_server(imap_server: &str) -> Providers {
+    if imap_server.to_ascii_lowercase().contains("yahoo") {
+        db::Providers::Yahoo
+    } else {
+        db::Providers::Gmail
+    }
+}
 
 #[tauri::command]
 #[tracing::instrument(name = "command.config.setup", skip(app, imap_server, imap_port,))]
@@ -26,17 +33,8 @@ pub async fn config_setup(
     imap_server: String,
     imap_port: u16,
 ) -> Result<(), Error> {
-    dotenv::dotenv().ok();
-
     let rpc_server = std::env::var("RPC_SERVER").unwrap_or("0.0.0.0:5500".to_string());
-    let rust_log = std::env::var("RUST_LOG").unwrap_or("info".to_string());
     let sqlite_db = std::env::var("SQLITE_DB").unwrap_or("emails.db".to_string());
-    let otlp_collector_endpoint =
-        std::env::var("OTLP_COLLECTOR_ENDPOINT").unwrap_or("http://0.0.0.0:4317".to_string());
-    let email_cache_size = std::env::var("EMAIL_CACHE_SIZE")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(100);
 
     let config = Config {
         rpc_server,
@@ -44,9 +42,6 @@ pub async fn config_setup(
         imap_port,
         sqlite_db,
         accounts: vec![],
-        rust_log: Some(rust_log),
-        otlp_collector_endpoint: Some(otlp_collector_endpoint),
-        email_cache_size,
     };
 
     let config_dir = app.path().app_config_dir()?;
@@ -89,11 +84,7 @@ pub async fn check_init_status(app: tauri::AppHandle) -> Result<InitStatus, Erro
         let app_service_name = app.config().identifier.clone();
         let apple_keychain_manager = AppleKeychainManager::new(&app_service_name);
 
-        let provider = if config.imap_server.contains("yahoo") {
-            db::Providers::Yahoo
-        } else {
-            db::Providers::Gmail
-        };
+        let provider = provider_from_imap_server(&config.imap_server);
 
         let sqlite_pool = db::init_db(config_dir, &config.sqlite_db, &provider).await?;
 
@@ -196,9 +187,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
     };
     imap_client_channel_tx.send(imap_client_config)?;
 
-    match login_result_rx.await.map_err(|_| {
-        Error::Other("Login worker failed to send authentication result".to_string())
-    })? {
+    match login_result_rx.await? {
         Ok(()) => {
             ::tracing::info!("IMAP Login successful");
         }
@@ -208,18 +197,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
         }
     }
 
-    imap_cmd_channel_tx.send(ImapCommand::FetchEmails(
-        config.email_cache_size,
-        MailBox::Inbox,
-        provider.clone(),
-    ))?;
-
-    // move to another thread
-    imap_cmd_channel_tx.send(ImapCommand::FetchEmails(
-        config.email_cache_size,
-        MailBox::Sent,
-        provider,
-    ))?;
+    imap_cmd_channel_tx.send(ImapCommand::FetchEmails(MailBox::Inbox, provider.clone()))?;
 
     let initialized_state = config::InitializedState {
         rpc_llm_client: initialized_state.rpc_llm_client,
@@ -260,17 +238,7 @@ async fn handle_initialization(
     config_dir: PathBuf,
     app_service_name: &str,
 ) -> Result<(InitializedState, Providers), Error> {
-    init_subscriber(
-        &config.rust_log.clone().unwrap_or_default(),
-        &config.otlp_collector_endpoint.clone().unwrap_or_default(),
-    )
-    .map_err(|_| Error::Other("Failed to initialize subscriber".to_string()))?;
-
-    let provider = if config.imap_server.contains("yahoo") {
-        db::Providers::Yahoo
-    } else {
-        db::Providers::Gmail
-    };
+    let provider = provider_from_imap_server(&config.imap_server);
 
     let sqlite_pool = db::init_db(config_dir, &config.sqlite_db, &provider).await?;
 

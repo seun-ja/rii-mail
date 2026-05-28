@@ -1,0 +1,11 @@
+{
+  "name": "pemail-frontend-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test src/**/*.test.js",
+    "test:frontend": "node --test src/**/*.test.js",
+    "test:backend": "cd src-tauri && PYO3_PYTHON=/opt/homebrew/bin/python3.12 cargo test",
+    "test:all": "npm run test:frontend && npm run test:backend"
+  }
+}

@@ -36,13 +36,17 @@ pub async fn populate_storage(
 
     let mut tx = pool.begin().await?;
 
-    let mut query_builder: QueryBuilder<'_, sqlx::Sqlite> =
-        QueryBuilder::new(&format!("INSERT INTO {} (date, body, labels) ", table_name));
+    let mut query_builder: QueryBuilder<'_, sqlx::Sqlite> = QueryBuilder::new(&format!(
+        "INSERT INTO {} (uid, date, body, labels) ",
+        table_name
+    ));
 
     query_builder.push_values(emails, |mut b, email| {
+        let uid = email.uid.unwrap_or_default() as i64;
         let labels = email.labels.map(|l| serde_json::to_string(&l).unwrap());
 
-        b.push_bind(email.date)
+        b.push_bind(uid)
+            .push_bind(email.date)
             .push_bind(email.body)
             .push_bind(labels);
     });
@@ -59,8 +63,8 @@ pub async fn populate_storage(
 pub async fn get_emails(
     pool: &SqlitePool,
     table_name: &str,
-    min_range: u32,
-    max_range: u32,
+    min_range: u16,
+    max_range: u16,
 ) -> Result<Vec<CompleteEmail>, Error> {
     if max_range <= min_range {
         return Ok(Vec::new());
@@ -90,6 +94,7 @@ pub async fn get_emails(
             });
 
             Ok(Email {
+                uid: None,
                 date: row.date,
                 body: row.body,
                 labels,
@@ -141,4 +146,40 @@ pub async fn check_email_db_empty(pool: &SqlitePool, table_name: &str) -> Result
         .await?;
 
     Ok(result.0)
+}
+
+pub async fn get_last_uid(pool: &SqlitePool, mailbox: &str) -> Result<Option<u32>, Error> {
+    let result: Option<(i64,)> = sqlx::query_as(
+        r#"
+        SELECT last_uid
+        FROM mailbox_sync_state
+        WHERE mailbox = ?
+        "#,
+    )
+    .bind(mailbox)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(result.map(|r| r.0 as u32))
+}
+
+pub async fn set_last_uid(pool: &SqlitePool, mailbox: &str, uid: u32) -> Result<(), Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO mailbox_sync_state (
+            mailbox,
+            last_uid
+        )
+        VALUES (?, ?)
+        ON CONFLICT(mailbox)
+        DO UPDATE SET
+            last_uid = excluded.last_uid
+        "#,
+    )
+    .bind(mailbox)
+    .bind(uid as i64)
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }

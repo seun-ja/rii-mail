@@ -86,6 +86,34 @@ cd src-tauri
 cargo tauri build
 ```
 
+## Testing
+
+Run all tests from one place (project root):
+
+```bash
+npm run test:all
+```
+
+Run Rust backend tests:
+
+```bash
+cd src-tauri
+PYO3_PYTHON=/opt/homebrew/bin/python3.12 cargo test
+```
+
+Run frontend unit tests:
+
+```bash
+cd ..
+npm test
+```
+
+What is covered now:
+
+- Rust unit tests for error handling, email transformation, fetch helper logic, worker login error mapping, and DB enum conversions.
+- Rust async DB integration tests for initialization, storage population, pagination reads, sync-state tracking, and cleanup behavior.
+- Frontend unit tests for shared error parsing, state defaults, mailbox/provider helpers, cache hydration/persistence, and DOM selector wiring.
+
 ## First-Run Flow
 
 1. `check_init_status` decides where to route the user:

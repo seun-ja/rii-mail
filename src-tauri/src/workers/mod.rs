@@ -1,14 +1,19 @@
+use std::collections::HashSet;
+use std::time::Duration;
+
 use async_native_tls::TlsStream;
 use sqlx::SqlitePool;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot::Sender;
+use tokio::time::{self, MissedTickBehavior};
 use tokio::{net::TcpStream, sync::mpsc::UnboundedReceiver};
 
 use crate::auth;
 use crate::config::{ImapClientConfig, ReturningUserImapClientConfig};
+use crate::db::{MailBox, Providers};
 use crate::imap::{init_imap_client, ImapCommand};
 
-fn friendly_login_error_message(stage: &str, raw: &str) -> String {
+pub(crate) fn friendly_login_error_message(stage: &str, raw: &str) -> String {
     let lower = raw.to_ascii_lowercase();
 
     if lower.contains("authentication")
@@ -56,6 +61,13 @@ pub fn session_thread(
         let mut pool: Option<SqlitePool> = None;
         let mut imap_client_channel_open = true;
         let mut imap_cmd_channel_open = true;
+        let mut providers: HashSet<Providers> = HashSet::new();
+
+        // 1. Create an interval timer (e.g., every 3 seconds)
+        let mut ticker = time::interval(Duration::from_secs(60));
+
+        // Optional: Prevents bursts of ticks if your other code runs slow
+        ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
         while imap_client_channel_open || imap_cmd_channel_open {
             tokio::select! {
@@ -124,7 +136,7 @@ pub fn session_thread(
                     };
 
                     match cmd {
-                        ImapCommand::FetchEmails(size, mail_box, provider) => {
+                        ImapCommand::FetchEmails(mail_box, provider) => {
                             let Some(session) = initialized_session.as_mut() else {
                                 ::tracing::warn!("FetchEmails ignored: IMAP session is not initialized");
                                 continue;
@@ -135,7 +147,10 @@ pub fn session_thread(
                                 continue;
                             };
 
-                            let _ = crate::email_cache::fetch_emails(session, size, pool_ref, &mail_box, &provider).await;
+                            let _ = crate::email_cache::fetch_emails(session, pool_ref, &mail_box, &provider).await;
+                            let _ = crate::email_cache::fetch_emails(session, pool_ref, &MailBox::Sent, &provider).await;
+
+                            providers.insert(provider);
                         }
                         ImapCommand::Logout => {
                             if let Some(session) = initialized_session.as_mut() {
@@ -149,6 +164,44 @@ pub fn session_thread(
                             let _ = logout_result_tx.send(());
                             initialized_session = None;
                             pool = None;
+                        }
+                        ImapCommand::RefreshEmails(mail_box, provider, rx) => {
+                            let Some(session) = initialized_session.as_mut() else {
+                                ::tracing::warn!("FetchEmails ignored: IMAP session is not initialized");
+                                continue;
+                            };
+
+                            let Some(pool_ref) = pool.as_ref() else {
+                                ::tracing::warn!("FetchEmails ignored: sqlite pool is not initialized");
+                                continue;
+                            };
+
+                            if let Ok(fetched_count) = crate::email_cache::fetch_latest(session, pool_ref, &mail_box, &provider).await {
+                                let _ = rx.send(Ok(fetched_count.count()));
+                            }
+
+                            // TODO send the fetched emails count to the other thread so that we can trigger a frontend refresh if new emails were found
+                        }
+                    }
+                }
+                _ =  ticker.tick() => {
+                    let Some(session) = initialized_session.as_mut() else {
+                        ::tracing::warn!("FetchEmails ignored: IMAP session is not initialized");
+                        continue;
+                    };
+
+                    let Some(pool_ref) = pool.as_ref() else {
+                        ::tracing::warn!("FetchEmails ignored: sqlite pool is not initialized");
+                        continue;
+                    };
+
+                    let mail_box = [MailBox::Inbox, MailBox::Sent];
+
+                    for boxx in mail_box {
+                        for provider in &providers {
+                            if let Err(err) = crate::email_cache::fetch_latest(session, pool_ref, &boxx, provider).await {
+                                ::tracing::error!(error = ?err, "Failed to fetch latest emails for periodic refresh");
+                            }
                         }
                     }
                 }
