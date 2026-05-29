@@ -7,7 +7,7 @@ use tokio::sync::{mpsc::error::SendError, oneshot::error::RecvError};
 use tracing::{error, warn};
 
 use crate::{
-    config::{ImapClientConfig, InitializedState, ReturningUserImapClientConfig},
+    config::{ImapClientConfig, InitializedState},
     imap::ImapCommand,
 };
 
@@ -36,7 +36,7 @@ pub enum Error {
     #[error("Imap Config Channel Send Error: {0}")]
     ImapConfigChannelSend(#[from] SendError<ImapClientConfig>),
     #[error("Returning User Imap Config Channel Send Error: {0}")]
-    ReturningUserImapConfigChannelSend(#[from] SendError<ReturningUserImapClientConfig>),
+    ReturningUserImapConfigChannelSend(String),
     #[error("Imap Command Channel Send Error: {0}")]
     ImapCommandChannelSend(#[from] SendError<ImapCommand>),
     /// Authentication error: the provider returned an authentication error.

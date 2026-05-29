@@ -74,15 +74,17 @@ pub async fn check_init_status(app: tauri::AppHandle) -> Result<InitStatus, Erro
         return Ok(InitStatus::Setup);
     }
 
-    // If database exists, we can attempt to authenticate user with stored credentials and skip login page
-    if config_dir.join("data").exists() {
-        let config = config.unwrap();
+    let app_service_name = app.config().identifier.clone();
+    let apple_keychain_manager = AppleKeychainManager::new(&app_service_name);
 
+    let config = config.unwrap();
+
+    let (login_result_tx, login_result_rx) = oneshot::channel::<Result<(), String>>();
+
+    if let Ok(password) = apple_keychain_manager
+        .retrieve_password(&config.accounts.first().cloned().unwrap_or_default())
+    {
         let imap_client_channel_tx = app.state::<UnboundedSender<ReturningUserImapClientConfig>>();
-        let (login_result_tx, login_result_rx) = oneshot::channel::<Result<(), String>>();
-
-        let app_service_name = app.config().identifier.clone();
-        let apple_keychain_manager = AppleKeychainManager::new(&app_service_name);
 
         let provider = provider_from_imap_server(&config.imap_server);
 
@@ -97,12 +99,14 @@ pub async fn check_init_status(app: tauri::AppHandle) -> Result<InitStatus, Erro
             imap_server: config.imap_server.clone(),
             imap_port: config.imap_port,
             username: config.accounts.first().cloned().unwrap_or_default(),
+            password,
             sqlite_pool: sqlite_pool.clone(),
-            apple_keychain_manager: apple_keychain_manager.clone(),
             login_result_tx: Some(login_result_tx),
         };
 
-        imap_client_channel_tx.send(imap_client_config)?;
+        imap_client_channel_tx
+            .send(imap_client_config)
+            .map_err(|e| Error::ReturningUserImapConfigChannelSend(e.to_string()))?;
         ensure_expanded_startup_window(&app)?;
 
         match login_result_rx.await.map_err(|_| {
@@ -127,10 +131,11 @@ pub async fn check_init_status(app: tauri::AppHandle) -> Result<InitStatus, Erro
         app_state.store(Arc::new(AppState::Initialized(Arc::new(initialized_state))));
 
         // Update app state to reflect already authenticated user
-        return Ok(InitStatus::SignedIn);
+        Ok(InitStatus::SignedIn)
+    } else {
+        ::tracing::info!("No stored credentials found, user needs to login");
+        Ok(InitStatus::Login)
     }
-
-    Ok(InitStatus::Login)
 }
 
 fn ensure_expanded_startup_window(app: &tauri::AppHandle) -> Result<(), Error> {

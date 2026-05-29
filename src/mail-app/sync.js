@@ -16,7 +16,13 @@ import {
 } from "./helpers.js";
 import { getProviderLiteral } from "./provider.js";
 
-export function createSyncController(state, renderer, ui, invoke, storage = window.localStorage) {
+export function createSyncController(
+  state,
+  renderer,
+  ui,
+  invoke,
+  storage = window.localStorage,
+) {
   function stopBootstrapRefresh() {
     if (state.bootstrapRefreshTimer) {
       clearInterval(state.bootstrapRefreshTimer);
@@ -43,7 +49,10 @@ export function createSyncController(state, renderer, ui, invoke, storage = wind
     state.bootstrapRefreshAttempts = 0;
 
     state.bootstrapRefreshTimer = setInterval(() => {
-      if (getEmails(state).length > 0 || state.bootstrapRefreshAttempts >= AUTO_BOOTSTRAP_REFRESH_MAX) {
+      if (
+        getEmails(state).length > 0 ||
+        state.bootstrapRefreshAttempts >= AUTO_BOOTSTRAP_REFRESH_MAX
+      ) {
         stopBootstrapRefresh();
         return;
       }
@@ -56,7 +65,11 @@ export function createSyncController(state, renderer, ui, invoke, storage = wind
     }, AUTO_BOOTSTRAP_REFRESH_INTERVAL_MS);
   }
 
-  async function loadMoreEmails(batchSize, { reset = false, preserveEmptyRetryState = false } = {}) {
+  // TODO: should take it a mailbosx argument to support manual refresh of non-active folders?
+  async function loadMoreEmails(
+    batchSize,
+    { reset = false, preserveEmptyRetryState = false } = {},
+  ) {
     if (!state.allowFetch || !state.isAppReady || state.isLoadingEmails) {
       return;
     }
@@ -86,7 +99,10 @@ export function createSyncController(state, renderer, ui, invoke, storage = wind
     const fetchSignature = `${state.activeFolder}:${minRange}:${maxRange}`;
     const now = Date.now();
 
-    if (pagination.lastFetchSignature === fetchSignature && now - pagination.lastFetchAt < 1200) {
+    if (
+      pagination.lastFetchSignature === fetchSignature &&
+      now - pagination.lastFetchAt < 1200
+    ) {
       return;
     }
 
@@ -119,7 +135,9 @@ export function createSyncController(state, renderer, ui, invoke, storage = wind
       if (reset) {
         state.cachedByFolder[folderKey] = page;
       } else {
-        const existingIds = new Set(state.cachedByFolder[folderKey].map((mail) => mail.id));
+        const existingIds = new Set(
+          state.cachedByFolder[folderKey].map((mail) => mail.id),
+        );
         const uniquePage = page.filter((mail) => !existingIds.has(mail.id));
         state.cachedByFolder[folderKey].push(...uniquePage);
       }
@@ -147,13 +165,16 @@ export function createSyncController(state, renderer, ui, invoke, storage = wind
   }
 
   async function runInitialSync() {
-    async function syncFolderWithRetries(folder, {
-      maxAttempts = INITIAL_EMPTY_RETRY_MAX,
-      showProgress = true,
-      progressBase = 0,
-      progressSpan = 100,
-      progressLabel = folder,
-    } = {}) {
+    async function syncFolderWithRetries(
+      folder,
+      {
+        maxAttempts = INITIAL_EMPTY_RETRY_MAX,
+        showProgress = true,
+        progressBase = 0,
+        progressSpan = 100,
+        progressLabel = folder,
+      } = {},
+    ) {
       let page = [];
 
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -241,7 +262,8 @@ export function createSyncController(state, renderer, ui, invoke, storage = wind
     }
 
     const hasAnySyncedData =
-      state.cachedByFolder.INBOX.length > 0 || state.cachedByFolder.Sent.length > 0;
+      state.cachedByFolder.INBOX.length > 0 ||
+      state.cachedByFolder.Sent.length > 0;
 
     state.isInitialSyncComplete = hasAnySyncedData;
 
@@ -290,14 +312,19 @@ export function createSyncController(state, renderer, ui, invoke, storage = wind
         return 0;
       }
 
-      const existingIds = new Set(state.cachedByFolder[folderKey].map((mail) => mail.id));
+      const existingIds = new Set(
+        state.cachedByFolder[folderKey].map((mail) => mail.id),
+      );
       const uniqueLatest = latest.filter((mail) => !existingIds.has(mail.id));
 
       if (uniqueLatest.length === 0) {
         return 0;
       }
 
-      state.cachedByFolder[folderKey] = [...uniqueLatest, ...state.cachedByFolder[folderKey]];
+      state.cachedByFolder[folderKey] = [
+        ...uniqueLatest,
+        ...state.cachedByFolder[folderKey],
+      ];
 
       pagination.nextOffset += uniqueLatest.length;
       pagination.lastFetchSignature = null;
@@ -314,7 +341,10 @@ export function createSyncController(state, renderer, ui, invoke, storage = wind
 
   async function checkInitStatus() {
     try {
+      console.log("Checking initialization status");
       const status = await invoke("check_init_status");
+
+      console.log("Initialization status:", status);
       const isSignedIn = status === "signed_in";
 
       if (status === "setup") {

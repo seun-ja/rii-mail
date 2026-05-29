@@ -81,9 +81,9 @@ pub struct ImapClientConfig {
 
 pub struct ReturningUserImapClientConfig {
     pub username: String,
+    pub password: String,
     pub imap_server: String,
     pub imap_port: u16,
-    pub apple_keychain_manager: AppleKeychainManager,
     pub sqlite_pool: SqlitePool,
     pub login_result_tx: Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
 }

@@ -62,6 +62,7 @@ pub fn session_thread(
         let mut imap_client_channel_open = true;
         let mut imap_cmd_channel_open = true;
         let mut providers: HashSet<Providers> = HashSet::new();
+        let mut database_initialized = false;
 
         // 1. Create an interval timer (e.g., every 3 seconds)
         let mut ticker = time::interval(Duration::from_secs(60));
@@ -96,6 +97,7 @@ pub fn session_thread(
                     }
                 }
                 maybe_returning_user_config = imap_client_returning_user_channel_rx.recv() => {
+                    ::tracing::info!("Received IMAP config for returning user");
                     let Some(config) = maybe_returning_user_config else {
                         ::tracing::warn!("Returning user IMAP config channel closed");
                         continue;
@@ -105,18 +107,7 @@ pub fn session_thread(
 
                     match init_imap_client(&config.imap_server, config.imap_port).await {
                         Ok(imap_client) => {
-                            let password = match config.apple_keychain_manager.retrieve_password(&config.username) {
-                                Ok(pw) => pw,
-                                Err(err) => {
-                                    ::tracing::error!(error = ?err, "Failed to retrieve password from Apple Keychain for returning user");
-                                    if let Some(tx) = login_result_tx.take() {
-                                        let _ = tx.send(Err("Failed to retrieve credentials for returning user. Please log in again.".to_string()));
-                                    }
-                                    continue;
-                                }
-                            };
-
-                            login(&config.username, &password, &mut initialized_session, login_result_tx, imap_client, &mut pool, config.sqlite_pool).await;
+                            login(&config.username, &config.password, &mut initialized_session, login_result_tx, imap_client, &mut pool, config.sqlite_pool).await;
 
                             ::tracing::info!("IMAP session initialized for returning user");
                         }
@@ -149,6 +140,8 @@ pub fn session_thread(
 
                             let _ = crate::email_cache::fetch_emails(session, pool_ref, &mail_box, &provider).await;
                             let _ = crate::email_cache::fetch_emails(session, pool_ref, &MailBox::Sent, &provider).await;
+
+                            database_initialized = true;
 
                             providers.insert(provider);
                         }
@@ -184,7 +177,7 @@ pub fn session_thread(
                         }
                     }
                 }
-                _ =  ticker.tick() => {
+                _ =  ticker.tick(), if database_initialized => {
                     let Some(session) = initialized_session.as_mut() else {
                         ::tracing::warn!("FetchEmails ignored: IMAP session is not initialized");
                         continue;
@@ -223,12 +216,6 @@ async fn login(
 ) {
     match auth::login(username, password, imap_client).await {
         Ok(imap_session) => {
-            if let Some(existing_session) = initialized_session.as_mut() {
-                if let Err(err) = existing_session.logout().await {
-                    ::tracing::warn!(error = ?err, "Failed to logout previous IMAP session before re-login");
-                }
-            }
-
             *initialized_session = Some(imap_session);
             *pool = Some(sqlite_pool);
 

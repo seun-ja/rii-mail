@@ -54,12 +54,11 @@ pub async fn refresh_emails_handler(
     let provider = Providers::from(provider);
     let mailbox = MailBox::from(mailbox);
 
-    imap_cmd_channel_tx
-        .send(ImapCommand::RefreshEmails(
-            mailbox.clone(),
-            provider.clone(),
-            fetch_update_tx,
-        ))?;
+    imap_cmd_channel_tx.send(ImapCommand::RefreshEmails(
+        mailbox.clone(),
+        provider.clone(),
+        fetch_update_tx,
+    ))?;
 
     match fetch_update_rx.await? {
         Ok(new_emails_count) => {

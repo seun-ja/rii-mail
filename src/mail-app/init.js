@@ -5,14 +5,23 @@ import { createUiController } from "./ui.js";
 import { createLayoutController } from "./layout.js";
 import { createRenderer } from "./render.js";
 import { createSyncController } from "./sync.js";
-import { clearCachedEmails, getEmails, hydrateFolderCachesFromStorage, saveCachedEmails } from "./cache.js";
+import {
+  clearCachedEmails,
+  getEmails,
+  hydrateFolderCachesFromStorage,
+  saveCachedEmails,
+} from "./cache.js";
 import {
   getActiveBackendFolderKey,
   getFolderPaginationState,
   resetFolderPagination,
 } from "./helpers.js";
 
-export function initializeMailApp({ invoke, listen, storage = window.localStorage }) {
+export function initializeMailApp({
+  invoke,
+  listen,
+  storage = window.localStorage,
+}) {
   const dom = getMailAppDom();
 
   if (
@@ -68,7 +77,9 @@ export function initializeMailApp({ invoke, listen, storage = window.localStorag
       state.initialEmptyRetries = 0;
       state.syncProgressPercent = 0;
       state.activeFolder = button.dataset.folder;
-      dom.folderButtons.forEach((otherButton) => otherButton.classList.remove("active"));
+      dom.folderButtons.forEach((otherButton) =>
+        otherButton.classList.remove("active"),
+      );
       button.classList.add("active");
       renderer.renderList();
 
@@ -125,7 +136,8 @@ export function initializeMailApp({ invoke, listen, storage = window.localStorag
       senderName: "You",
       emailFrom: "you@company.com",
       subject: "Draft: New message",
-      preview: "This is a placeholder draft. Wire this to your compose modal later.",
+      preview:
+        "This is a placeholder draft. Wire this to your compose modal later.",
       body: "Draft created from the home UI. Replace this with your backend compose flow.",
       time: "Now",
       starred: false,
@@ -134,7 +146,10 @@ export function initializeMailApp({ invoke, listen, storage = window.localStorag
 
     state.activeFolder = "Sent";
     dom.folderButtons.forEach((otherButton) => {
-      otherButton.classList.toggle("active", otherButton.dataset.folder === "Sent");
+      otherButton.classList.toggle(
+        "active",
+        otherButton.dataset.folder === "Sent",
+      );
     });
 
     state.selectedId = draftId;
@@ -147,7 +162,9 @@ export function initializeMailApp({ invoke, listen, storage = window.localStorag
     try {
       const newCount = await sync.refreshActiveMailbox();
       if (newCount > 0) {
-        ui.showMessage(`Mailbox refreshed. ${newCount} new email${newCount === 1 ? "" : "s"}.`);
+        ui.showMessage(
+          `Mailbox refreshed. ${newCount} new email${newCount === 1 ? "" : "s"}.`,
+        );
       } else {
         ui.showMessage("Mailbox refreshed. No new emails.");
       }
@@ -158,7 +175,9 @@ export function initializeMailApp({ invoke, listen, storage = window.localStorag
   });
 
   dom.markReadBtnEl.addEventListener("click", () => {
-    const selected = getEmails(state).find((mail) => mail.id === state.selectedId);
+    const selected = getEmails(state).find(
+      (mail) => mail.id === state.selectedId,
+    );
 
     if (!selected) {
       ui.showMessage("Select an email first.", true);
@@ -172,7 +191,9 @@ export function initializeMailApp({ invoke, listen, storage = window.localStorag
   });
 
   dom.archiveBtnEl.addEventListener("click", () => {
-    const selected = getEmails(state).find((mail) => mail.id === state.selectedId);
+    const selected = getEmails(state).find(
+      (mail) => mail.id === state.selectedId,
+    );
 
     if (!selected) {
       ui.showMessage("Select an email first.", true);
@@ -187,7 +208,9 @@ export function initializeMailApp({ invoke, listen, storage = window.localStorag
   });
 
   dom.spamCheckBtnEl.addEventListener("click", async () => {
-    const selected = getEmails(state).find((mail) => mail.id === state.selectedId);
+    const selected = getEmails(state).find(
+      (mail) => mail.id === state.selectedId,
+    );
 
     if (!selected) {
       ui.showMessage("Select an email first.", true);
@@ -201,7 +224,8 @@ export function initializeMailApp({ invoke, listen, storage = window.localStorag
         body: selected.body,
       });
 
-      const score = typeof rating?.score === "number" ? rating.score.toFixed(2) : "N/A";
+      const score =
+        typeof rating?.score === "number" ? rating.score.toFixed(2) : "N/A";
       const label = rating?.label ?? "Unknown";
       ui.showMessage(`Spam rating: ${label} (score: ${score})`);
     } catch (error) {
@@ -217,14 +241,17 @@ export function initializeMailApp({ invoke, listen, storage = window.localStorag
   }
 
   (async () => {
+    console.log("Starts the initial app");
     ui.setSyncUiState(true, "Syncing mailbox...", 0);
 
+    console.log("Checking initial sync status...");
     const isReady = await sync.checkInitStatus();
     if (!isReady) {
       return;
     }
 
     state.isAppReady = true;
+    console.log("Starts the sync process");
     await sync.runInitialSync();
 
     if (!state.isInitialSyncComplete) {
