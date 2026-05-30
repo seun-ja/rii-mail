@@ -33,7 +33,9 @@ export function createUiController(dom) {
       .querySelector("[role='progressbar']")
       ?.setAttribute("aria-valuenow", String(Math.round(safePercent)));
 
-    document.querySelector(".mail-app")?.classList.toggle("sync-locked", locked);
+    document
+      .querySelector(".mail-app")
+      ?.classList.toggle("sync-locked", locked);
   }
 
   return {

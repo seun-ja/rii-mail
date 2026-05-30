@@ -1,2 +1,4 @@
-export const tauriInvoke = window.__TAURI__?.core?.invoke;
-export const tauriListen = window.__TAURI__?.event?.listen;
+const tauri = typeof window !== "undefined" ? window.__TAURI__ : undefined;
+
+export const tauriInvoke = tauri?.core?.invoke;
+export const tauriListen = tauri?.event?.listen;

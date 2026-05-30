@@ -1,24 +1,6 @@
 import { getErrorMessage } from "./shared/errors.js";
 import { tauriInvoke as invoke } from "./shared/tauri.js";
 
-async function checkAlreadyInitialized(setupMsgEl) {
-  try {
-    const status = await invoke("check_init_status");
-    const isSignedIn = status === "signed_in" || status === "signedin";
-
-    if (isSignedIn) {
-      // User already signed in, redirect to main app
-      window.location.replace("/");
-    } else if (status === "login") {
-      // Config exists but not signed in, redirect to login page
-      window.location.replace("/login.html");
-    }
-    // If status === "setup", we're on the right page, continue
-  } catch (error) {
-    setupMsgEl.textContent = "Could not check initialization status.";
-  }
-}
-
 window.addEventListener("DOMContentLoaded", () => {
   const setupForm = document.querySelector("#setup-form");
   const setupMsgEl = document.querySelector("#setup-msg");
@@ -33,8 +15,6 @@ window.addEventListener("DOMContentLoaded", () => {
     setupMsgEl.textContent = "Backend connection is unavailable.";
     return;
   }
-
-  checkAlreadyInitialized(setupMsgEl);
 
   setupForm.addEventListener("submit", async (event) => {
     event.preventDefault();

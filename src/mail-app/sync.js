@@ -23,6 +23,12 @@ export function createSyncController(
   invoke,
   storage = window.localStorage,
 ) {
+  let syncGeneration = 0;
+
+  function cancelSyncRetries() {
+    syncGeneration += 1;
+  }
+
   function stopBootstrapRefresh() {
     if (state.bootstrapRefreshTimer) {
       clearInterval(state.bootstrapRefreshTimer);
@@ -42,6 +48,14 @@ export function createSyncController(
       clearTimeout(state.initialSyncPollTimer);
       state.initialSyncPollTimer = null;
     }
+  }
+
+  function haltAllSync() {
+    state.allowFetch = false;
+    stopBootstrapRefresh();
+    clearInitialEmptyRetry();
+    clearInitialSyncPoll();
+    cancelSyncRetries();
   }
 
   function startBootstrapRefresh() {
@@ -175,10 +189,13 @@ export function createSyncController(
         progressLabel = folder,
       } = {},
     ) {
+      const runGeneration = syncGeneration;
       let page = [];
+      let didSentRefreshFallback = false;
+      const provider = getProviderLiteral(storage);
 
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-        if (!state.allowFetch) {
+        if (!state.allowFetch || runGeneration !== syncGeneration) {
           return { page, aborted: true };
         }
 
@@ -193,11 +210,31 @@ export function createSyncController(
             minRange: 0,
             maxRange: INITIAL_BATCH_SIZE,
             mailbox: folder,
-            provider: getProviderLiteral(storage),
+            provider,
           });
           page = Array.isArray(fetched) ? fetched : [];
         } catch (_error) {
           page = [];
+        }
+
+        if (
+          folder === "Sent" &&
+          page.length === 0 &&
+          !didSentRefreshFallback &&
+          state.allowFetch &&
+          runGeneration === syncGeneration
+        ) {
+          didSentRefreshFallback = true;
+
+          try {
+            const refreshed = await invoke("refresh_emails_handler", {
+              mailbox: "Sent",
+              provider,
+            });
+            page = Array.isArray(refreshed) ? refreshed : [];
+          } catch (_error) {
+            // Ignore fallback refresh failures and continue regular retry flow.
+          }
         }
 
         if (page.length > 0) {
@@ -205,6 +242,10 @@ export function createSyncController(
         }
 
         await delay(INITIAL_EMPTY_RETRY_DELAY_MS);
+
+        if (!state.allowFetch || runGeneration !== syncGeneration) {
+          return { page, aborted: true };
+        }
       }
 
       state.cachedByFolder[folder] = page;
@@ -224,6 +265,7 @@ export function createSyncController(
     ui.setSyncUiState(true, "Syncing inbox...", 2);
 
     const inboxSync = await syncFolderWithRetries("INBOX", {
+      maxAttempts: Math.min(3, INITIAL_EMPTY_RETRY_MAX),
       showProgress: true,
       progressBase: 0,
       progressSpan: 95,
@@ -249,42 +291,21 @@ export function createSyncController(
       return;
     }
 
-    const sentSync = await syncFolderWithRetries("Sent", {
+    // Do not block app startup for long when backend bootstrap is still filling DB.
+    // Keep retrying first-page inbox fetch in the background.
+    state.isInitialSyncComplete = true;
+    clearInitialSyncPoll();
+    ui.setSyncUiState(false);
+
+    // Keep warming Sent in the background even when inbox data arrives late.
+    void syncFolderWithRetries("Sent", {
+      showProgress: false,
       maxAttempts: Math.max(1, Math.floor(INITIAL_EMPTY_RETRY_MAX / 3)),
-      showProgress: true,
-      progressBase: 95,
-      progressSpan: 5,
-      progressLabel: "Sent",
+    }).catch(() => {
+      // Ignore background sync failures; manual fetch still works on folder switch.
     });
 
-    if (sentSync.aborted) {
-      return;
-    }
-
-    const hasAnySyncedData =
-      state.cachedByFolder.INBOX.length > 0 ||
-      state.cachedByFolder.Sent.length > 0;
-
-    state.isInitialSyncComplete = hasAnySyncedData;
-
-    if (hasAnySyncedData) {
-      clearInitialSyncPoll();
-      ui.setSyncUiState(false);
-      return;
-    }
-
-    ui.setSyncUiState(true, "Syncing mailbox... waiting for first data", 99);
-
-    clearInitialSyncPoll();
-    state.initialSyncPollTimer = setTimeout(async () => {
-      state.initialSyncPollTimer = null;
-
-      if (!state.allowFetch || state.isInitialSyncComplete) {
-        return;
-      }
-
-      await runInitialSync();
-    }, INITIAL_EMPTY_RETRY_DELAY_MS);
+    startBootstrapRefresh();
   }
 
   async function refreshActiveMailbox() {
@@ -339,37 +360,11 @@ export function createSyncController(
     }
   }
 
-  async function checkInitStatus() {
-    try {
-      console.log("Checking initialization status");
-      const status = await invoke("check_init_status");
-
-      console.log("Initialization status:", status);
-      const isSignedIn = status === "signed_in";
-
-      if (status === "setup") {
-        storage.removeItem(EMAIL_CACHE_KEY);
-        window.location.replace("/setup.html");
-        return false;
-      }
-
-      if (status === "login") {
-        storage.removeItem(EMAIL_CACHE_KEY);
-        window.location.replace("/login.html");
-        return false;
-      }
-
-      return isSignedIn;
-    } catch (_error) {
-      ui.showMessage("Failed to check initialization status.", true);
-      return false;
-    }
-  }
-
   return {
-    checkInitStatus,
+    cancelSyncRetries,
     clearInitialEmptyRetry,
     clearInitialSyncPoll,
+    haltAllSync,
     loadMoreEmails,
     refreshActiveMailbox,
     runInitialSync,

@@ -1,5 +1,7 @@
 export function getProviderLiteral(storage = window.localStorage) {
-  const savedImapServer = (storage.getItem("pemail.imapServer") || "").toLowerCase();
+  const savedImapServer = (
+    storage.getItem("pemail.imapServer") || ""
+  ).toLowerCase();
 
   if (savedImapServer.includes("yahoo")) {
     storage.setItem("pemail.provider", "yahoo");
@@ -16,5 +18,6 @@ export function getProviderLiteral(storage = window.localStorage) {
     return savedProvider;
   }
 
-  return "yahoo";
+  // Keep frontend fallback aligned with backend provider inference.
+  return "gmail";
 }

@@ -8,7 +8,7 @@ use tokio::net::TcpStream;
 
 use crate::{
     db::{get_last_uid, populate_storage, set_last_uid, MailBox, Providers},
-    email_cache::Email,
+    email_cache::{Email, SharedImapSession},
     error::Error,
 };
 
@@ -28,14 +28,15 @@ impl FetchResult {
     }
 }
 
-const INITIAL_BATCH_SIZE: usize = 50;
+const INITIAL_BATCH_SIZE: usize = 100;
 
-#[tracing::instrument(name = "emails.fetch", skip(session, pool))]
+#[tracing::instrument(name = "emails.fetch", skip(session, pool, background_session))]
 pub async fn fetch_emails(
-    session: &mut Session<TlsStream<TcpStream>>,
+    session: SharedImapSession,
+    background_session: Option<SharedImapSession>,
     pool: &SqlitePool,
-    mailbox: &MailBox,
-    provider: &Providers,
+    mailbox: MailBox,
+    provider: Providers,
 ) -> Result<FetchResult, Error> {
     let table_name = format!("{}_{}", provider.as_ref(), mailbox.as_ref());
     if crate::db::check_email_db_empty(pool, &table_name).await? {
@@ -43,7 +44,59 @@ pub async fn fetch_emails(
         return Ok(FetchResult::Populated);
     }
 
-    let mailbox = session.select(mailbox).await?;
+    let background_task = if !matches!(mailbox, MailBox::Sent) {
+        background_session.map(|session_background| {
+            let pool = pool.clone();
+            let provider = provider.clone();
+
+            tokio::spawn(async move {
+                let sent_table_name = format!("{}_{}", provider.as_ref(), MailBox::Sent.as_ref());
+
+                if let Err(err) = handle_email_population_locked(
+                    session_background,
+                    &pool,
+                    MailBox::Sent,
+                    sent_table_name,
+                )
+                .await
+                {
+                    tracing::error!(error = ?err, "Failed background sent mailbox fetch");
+                }
+            })
+        })
+    } else {
+        None
+    };
+
+    let result = handle_email_population_locked(session, pool, mailbox, table_name).await;
+
+    if let Some(background_task) = background_task {
+        if let Err(err) = background_task.await {
+            tracing::error!(error = ?err, "Background sent mailbox task join failed");
+        }
+    }
+
+    result
+}
+
+async fn handle_email_population_locked(
+    session: SharedImapSession,
+    pool: &SqlitePool,
+    mailbox: MailBox,
+    table_name: String,
+) -> Result<FetchResult, Error> {
+    let mut session = session.lock().await;
+
+    handle_email_population(&mut session, pool, mailbox, table_name).await
+}
+
+async fn handle_email_population(
+    session: &mut Session<TlsStream<TcpStream>>,
+    pool: &SqlitePool,
+    mailbox: MailBox,
+    table_name: String,
+) -> Result<FetchResult, Error> {
+    let mailbox = session.select(&mailbox).await?;
 
     if mailbox.exists == 0 {
         tracing::info!("No emails found");
@@ -52,24 +105,18 @@ pub async fn fetch_emails(
 
     let mut emails: Vec<Email> = Vec::new();
 
-    let all_uids = session.uid_search("ALL").await?;
-    let uid_set = uid_vec_to_set(&all_uids);
-
-    // TODO: Share with UI
-    let _ = mailbox.exists;
-
     let mut messages_stream = session
-        .uid_fetch(uid_set, "(UID FLAGS ENVELOPE INTERNALDATE BODY.PEEK[])")
+        .uid_fetch("1:*", "(UID FLAGS ENVELOPE INTERNALDATE BODY.PEEK[])")
         .await?;
 
     let mut inserted_count = 0usize;
     let mut highest_uid = 0u32;
 
     tracing::info!(
-        "Fetching {} emails from IMAP server for {:?}...",
+        "Fetching {} emails from IMAP server from {table_name}...",
         mailbox.exists,
-        provider
     );
+
     while let Some(email) = messages_stream.next().await {
         let email = email?;
 
@@ -116,14 +163,16 @@ pub(crate) fn uid_vec_to_set(uids: &HashSet<u32>) -> String {
 
 #[tracing::instrument(name = "emails.fetch.latest", skip(session, pool))]
 pub async fn fetch_latest(
-    session: &mut Session<TlsStream<TcpStream>>,
+    session: SharedImapSession,
     pool: &SqlitePool,
-    mailbox: &MailBox,
-    provider: &Providers,
+    mailbox: MailBox,
+    provider: Providers,
 ) -> Result<FetchResult, Error> {
     let table_name = format!("{}_{}", provider.as_ref(), mailbox.as_ref());
 
-    let mailbox = session.select(mailbox).await?;
+    let mut session = session.lock().await;
+
+    let mailbox = session.select(&mailbox).await?;
 
     // TODO: Share with UI
     let _total_emails = mailbox.exists;

@@ -1,7 +1,12 @@
+use std::sync::Arc;
+
+use async_imap::Session;
+use async_native_tls::TlsStream;
 use async_imap::types::Fetch;
 use chrono::{DateTime, FixedOffset};
 use mail_parser::{Address, Message, MessageParser};
 use serde::{Deserialize, Serialize};
+use tokio::{net::TcpStream, sync::Mutex};
 
 mod fetcher;
 
@@ -9,6 +14,8 @@ pub use fetcher::{fetch_emails, fetch_latest};
 #[cfg(test)]
 pub(crate) use fetcher::{uid_vec_to_set, FetchResult};
 use sqlx::prelude::FromRow;
+
+pub type SharedImapSession = Arc<Mutex<Session<TlsStream<TcpStream>>>>;
 
 fn extract_date_from_message(message: &Message<'_>) -> Option<DateTime<FixedOffset>> {
     message

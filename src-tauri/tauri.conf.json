@@ -11,6 +11,7 @@
     "windows": [
       {
         "title": "PhisherMan",
+        "url": "login.html",
         "width": 500,
         "height": 700,
         "resizable": false,

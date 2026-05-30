@@ -9,13 +9,11 @@ use tokio::{
 
 use crate::{
     auth::AppleKeychainManager,
-    config::{
-        self, AppState, Config, ImapClientConfig, InitStatus, InitializedState,
-        ReturningUserImapClientConfig,
-    },
+    config::{self, AppState, Config, ImapClientConfig, InitStatus, InitializedState},
     db::{self, MailBox, Providers},
     error::Error,
     imap::ImapCommand,
+    ImapClientChannelTx, ReturningUserImapClientChannelTx,
 };
 
 pub(crate) fn provider_from_imap_server(imap_server: &str) -> Providers {
@@ -64,27 +62,23 @@ pub async fn config_setup(
 /// - SignedIn: if user is already authenticated (show main app)
 #[tauri::command]
 #[tracing::instrument(name = "command.config.check_status", skip(app))]
-pub async fn check_init_status(app: tauri::AppHandle) -> Result<InitStatus, Error> {
+pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error> {
     let config_dir = app.path().app_config_dir()?;
     let config_path = config_dir.join("config.json");
 
-    let config = Config::init(&config_path).await.ok();
-
-    if config.is_none() {
+    let Ok(config) = Config::init(&config_path).await else {
         return Ok(InitStatus::Setup);
-    }
+    };
 
     let app_service_name = app.config().identifier.clone();
     let apple_keychain_manager = AppleKeychainManager::new(&app_service_name);
-
-    let config = config.unwrap();
 
     let (login_result_tx, login_result_rx) = oneshot::channel::<Result<(), String>>();
 
     if let Ok(password) = apple_keychain_manager
         .retrieve_password(&config.accounts.first().cloned().unwrap_or_default())
     {
-        let imap_client_channel_tx = app.state::<UnboundedSender<ReturningUserImapClientConfig>>();
+        let imap_client_channel_tx = app.state::<ReturningUserImapClientChannelTx>();
 
         let provider = provider_from_imap_server(&config.imap_server);
 
@@ -95,7 +89,7 @@ pub async fn check_init_status(app: tauri::AppHandle) -> Result<InitStatus, Erro
             return Ok(InitStatus::Login);
         }
 
-        let imap_client_config = ReturningUserImapClientConfig {
+        let imap_client_config = ImapClientConfig {
             imap_server: config.imap_server.clone(),
             imap_port: config.imap_port,
             username: config.accounts.first().cloned().unwrap_or_default(),
@@ -105,6 +99,7 @@ pub async fn check_init_status(app: tauri::AppHandle) -> Result<InitStatus, Erro
         };
 
         imap_client_channel_tx
+            .0
             .send(imap_client_config)
             .map_err(|e| Error::ReturningUserImapConfigChannelSend(e.to_string()))?;
         ensure_expanded_startup_window(&app)?;
@@ -172,25 +167,19 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
     let (initialized_state, provider) =
         handle_initialization(config.clone(), config_dir, &app_service_name).await?;
 
-    // TODO: Make it OS agnostic to store credentials securely - for now we only have Apple Keychain implemented, but we can add Windows Credential Manager and Linux Secret Service in the future.
-    // Store credentials securely in Apple Keychain
-    initialized_state
-        .apple_keychain_manager
-        .store_password(&username, &password)?;
-
-    let imap_client_channel_tx = app.state::<UnboundedSender<ImapClientConfig>>();
+    let imap_client_channel_tx = app.state::<ImapClientChannelTx>();
     let imap_cmd_channel_tx = app.state::<UnboundedSender<ImapCommand>>();
     let (login_result_tx, login_result_rx) = oneshot::channel::<Result<(), String>>();
 
     let imap_client_config = ImapClientConfig {
-        username,
-        password,
+        username: username.clone(),
+        password: password.clone(),
         imap_server: config.imap_server.clone(),
         imap_port: config.imap_port,
         sqlite_pool: initialized_state.sqlite_pool.clone(),
         login_result_tx: Some(login_result_tx),
     };
-    imap_client_channel_tx.send(imap_client_config)?;
+    imap_client_channel_tx.0.send(imap_client_config)?;
 
     match login_result_rx.await? {
         Ok(()) => {
@@ -201,6 +190,12 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
             return Err(Error::Authentication(message));
         }
     }
+
+    // TODO: Make it OS agnostic to store credentials securely - for now we only have Apple Keychain implemented, but we can add Windows Credential Manager and Linux Secret Service in the future.
+    // Store credentials securely in Apple Keychain
+    initialized_state
+        .apple_keychain_manager
+        .store_password(&username, &password)?;
 
     imap_cmd_channel_tx.send(ImapCommand::FetchEmails(MailBox::Inbox, provider.clone()))?;
 

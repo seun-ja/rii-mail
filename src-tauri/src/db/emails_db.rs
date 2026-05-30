@@ -37,7 +37,7 @@ pub async fn populate_storage(
     let mut tx = pool.begin().await?;
 
     let mut query_builder: QueryBuilder<'_, sqlx::Sqlite> = QueryBuilder::new(&format!(
-        "INSERT INTO {} (uid, date, body, labels) ",
+        "INSERT OR IGNORE INTO {} (uid, date, body, labels) ",
         table_name
     ));
 

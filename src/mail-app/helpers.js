@@ -20,7 +20,10 @@ export function getActiveMailboxLiteral(state) {
   return getActiveBackendFolderKey(state);
 }
 
-export function getFolderPaginationState(state, folderKey = getActiveBackendFolderKey(state)) {
+export function getFolderPaginationState(
+  state,
+  folderKey = getActiveBackendFolderKey(state),
+) {
   return state.paginationByFolder[folderKey];
 }
 

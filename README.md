@@ -9,6 +9,7 @@ PhisherMan is a Tauri 2 desktop app for triaging email with IMAP sync and AI-ass
 - Displays a desktop inbox experience
 - Runs a spam/phishing rating workflow through an RPC AI service
 - Persists config and login state between launches
+- Shows a startup loading state on auth pages while initialization status is being resolved
 
 ## Tech Stack
 
@@ -62,13 +63,12 @@ Create a `.env` file in the repository root:
 RPC_SERVER=0.0.0.0:5500
 RUST_LOG=info
 OTLP_COLLECTOR_ENDPOINT=http://0.0.0.0:4317
-EMAIL_CACHE_SIZE=100
 ```
 
 Notes:
 
 - `RPC_SERVER` must point to your running RPC agent service.
-- `EMAIL_CACHE_SIZE` controls how many messages are cached per mailbox fetch.
+- `RUST_LOG` can be raised to `debug` during local troubleshooting.
 
 ## Run Locally
 
@@ -116,7 +116,7 @@ What is covered now:
 
 ## First-Run Flow
 
-1. `check_init_status` decides where to route the user:
+1. `check_app_status` decides where to route the user:
     - `setup`: no config yet
     - `login`: config exists, user not authenticated
     - `signed_in`: user already authenticated
@@ -128,14 +128,27 @@ What is covered now:
     - Password
 4. After successful login, app opens the main mailbox window and starts background sync.
 
+## Startup Routing UX
+
+- `login.html` now gates rendering behind an initialization check.
+- A loading view is shown first, then routing happens based on `check_app_status`.
+- If status is `setup` or `signed_in`, the app redirects without flashing the login form.
+
 ## Key Tauri Commands
 
-- `check_init_status()`
+- `check_app_status()`
 - `config_setup(imap_server, imap_port)`
 - `login(username, password)`
 - `open_main_window()`
 - `fetch_emails_handler(...)`
 - `rater(subject, email_from, body)`
+
+## Mail Sync Model
+
+- The backend worker keeps two IMAP sessions for concurrent mailbox work.
+- Initial population batches inserts in chunks (`INITIAL_BATCH_SIZE = 100`) to avoid very large DB writes.
+- Frontend pagination requests emails in pages (`INITIAL_BATCH_SIZE = 50`, `NEXT_BATCH_SIZE = 50`) and loads more on scroll.
+- Ongoing refresh uses incremental UID-based sync via `mailbox_sync_state.last_uid`.
 
 ## Config and Data Storage
 
@@ -153,6 +166,9 @@ What is covered now:
    - For Gmail/Yahoo, app-specific passwords may be required.
 - RPC rating fails:
    - Confirm your RPC service is running and reachable at `RPC_SERVER`.
+- Inbox appears capped on first visible load:
+   - The frontend intentionally loads paged results first; scroll to load more.
+   - If local mailbox data is partially populated and you need a clean re-bootstrap, clear app data and re-login.
 
 ## Development Notes
 

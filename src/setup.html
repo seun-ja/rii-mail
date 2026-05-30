@@ -1,66 +1,60 @@
 <!doctype html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <link rel="stylesheet" href="styles.css" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Setup Configuration</title>
-        <script type="module" src="/setup.js" defer></script>
-    </head>
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Setup Configuration</title>
+    <script type="module" src="/setup.js" defer></script>
+  </head>
 
-    <body>
-        <div class="setup-page">
-            <div class="setup-container">
-                <div class="setup-header">
-                    <div class="setup-icon">⚙️</div>
-                    <h1>Email Configuration</h1>
-                    <p class="setup-subtitle">
-                        Configure your IMAP server to get started
-                    </p>
-                </div>
-
-                <form id="setup-form" class="setup-form">
-                    <div class="form-group">
-                        <label for="imap-server-input"
-                            >IMAP Server Address</label
-                        >
-                        <input
-                            id="imap-server-input"
-                            name="imap_server"
-                            type="text"
-                            placeholder="e.g., imap.mail.yahoo.com"
-                            value="imap.mail.yahoo.com"
-                            required
-                        />
-                        <small class="form-hint"
-                            >The server address for your email provider</small
-                        >
-                    </div>
-
-                    <div class="form-group">
-                        <label for="imap-port-input">IMAP Port</label>
-                        <input
-                            id="imap-port-input"
-                            name="imap_port"
-                            type="number"
-                            min="1"
-                            max="65535"
-                            placeholder="993"
-                            value="993"
-                            required
-                        />
-                        <small class="form-hint"
-                            >Usually 993 for SSL/TLS connections</small
-                        >
-                    </div>
-
-                    <button type="submit" class="setup-button">
-                        Continue to Login
-                    </button>
-                </form>
-
-                <div id="setup-msg" class="setup-message"></div>
-            </div>
+  <body>
+    <div class="setup-page">
+      <div class="setup-container">
+        <div class="setup-header">
+          <div class="setup-icon">⚙️</div>
+          <h1>Email Configuration</h1>
+          <p class="setup-subtitle">
+            Configure your IMAP server to get started
+          </p>
         </div>
-    </body>
+
+        <form id="setup-form" class="setup-form">
+          <div class="form-group">
+            <label for="imap-server-input">IMAP Server Address</label>
+            <input
+              id="imap-server-input"
+              name="imap_server"
+              type="text"
+              placeholder="e.g., imap.mail.yahoo.com"
+              value="imap.mail.yahoo.com"
+              required
+            />
+            <small class="form-hint"
+              >The server address for your email provider</small
+            >
+          </div>
+
+          <div class="form-group">
+            <label for="imap-port-input">IMAP Port</label>
+            <input
+              id="imap-port-input"
+              name="imap_port"
+              type="number"
+              min="1"
+              max="65535"
+              placeholder="993"
+              value="993"
+              required
+            />
+            <small class="form-hint">Usually 993 for SSL/TLS connections</small>
+          </div>
+
+          <button type="submit" class="setup-button">Continue to Login</button>
+        </form>
+
+        <div id="setup-msg" class="setup-message"></div>
+      </div>
+    </div>
+  </body>
 </html>

@@ -34,7 +34,10 @@ test("getEmails flattens folder caches", () => {
     },
   };
 
-  assert.deepEqual(getEmails(state).map((x) => x.id), ["1", "2", "3"]);
+  assert.deepEqual(
+    getEmails(state).map((x) => x.id),
+    ["1", "2", "3"],
+  );
 });
 
 test("loadCachedEmails handles missing and malformed payload", () => {

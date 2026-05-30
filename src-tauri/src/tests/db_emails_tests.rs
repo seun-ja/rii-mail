@@ -103,6 +103,110 @@ async fn populate_storage_with_empty_input_is_noop() {
 }
 
 #[tokio::test]
+async fn populate_storage_ignores_duplicate_uids() {
+    let app_dir = unique_test_dir("emails-dup-uids");
+    let pool = init_db(app_dir.clone(), "emails.db", &Providers::Gmail)
+        .await
+        .expect("db should initialize");
+
+    let table = "gmail_INBOX";
+
+    let first_insert = vec![Email {
+        uid: Some(10),
+        date: Some(parse_date("2026-01-10T09:00:00+00:00")),
+        body: Some(b"Subject: First\r\nFrom: first@example.com\r\n\r\nBody".to_vec()),
+        labels: Some(vec!["\\Inbox".to_string()]),
+    }];
+
+    let duplicate_insert = vec![Email {
+        uid: Some(10),
+        date: Some(parse_date("2026-01-11T09:00:00+00:00")),
+        body: Some(b"Subject: Duplicate\r\nFrom: dup@example.com\r\n\r\nBody".to_vec()),
+        labels: Some(vec!["\\Inbox".to_string()]),
+    }];
+
+    populate_storage(&pool, first_insert, table)
+        .await
+        .expect("first insert should succeed");
+    populate_storage(&pool, duplicate_insert, table)
+        .await
+        .expect("duplicate insert should be ignored and succeed");
+
+    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM gmail_INBOX")
+        .fetch_one(&pool)
+        .await
+        .expect("count query should succeed");
+
+    assert_eq!(count.0, 1);
+
+    pool.close().await;
+    let _ = std::fs::remove_dir_all(app_dir);
+}
+
+#[tokio::test]
+async fn populate_storage_keeps_all_unique_uids_when_replayed() {
+    let app_dir = unique_test_dir("emails-replay");
+    let pool = init_db(app_dir.clone(), "emails.db", &Providers::Yahoo)
+        .await
+        .expect("db should initialize");
+
+    let table = "yahoo_INBOX";
+
+    let initial = vec![
+        Email {
+            uid: Some(1),
+            date: Some(parse_date("2026-02-01T09:00:00+00:00")),
+            body: Some(b"Subject: One\r\nFrom: one@example.com\r\n\r\nBody".to_vec()),
+            labels: None,
+        },
+        Email {
+            uid: Some(2),
+            date: Some(parse_date("2026-02-02T09:00:00+00:00")),
+            body: Some(b"Subject: Two\r\nFrom: two@example.com\r\n\r\nBody".to_vec()),
+            labels: None,
+        },
+    ];
+
+    let replay_plus_new = vec![
+        Email {
+            uid: Some(1),
+            date: Some(parse_date("2026-02-01T09:00:00+00:00")),
+            body: Some(b"Subject: One\r\nFrom: one@example.com\r\n\r\nBody".to_vec()),
+            labels: None,
+        },
+        Email {
+            uid: Some(2),
+            date: Some(parse_date("2026-02-02T09:00:00+00:00")),
+            body: Some(b"Subject: Two\r\nFrom: two@example.com\r\n\r\nBody".to_vec()),
+            labels: None,
+        },
+        Email {
+            uid: Some(3),
+            date: Some(parse_date("2026-02-03T09:00:00+00:00")),
+            body: Some(b"Subject: Three\r\nFrom: three@example.com\r\n\r\nBody".to_vec()),
+            labels: None,
+        },
+    ];
+
+    populate_storage(&pool, initial, table)
+        .await
+        .expect("initial insert should succeed");
+    populate_storage(&pool, replay_plus_new, table)
+        .await
+        .expect("replayed insert should succeed");
+
+    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM yahoo_INBOX")
+        .fetch_one(&pool)
+        .await
+        .expect("count query should succeed");
+
+    assert_eq!(count.0, 3);
+
+    pool.close().await;
+    let _ = std::fs::remove_dir_all(app_dir);
+}
+
+#[tokio::test]
 async fn check_email_db_empty_reflects_table_state() {
     let app_dir = unique_test_dir("emails-empty-flag");
     let pool = init_db(app_dir.clone(), "emails.db", &Providers::Yahoo)

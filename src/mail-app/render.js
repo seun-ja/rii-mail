@@ -8,7 +8,10 @@ export function createRenderer(state, dom) {
         return mail.starred;
       }
 
-      return String(mail.folder || "").toLowerCase() === state.activeFolder.toLowerCase();
+      return (
+        String(mail.folder || "").toLowerCase() ===
+        state.activeFolder.toLowerCase()
+      );
     });
 
     if (!query) {
@@ -16,7 +19,8 @@ export function createRenderer(state, dom) {
     }
 
     return inFolder.filter((mail) => {
-      const haystack = `${mail.senderName} ${mail.subject} ${mail.preview}`.toLowerCase();
+      const haystack =
+        `${mail.senderName} ${mail.subject} ${mail.preview}`.toLowerCase();
       return haystack.includes(query);
     });
   }
@@ -24,10 +28,13 @@ export function createRenderer(state, dom) {
   function updateCounts() {
     const allEmails = getEmails(state);
     const counts = {
-      inbox: allEmails.filter((mail) => String(mail.folder || "").toLowerCase() === "inbox")
-        .length,
+      inbox: allEmails.filter(
+        (mail) => String(mail.folder || "").toLowerCase() === "inbox",
+      ).length,
       starred: allEmails.filter((mail) => mail.starred).length,
-      sent: allEmails.filter((mail) => String(mail.folder || "").toLowerCase() === "sent").length,
+      sent: allEmails.filter(
+        (mail) => String(mail.folder || "").toLowerCase() === "sent",
+      ).length,
       archive: allEmails.filter((mail) => {
         const folder = String(mail.folder || "").toLowerCase();
         return folder === "trash" || folder === "archive";
@@ -35,13 +42,19 @@ export function createRenderer(state, dom) {
     };
 
     document.querySelector("#count-inbox").textContent = String(counts.inbox);
-    document.querySelector("#count-starred").textContent = String(counts.starred);
+    document.querySelector("#count-starred").textContent = String(
+      counts.starred,
+    );
     document.querySelector("#count-sent").textContent = String(counts.sent);
-    document.querySelector("#count-archive").textContent = String(counts.archive);
+    document.querySelector("#count-archive").textContent = String(
+      counts.archive,
+    );
   }
 
   function renderReader() {
-    const selected = getEmails(state).find((mail) => mail.id === state.selectedId);
+    const selected = getEmails(state).find(
+      (mail) => mail.id === state.selectedId,
+    );
 
     if (!selected) {
       dom.mailReaderEl.className = "mail-reader empty-state";
@@ -56,9 +69,12 @@ export function createRenderer(state, dom) {
 
     selected.read = true;
 
-    const hasHtmlBody = typeof selected.htmlBody === "string" && selected.htmlBody.trim().length > 0;
+    const hasHtmlBody =
+      typeof selected.htmlBody === "string" &&
+      selected.htmlBody.trim().length > 0;
     const textBody =
-      (typeof selected.textBody === "string" && selected.textBody.trim().length > 0
+      (typeof selected.textBody === "string" &&
+      selected.textBody.trim().length > 0
         ? selected.textBody
         : selected.body) || "No message body";
 

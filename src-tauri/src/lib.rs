@@ -5,15 +5,13 @@ use tauri::{Emitter as _, LogicalSize, Manager as _, Size};
 
 use tokio::sync::{mpsc, Mutex};
 
-use crate::config::{ImapClientConfig, ReturningUserImapClientConfig};
+use crate::config::ImapClientConfig;
 use crate::handlers::{fetch_emails_handler, refresh_emails_handler};
 use crate::imap::ImapCommand;
 use crate::workers::session_thread;
 use crate::{
     config::AppState,
-    handlers::{
-        check_init_status, config_setup, login, logout_with_state, open_main_window, rater,
-    },
+    handlers::{check_app_status, config_setup, login, logout_with_state, open_main_window, rater},
 };
 
 pub mod auth;
@@ -28,6 +26,9 @@ mod llm;
 pub mod tracing;
 mod workers;
 
+pub struct ImapClientChannelTx(pub mpsc::UnboundedSender<ImapClientConfig>);
+pub struct ReturningUserImapClientChannelTx(pub mpsc::UnboundedSender<ImapClientConfig>);
+
 #[cfg(test)]
 mod tests;
 
@@ -37,7 +38,7 @@ pub async fn run() {
         mpsc::unbounded_channel::<ImapClientConfig>();
 
     let (imap_client_returning_user_channel_tx, imap_client_returning_user_channel_rx) =
-        mpsc::unbounded_channel::<ReturningUserImapClientConfig>();
+        mpsc::unbounded_channel::<ImapClientConfig>();
 
     let (imap_cmd_channel_tx, imap_cmd_channel_rx) = mpsc::unbounded_channel::<ImapCommand>();
 
@@ -52,8 +53,10 @@ pub async fn run() {
 
     tauri::Builder::default()
         .manage(ArcSwap::from_pointee(AppState::Fresh))
-        .manage(imap_client_channel_tx)
-        .manage(imap_client_returning_user_channel_tx)
+        .manage(ImapClientChannelTx(imap_client_channel_tx))
+        .manage(ReturningUserImapClientChannelTx(
+            imap_client_returning_user_channel_tx,
+        ))
         .manage(imap_cmd_channel_tx)
         .manage(Mutex::new(logout_state_rx))
         .plugin(tauri_plugin_opener::init())
@@ -163,7 +166,7 @@ pub async fn run() {
             });
         })
         .invoke_handler(tauri::generate_handler![
-            check_init_status,
+            check_app_status,
             config_setup,
             fetch_emails_handler,
             login,

@@ -51,25 +51,30 @@ export function initializeMailApp({
 
   const sync = createSyncController(state, renderer, ui, invoke, storage);
 
+  const haltSyncAndClearCache = () => {
+    sync.haltAllSync();
+    clearCachedEmails(storage);
+    state.cachedByFolder.INBOX = [];
+    state.cachedByFolder.Sent = [];
+    state.cachedByFolder.Trash = [];
+    resetFolderPagination(state, "INBOX");
+    resetFolderPagination(state, "Sent");
+    resetFolderPagination(state, "Trash");
+  };
+
   if (listen) {
     listen("app://logged-out", () => {
-      state.allowFetch = false;
       state.isAppReady = false;
-      sync.stopBootstrapRefresh();
-      sync.clearInitialEmptyRetry();
-      sync.clearInitialSyncPoll();
-      clearCachedEmails(storage);
-      state.cachedByFolder.INBOX = [];
-      state.cachedByFolder.Sent = [];
-      state.cachedByFolder.Trash = [];
-      resetFolderPagination(state, "INBOX");
-      resetFolderPagination(state, "Sent");
-      resetFolderPagination(state, "Trash");
-      window.location.replace("/setup.html");
+      haltSyncAndClearCache();
+      window.location.replace("/login.html");
     }).catch(() => {
       // Ignore listener setup failures in non-Tauri contexts.
     });
   }
+
+  window.addEventListener("pagehide", () => {
+    haltSyncAndClearCache();
+  });
 
   dom.folderButtons.forEach((button) => {
     button.addEventListener("click", () => {
@@ -245,10 +250,6 @@ export function initializeMailApp({
     ui.setSyncUiState(true, "Syncing mailbox...", 0);
 
     console.log("Checking initial sync status...");
-    const isReady = await sync.checkInitStatus();
-    if (!isReady) {
-      return;
-    }
 
     state.isAppReady = true;
     console.log("Starts the sync process");

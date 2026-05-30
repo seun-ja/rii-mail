@@ -7,7 +7,11 @@ test("createInitialState returns expected defaults", () => {
   const state = createInitialState();
 
   assert.equal(state.activeFolder, "INBOX");
-  assert.deepEqual(Object.keys(state.cachedByFolder), ["INBOX", "Sent", "Trash"]);
+  assert.deepEqual(Object.keys(state.cachedByFolder), [
+    "INBOX",
+    "Sent",
+    "Trash",
+  ]);
   assert.equal(state.paginationByFolder.INBOX.nextOffset, 0);
   assert.equal(state.paginationByFolder.Sent.hasMoreEmails, true);
   assert.equal(state.paginationByFolder.Trash.lastFetchSignature, null);

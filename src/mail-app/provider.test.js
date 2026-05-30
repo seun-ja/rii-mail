@@ -41,7 +41,7 @@ test("getProviderLiteral returns saved valid provider when imap server is absent
   assert.equal(getProviderLiteral(yahooStorage), "yahoo");
 });
 
-test("getProviderLiteral falls back to yahoo for unknown values", () => {
+test("getProviderLiteral falls back to gmail for unknown values", () => {
   const storage = createStorage({ "pemail.provider": "other" });
-  assert.equal(getProviderLiteral(storage), "yahoo");
+  assert.equal(getProviderLiteral(storage), "gmail");
 });

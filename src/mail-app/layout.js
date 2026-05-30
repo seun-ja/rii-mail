@@ -15,7 +15,10 @@ export function createLayoutController(state, dom) {
     );
     const clamped = Math.max(minListWidth, Math.min(nextWidthPx, maxListWidth));
 
-    dom.mailBodyEl.style.setProperty("--list-panel-width", `${Math.round(clamped)}px`);
+    dom.mailBodyEl.style.setProperty(
+      "--list-panel-width",
+      `${Math.round(clamped)}px`,
+    );
   }
 
   function syncLayoutState() {
@@ -23,15 +26,26 @@ export function createLayoutController(state, dom) {
       return;
     }
 
-    dom.mailBodyEl.classList.toggle("sidebar-collapsed", state.isSidebarCollapsed);
+    dom.mailBodyEl.classList.toggle(
+      "sidebar-collapsed",
+      state.isSidebarCollapsed,
+    );
 
     if (dom.sidebarToggleBtnEl) {
-      dom.sidebarToggleBtnEl.setAttribute("aria-expanded", String(!state.isSidebarCollapsed));
+      dom.sidebarToggleBtnEl.setAttribute(
+        "aria-expanded",
+        String(!state.isSidebarCollapsed),
+      );
       dom.sidebarToggleBtnEl.setAttribute(
         "aria-label",
-        state.isSidebarCollapsed ? "Expand mailbox section" : "Collapse mailbox section",
+        state.isSidebarCollapsed
+          ? "Expand mailbox section"
+          : "Collapse mailbox section",
       );
-      dom.sidebarToggleBtnEl.classList.toggle("is-collapsed", state.isSidebarCollapsed);
+      dom.sidebarToggleBtnEl.classList.toggle(
+        "is-collapsed",
+        state.isSidebarCollapsed,
+      );
     }
 
     if (window.innerWidth > 980 && dom.mailListPanelEl) {

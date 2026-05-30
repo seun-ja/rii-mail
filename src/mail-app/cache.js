@@ -39,7 +39,10 @@ export function clearCachedEmails(storage = window.localStorage) {
   storage.removeItem(EMAIL_CACHE_KEY);
 }
 
-export function hydrateFolderCachesFromStorage(state, storage = window.localStorage) {
+export function hydrateFolderCachesFromStorage(
+  state,
+  storage = window.localStorage,
+) {
   const cached = loadCachedEmails(storage);
 
   state.cachedByFolder.INBOX = [];
