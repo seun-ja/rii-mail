@@ -57,6 +57,9 @@ export function initializeMailApp({
     state.cachedByFolder.INBOX = [];
     state.cachedByFolder.Sent = [];
     state.cachedByFolder.Trash = [];
+    state.totalEmailsByFolder.INBOX = null;
+    state.totalEmailsByFolder.Sent = null;
+    state.totalEmailsByFolder.Trash = null;
     resetFolderPagination(state, "INBOX");
     resetFolderPagination(state, "Sent");
     resetFolderPagination(state, "Trash");
@@ -165,8 +168,12 @@ export function initializeMailApp({
 
   dom.refreshBtnEl.addEventListener("click", async () => {
     try {
-      const newCount = await sync.refreshActiveMailbox();
-      if (newCount > 0) {
+      const { newCount, totalEmails } = await sync.refreshActiveMailbox();
+
+      if (typeof totalEmails === "number") {
+        const noun = totalEmails === 1 ? "email" : "emails";
+        ui.showMessage(`Mailbox refreshed. ${totalEmails} total ${noun}.`);
+      } else if (newCount > 0) {
         ui.showMessage(
           `Mailbox refreshed. ${newCount} new email${newCount === 1 ? "" : "s"}.`,
         );

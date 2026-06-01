@@ -5,11 +5,26 @@ use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use crate::{
     config::AppState,
-    db::{get_emails, MailBox, Providers},
+    db::{get_email_count, get_emails, MailBox, Providers},
     email_cache::{CompleteEmail, FrontendEmail},
     error::Error,
-    imap::ImapCommand,
+    imap::{ImapCommand, RefreshSummary},
 };
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FetchEmailsResponse {
+    pub emails: Vec<FrontendEmail>,
+    pub total_emails: u32,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefreshEmailsResponse {
+    pub emails: Vec<FrontendEmail>,
+    pub new_emails_count: u16,
+    pub total_emails: u32,
+}
 
 #[tauri::command]
 #[tracing::instrument(name = "command.email.fetch", skip(app))]
@@ -19,22 +34,29 @@ pub async fn fetch_emails_handler(
     max_range: u32,
     mailbox: String,
     provider: String,
-) -> Result<Vec<FrontendEmail>, Error> {
+) -> Result<FetchEmailsResponse, Error> {
     let state = app.state::<ArcSwap<AppState>>();
     let current_state = state.load();
     let initialized = current_state.state();
 
+    let total_emails = get_email_count(&initialized.sqlite_pool, &provider, &mailbox).await?;
+
     let provider = Providers::from(provider);
     let mailbox = MailBox::from(mailbox);
 
-    get_emails_as_front_end_from_pool(
+    let emails = get_emails_as_front_end_from_pool(
         provider,
         mailbox,
         min_range as u16,
         max_range as u16,
         &initialized.sqlite_pool,
     )
-    .await
+    .await?;
+
+    Ok(FetchEmailsResponse {
+        emails,
+        total_emails,
+    })
 }
 
 #[tauri::command]
@@ -43,13 +65,13 @@ pub async fn refresh_emails_handler(
     app: tauri::AppHandle,
     mailbox: String,
     provider: String,
-) -> Result<Vec<FrontendEmail>, Error> {
+) -> Result<RefreshEmailsResponse, Error> {
     let state = app.state::<ArcSwap<AppState>>();
     let current_state = state.load();
     let initialized = current_state.state();
 
     let imap_cmd_channel_tx = app.state::<UnboundedSender<ImapCommand>>();
-    let (fetch_update_tx, fetch_update_rx) = oneshot::channel::<Result<u16, String>>();
+    let (fetch_update_tx, fetch_update_rx) = oneshot::channel::<Result<RefreshSummary, String>>();
 
     let provider = Providers::from(provider);
     let mailbox = MailBox::from(mailbox);
@@ -61,16 +83,27 @@ pub async fn refresh_emails_handler(
     ))?;
 
     match fetch_update_rx.await? {
-        Ok(new_emails_count) => {
-            tracing::info!("Fetched {} new email(s)", new_emails_count);
-            get_emails_as_front_end_from_pool(
+        Ok(refresh_summary) => {
+            tracing::info!(
+                new_emails = refresh_summary.new_emails_count,
+                total_emails = refresh_summary.total_emails,
+                "Fetched latest mailbox state"
+            );
+
+            let emails = get_emails_as_front_end_from_pool(
                 provider,
                 mailbox,
                 0,
-                new_emails_count,
+                refresh_summary.new_emails_count,
                 &initialized.sqlite_pool,
             )
-            .await
+            .await?;
+
+            Ok(RefreshEmailsResponse {
+                emails,
+                new_emails_count: refresh_summary.new_emails_count,
+                total_emails: refresh_summary.total_emails,
+            })
         }
         Err(err) => {
             tracing::error!(error = %err, "Failed to fetch new emails");

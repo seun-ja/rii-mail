@@ -6,6 +6,11 @@ export function createInitialState() {
       Sent: [],
       Trash: [],
     },
+    totalEmailsByFolder: {
+      INBOX: null,
+      Sent: null,
+      Trash: null,
+    },
     activeFolder: "INBOX",
     selectedId: null,
     query: "",

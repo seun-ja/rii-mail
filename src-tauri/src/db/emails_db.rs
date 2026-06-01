@@ -107,6 +107,65 @@ pub async fn get_emails(
     Ok(complete_emails)
 }
 
+pub async fn populate_inbox_folder_count(
+    pool: &SqlitePool,
+    provider: &str,
+    count: u32,
+) -> Result<(), Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO total_emails (provider, inbox)
+        VALUES (?, ?)
+        ON CONFLICT(provider)
+        DO UPDATE SET inbox = excluded.inbox
+        "#,
+    )
+    .bind(provider)
+    .bind(count)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn populate_sent_folder_count(
+    pool: &SqlitePool,
+    provider: &str,
+    count: u32,
+) -> Result<(), Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO total_emails (provider, sent)
+        VALUES (?, ?)
+        ON CONFLICT(provider)
+        DO UPDATE SET sent = excluded.sent
+        "#,
+    )
+    .bind(provider)
+    .bind(count)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+#[tracing::instrument(name = "db.get.email_count", skip(pool))]
+pub async fn get_email_count(
+    pool: &SqlitePool,
+    provider: &str,
+    mailbox: &str,
+) -> Result<u32, Error> {
+    let result: Option<(i64,)> = sqlx::query_as(&format!(
+        "SELECT {} FROM total_emails WHERE provider = ?",
+        mailbox
+    ))
+    .bind(provider)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(result.map(|(count,)| count.max(0) as u32).unwrap_or(0))
+}
+
 #[tracing::instrument(name = "db.cleanup", skip(db_path))]
 pub async fn cleanup(db_path: PathBuf) -> Result<(), Error> {
     let metadata = match fs::metadata(&db_path).await {

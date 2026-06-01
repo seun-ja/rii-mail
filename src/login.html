@@ -1,70 +1,76 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="stylesheet" href="styles.css" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Login</title>
-    <script type="module" src="/login.js" defer></script>
-  </head>
+    <head>
+        <meta charset="UTF-8" />
+        <link rel="stylesheet" href="styles.css" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Login</title>
+        <script type="module" src="/login.js" defer></script>
+    </head>
 
-  <body>
-    <div class="login-page">
-      <div class="login-container">
-        <div
-          id="init-loading"
-          class="login-loading"
-          aria-live="polite"
-          aria-busy="true"
-        >
-          <div class="login-loading-spinner" aria-hidden="true"></div>
-          <p id="init-loading-text" class="login-loading-text">
-            Checking account status...
-          </p>
-        </div>
+    <body>
+        <div class="login-page">
+            <div class="login-container">
+                <div
+                    id="init-loading"
+                    class="login-loading"
+                    aria-live="polite"
+                    aria-busy="true"
+                >
+                    <div class="login-loading-spinner" aria-hidden="true"></div>
+                    <p id="init-loading-text" class="login-loading-text">
+                        Checking account status...
+                    </p>
+                </div>
 
-        <div id="login-content" class="login-content hidden" aria-hidden="true">
-          <div class="login-header">
-            <div class="login-icon">🔐</div>
-            <h1>Welcome Back</h1>
-            <p class="login-subtitle">
-              Enter your email credentials to access your inbox
-            </p>
-          </div>
+                <div
+                    id="login-content"
+                    class="login-content hidden"
+                    aria-hidden="true"
+                >
+                    <div class="login-header">
+                        <p class="login-subtitle">
+                            Enter your email credentials to access your inbox
+                        </p>
+                    </div>
 
-          <form id="login-form" class="login-form">
-            <div class="form-group">
-              <label for="username-input">Email Address</label>
-              <input
-                id="username-input"
-                name="username"
-                type="email"
-                placeholder="your@email.com"
-                required
-              />
-              <small class="form-hint"
-                >Your email address for authentication</small
-              >
+                    <form id="login-form" class="login-form">
+                        <div class="form-group">
+                            <label for="username-input">Email Address</label>
+                            <input
+                                id="username-input"
+                                name="username"
+                                type="email"
+                                placeholder="your@email.com"
+                                required
+                            />
+                            <small class="form-hint"
+                                >Your email address for authentication</small
+                            >
+                        </div>
+
+                        <div class="form-group">
+                            <label for="password-input">Password</label>
+                            <input
+                                id="password-input"
+                                name="password"
+                                type="password"
+                                placeholder="Enter your password"
+                                required
+                            />
+                            <small class="form-hint"
+                                >Your account password</small
+                            >
+                        </div>
+
+                        <button type="submit" class="login-button">
+                            Sign In
+                        </button>
+                    </form>
+
+                    <div id="login-msg" class="login-message"></div>
+                </div>
             </div>
-
-            <div class="form-group">
-              <label for="password-input">Password</label>
-              <input
-                id="password-input"
-                name="password"
-                type="password"
-                placeholder="Enter your password"
-                required
-              />
-              <small class="form-hint">Your account password</small>
-            </div>
-
-            <button type="submit" class="login-button">Sign In</button>
-          </form>
-
-          <div id="login-msg" class="login-message"></div>
         </div>
-      </div>
-    </div>
-  </body>
+    </body>
 </html>

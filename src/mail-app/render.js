@@ -27,14 +27,22 @@ export function createRenderer(state, dom) {
 
   function updateCounts() {
     const allEmails = getEmails(state);
+    const inboxFallback = allEmails.filter(
+      (mail) => String(mail.folder || "").toLowerCase() === "inbox",
+    ).length;
+    const sentFallback = allEmails.filter(
+      (mail) => String(mail.folder || "").toLowerCase() === "sent",
+    ).length;
     const counts = {
-      inbox: allEmails.filter(
-        (mail) => String(mail.folder || "").toLowerCase() === "inbox",
-      ).length,
+      inbox:
+        typeof state.totalEmailsByFolder?.INBOX === "number"
+          ? state.totalEmailsByFolder.INBOX
+          : inboxFallback,
       starred: allEmails.filter((mail) => mail.starred).length,
-      sent: allEmails.filter(
-        (mail) => String(mail.folder || "").toLowerCase() === "sent",
-      ).length,
+      sent:
+        typeof state.totalEmailsByFolder?.Sent === "number"
+          ? state.totalEmailsByFolder.Sent
+          : sentFallback,
       archive: allEmails.filter((mail) => {
         const folder = String(mail.folder || "").toLowerCase();
         return folder === "trash" || folder === "archive";

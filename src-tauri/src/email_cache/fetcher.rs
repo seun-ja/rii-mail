@@ -7,7 +7,10 @@ use sqlx::SqlitePool;
 use tokio::net::TcpStream;
 
 use crate::{
-    db::{get_last_uid, populate_storage, set_last_uid, MailBox, Providers},
+    db::{
+        get_last_uid, populate_inbox_folder_count, populate_sent_folder_count, populate_storage,
+        set_last_uid, MailBox, Providers,
+    },
     email_cache::{Email, SharedImapSession},
     error::Error,
 };
@@ -15,7 +18,7 @@ use crate::{
 pub enum FetchResult {
     EmptyMailbox,
     Populated,
-    Fetched(u16),
+    Fetched { count: u16, total_emails: u32 },
 }
 
 impl FetchResult {
@@ -23,7 +26,15 @@ impl FetchResult {
         match self {
             FetchResult::EmptyMailbox => 0,
             FetchResult::Populated => 0,
-            FetchResult::Fetched(count) => *count,
+            FetchResult::Fetched { count, .. } => *count,
+        }
+    }
+
+    pub fn total_emails(&self) -> u32 {
+        match self {
+            FetchResult::EmptyMailbox => 0,
+            FetchResult::Populated => 0,
+            FetchResult::Fetched { total_emails, .. } => *total_emails,
         }
     }
 }
@@ -52,15 +63,18 @@ pub async fn fetch_emails(
             tokio::spawn(async move {
                 let sent_table_name = format!("{}_{}", provider.as_ref(), MailBox::Sent.as_ref());
 
-                if let Err(err) = handle_email_population_locked(
-                    session_background,
+                match handle_email_population_locked (
+                    session_background.clone(),
                     &pool,
                     MailBox::Sent,
-                    sent_table_name,
-                )
-                .await
-                {
-                    tracing::error!(error = ?err, "Failed background sent mailbox fetch");
+                    sent_table_name.clone(),
+                ).await {
+                    Ok(res) => {
+                        let _ = populate_sent_folder_count(&pool, provider.as_ref(), res.count() as u32).await.unwrap_or_else(|err| {
+                            tracing::error!(error = ?err, "Failed to populate sent folder count after background fetch");
+                        });
+                    },
+                    Err(err) => tracing::error!(error = ?err, "Failed background sent mailbox fetch")
                 }
             })
         })
@@ -68,7 +82,13 @@ pub async fn fetch_emails(
         None
     };
 
-    let result = handle_email_population_locked(session, pool, mailbox, table_name).await;
+    let result =
+        handle_email_population_locked(session, &pool, MailBox::Inbox, table_name).await.map( async |res| {
+            let _ = populate_inbox_folder_count(&pool, provider.as_ref(), res.count() as u32).await.unwrap_or_else(|err| {
+                    tracing::error!(error = ?err, "Failed to populate sent folder count after background fetch");
+                });
+            res
+        })?.await;
 
     if let Some(background_task) = background_task {
         if let Err(err) = background_task.await {
@@ -76,7 +96,7 @@ pub async fn fetch_emails(
         }
     }
 
-    result
+    Ok(result)
 }
 
 async fn handle_email_population_locked(
@@ -151,7 +171,10 @@ async fn handle_email_population(
         "Initial mailbox sync completed"
     );
 
-    Ok(FetchResult::Fetched(emails_len as u16))
+    Ok(FetchResult::Fetched {
+        count: emails_len as u16,
+        total_emails: mailbox.exists,
+    })
 }
 
 pub(crate) fn uid_vec_to_set(uids: &HashSet<u32>) -> String {
@@ -174,8 +197,7 @@ pub async fn fetch_latest(
 
     let mailbox = session.select(&mailbox).await?;
 
-    // TODO: Share with UI
-    let _total_emails = mailbox.exists;
+    let total_emails = mailbox.exists;
 
     let last_uid = get_last_uid(pool, &table_name).await?.unwrap_or(0);
 
@@ -186,7 +208,10 @@ pub async fn fetch_latest(
     if new_uids.is_empty() {
         tracing::info!("Mailbox already up to date");
 
-        return Ok(FetchResult::Fetched(0));
+        return Ok(FetchResult::Fetched {
+            count: 0,
+            total_emails,
+        });
     }
 
     let uid_set = uid_vec_to_set(&new_uids);
@@ -220,5 +245,8 @@ pub async fn fetch_latest(
 
     set_last_uid(pool, &table_name, highest_uid).await?;
 
-    Ok(FetchResult::Fetched(inserted_count as u16))
+    Ok(FetchResult::Fetched {
+        count: inserted_count as u16,
+        total_emails,
+    })
 }

@@ -1,5 +1,5 @@
 use crate::db::{MailBox, Providers};
-use crate::imap::ImapCommand;
+use crate::imap::{ImapCommand, RefreshSummary};
 use tokio::sync::oneshot;
 
 #[test]
@@ -17,7 +17,7 @@ fn imap_command_fetch_emails_variant_preserves_values() {
 
 #[test]
 fn imap_command_refresh_emails_variant_preserves_values() {
-    let (tx, _rx) = oneshot::channel::<Result<u16, String>>();
+    let (tx, _rx) = oneshot::channel::<Result<RefreshSummary, String>>();
     let cmd = ImapCommand::RefreshEmails(MailBox::Sent, Providers::Yahoo, tx);
 
     match cmd {

@@ -15,7 +15,7 @@ use crate::auth;
 use crate::config::ImapClientConfig;
 use crate::db::{MailBox, Providers};
 use crate::email_cache::SharedImapSession;
-use crate::imap::{init_imap_client, ImapCommand};
+use crate::imap::{init_imap_client, ImapCommand, RefreshSummary};
 
 pub(crate) fn friendly_login_error_message(stage: &str, raw: &str) -> String {
     let lower = raw.to_ascii_lowercase();
@@ -73,6 +73,7 @@ pub fn session_thread(
         let mut imap_client_channel_open = true;
         let mut imap_cmd_channel_open = true;
         let mut providers: HashSet<Providers> = HashSet::new();
+        let mut initial_fetch_completed: HashSet<(Providers, MailBox)> = HashSet::new();
         let mut database_initialized = false;
 
         let (_email_cmd_tx, _email_cmd_rx) = oneshot::channel::<()>();
@@ -188,6 +189,17 @@ pub fn session_thread(
 
                     match cmd {
                         ImapCommand::FetchEmails(mail_box, provider) => {
+                            let fetch_key = (provider.clone(), mail_box.clone());
+
+                            if initial_fetch_completed.contains(&fetch_key) {
+                                ::tracing::info!(
+                                    mailbox = mail_box.as_ref(),
+                                    provider = provider.as_ref(),
+                                    "Skipping duplicate initial mailbox fetch command"
+                                );
+                                continue;
+                            }
+
                             let Some(session) = initialized_session.as_ref() else {
                                 ::tracing::warn!("FetchEmails ignored: IMAP session is not initialized");
                                 continue;
@@ -203,7 +215,7 @@ pub fn session_thread(
                                 continue;
                             };
 
-                            if let Err(err) = crate::email_cache::fetch_emails(
+                            match crate::email_cache::fetch_emails(
                                 session.clone(),
                                 Some(session_background.clone()),
                                 pool_ref,
@@ -212,7 +224,14 @@ pub fn session_thread(
                             )
                             .await
                             {
-                                ::tracing::error!(error = ?err, "Failed initial mailbox fetch");
+                                Ok(_) => {
+                                    database_initialized = true;
+                                    providers.insert(provider);
+                                    initial_fetch_completed.insert(fetch_key);
+                                }
+                                Err(err) => {
+                                    ::tracing::error!(error = ?err, "Failed initial mailbox fetch");
+                                }
                             }
 
                             // if let Ok(state) = update_state_rx.await {
@@ -220,9 +239,6 @@ pub fn session_thread(
                             //     let _ = crate::email_cache::fetch_emails(session, pool_ref, &MailBox::Sent, &provider, None).await;
                             // }
 
-                            database_initialized = true;
-
-                            providers.insert(provider);
                         }
                         ImapCommand::Logout => {
                             if let Some(session) = initialized_session.take() {
@@ -246,6 +262,7 @@ pub fn session_thread(
                             let _ = logout_result_tx.send(());
                             pool = None;
                             providers.clear();
+                            initial_fetch_completed.clear();
                             database_initialized = false;
                         }
                         ImapCommand::RefreshEmails(mail_box, provider, login_result_tx) => {
@@ -267,7 +284,10 @@ pub fn session_thread(
                             )
                             .await
                             {
-                                let _ = login_result_tx.send(Ok(fetched_count.count()));
+                                let _ = login_result_tx.send(Ok(RefreshSummary {
+                                    new_emails_count: fetched_count.count(),
+                                    total_emails: fetched_count.total_emails(),
+                                }));
                             }
 
                             // TODO send the fetched emails count to the other thread so that we can trigger a frontend refresh if new emails were found

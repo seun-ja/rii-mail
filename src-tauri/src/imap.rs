@@ -4,6 +4,12 @@ use tokio::net::TcpStream;
 
 use crate::{db, error::Error};
 
+#[derive(Debug, Clone, Copy)]
+pub struct RefreshSummary {
+    pub new_emails_count: u16,
+    pub total_emails: u32,
+}
+
 #[derive(Debug)]
 pub enum ImapCommand {
     Logout,
@@ -11,7 +17,7 @@ pub enum ImapCommand {
     RefreshEmails(
         db::MailBox,
         db::Providers,
-        tokio::sync::oneshot::Sender<Result<u16, String>>,
+        tokio::sync::oneshot::Sender<Result<RefreshSummary, String>>,
     ),
 }
 

@@ -5,7 +5,22 @@ use std::collections::HashSet;
 fn fetch_result_count_returns_expected_value() {
     assert_eq!(FetchResult::EmptyMailbox.count(), 0);
     assert_eq!(FetchResult::Populated.count(), 0);
-    assert_eq!(FetchResult::Fetched(7).count(), 7);
+    assert_eq!(
+        FetchResult::Fetched {
+            count: 7,
+            total_emails: 42,
+        }
+        .count(),
+        7
+    );
+    assert_eq!(
+        FetchResult::Fetched {
+            count: 7,
+            total_emails: 42,
+        }
+        .total_emails(),
+        42
+    );
 }
 
 #[test]

@@ -1,60 +1,127 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="stylesheet" href="styles.css" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Setup Configuration</title>
-    <script type="module" src="/setup.js" defer></script>
-  </head>
+    <head>
+        <meta charset="UTF-8" />
+        <link rel="stylesheet" href="styles.css" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Setup Configuration</title>
+        <script type="module" src="/setup.js" defer></script>
+    </head>
 
-  <body>
-    <div class="setup-page">
-      <div class="setup-container">
-        <div class="setup-header">
-          <div class="setup-icon">⚙️</div>
-          <h1>Email Configuration</h1>
-          <p class="setup-subtitle">
-            Configure your IMAP server to get started
-          </p>
+    <body>
+        <div class="setup-page">
+            <div class="setup-container">
+                <div class="setup-header">
+                    <img
+                        class="setup-brand-img"
+                        src="/assets/riiemail-logo.png"
+                        alt="RiiEmail"
+                    />
+
+                    <h1>Connect your inbox</h1>
+
+                    <p class="setup-subtitle">
+                        Choose an email provider to get started.
+                    </p>
+                </div>
+
+                <form id="setup-form" class="setup-form">
+                    <div class="provider-list">
+                        <button
+                            type="button"
+                            class="provider-item active"
+                            data-provider="yahoo"
+                            data-provider-name="Yahoo"
+                            data-imap-server="imap.mail.yahoo.com"
+                            data-imap-port="993"
+                        >
+                            <div class="provider-left">
+                                <img
+                                    class="provider-logo"
+                                    src="/assets/yahoo.png"
+                                    alt="Yahoo Mail"
+                                />
+                                <span class="custom-server-text"
+                                    >Yahoo Mail</span
+                                >
+                            </div>
+
+                            <div class="provider-right">
+                                <div class="selected-dot"></div>
+                            </div>
+                        </button>
+
+                        <button
+                            type="button"
+                            class="provider-item"
+                            data-provider="custom"
+                        >
+                            <div class="provider-left">
+                                <span class="custom-server-text">
+                                    Custom IMAP Server
+                                </span>
+                            </div>
+                        </button>
+
+                        <div class="provider-item disabled">
+                            <div class="provider-left">
+                                <img
+                                    class="provider-logo"
+                                    src="/assets/outlook_small_64.png"
+                                    alt="Outlook"
+                                />
+                                <span
+                                    class="custom-server-text"
+                                    style="color: inherit"
+                                    >Outlook</span
+                                >
+                            </div>
+                            <span class="coming-soon">Coming Soon</span>
+                        </div>
+
+                        <div class="provider-item disabled">
+                            <div class="provider-left">
+                                <img
+                                    class="provider-logo"
+                                    src="/assets/gmail_64px.png"
+                                    alt="Gmail"
+                                />
+                                <span
+                                    class="custom-server-text"
+                                    style="color: inherit"
+                                    >Gmail</span
+                                >
+                            </div>
+                            <span class="coming-soon">Coming Soon</span>
+                        </div>
+                    </div>
+
+                    <input
+                        id="selected-provider-input"
+                        name="provider"
+                        type="hidden"
+                        value="yahoo"
+                    />
+
+                    <input
+                        id="selected-imap-server-input"
+                        name="imap_server"
+                        type="hidden"
+                        value="imap.mail.yahoo.com"
+                    />
+
+                    <input
+                        id="selected-imap-port-input"
+                        name="imap_port"
+                        type="hidden"
+                        value="993"
+                    />
+
+                    <button type="submit" class="setup-button">Continue</button>
+                </form>
+
+                <div id="setup-msg" class="setup-message"></div>
+            </div>
         </div>
-
-        <form id="setup-form" class="setup-form">
-          <div class="form-group">
-            <label for="imap-server-input">IMAP Server Address</label>
-            <input
-              id="imap-server-input"
-              name="imap_server"
-              type="text"
-              placeholder="e.g., imap.mail.yahoo.com"
-              value="imap.mail.yahoo.com"
-              required
-            />
-            <small class="form-hint"
-              >The server address for your email provider</small
-            >
-          </div>
-
-          <div class="form-group">
-            <label for="imap-port-input">IMAP Port</label>
-            <input
-              id="imap-port-input"
-              name="imap_port"
-              type="number"
-              min="1"
-              max="65535"
-              placeholder="993"
-              value="993"
-              required
-            />
-            <small class="form-hint">Usually 993 for SSL/TLS connections</small>
-          </div>
-
-          <button type="submit" class="setup-button">Continue to Login</button>
-        </form>
-
-        <div id="setup-msg" class="setup-message"></div>
-      </div>
-    </div>
-  </body>
+    </body>
 </html>

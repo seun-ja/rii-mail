@@ -25,6 +25,21 @@ export function createSyncController(
 ) {
   let syncGeneration = 0;
 
+  function normalizeFetchPayload(fetched) {
+    if (fetched && typeof fetched === "object" && !Array.isArray(fetched)) {
+      return {
+        emails: Array.isArray(fetched.emails) ? fetched.emails : [],
+        totalEmails:
+          typeof fetched.totalEmails === "number" ? fetched.totalEmails : null,
+      };
+    }
+
+    return {
+      emails: Array.isArray(fetched) ? fetched : [],
+      totalEmails: null,
+    };
+  }
+
   function cancelSyncRetries() {
     syncGeneration += 1;
   }
@@ -137,7 +152,12 @@ export function createSyncController(
         provider,
       });
 
-      const page = Array.isArray(fetched) ? fetched : [];
+      const payload = normalizeFetchPayload(fetched);
+      const page = payload.emails;
+
+      if (typeof payload.totalEmails === "number") {
+        state.totalEmailsByFolder[folderKey] = payload.totalEmails;
+      }
 
       if (page.length > 0) {
         stopBootstrapRefresh();
@@ -212,7 +232,12 @@ export function createSyncController(
             mailbox: folder,
             provider,
           });
-          page = Array.isArray(fetched) ? fetched : [];
+          const payload = normalizeFetchPayload(fetched);
+          page = payload.emails;
+
+          if (typeof payload.totalEmails === "number") {
+            state.totalEmailsByFolder[folder] = payload.totalEmails;
+          }
         } catch (_error) {
           page = [];
         }
@@ -231,7 +256,16 @@ export function createSyncController(
               mailbox: "Sent",
               provider,
             });
-            page = Array.isArray(refreshed) ? refreshed : [];
+            const latest =
+              refreshed && typeof refreshed === "object" && !Array.isArray(refreshed)
+                ? refreshed
+                : null;
+
+            page = Array.isArray(latest?.emails) ? latest.emails : [];
+
+            if (typeof latest?.totalEmails === "number") {
+              state.totalEmailsByFolder.Sent = latest.totalEmails;
+            }
           } catch (_error) {
             // Ignore fallback refresh failures and continue regular retry flow.
           }
@@ -310,7 +344,7 @@ export function createSyncController(
 
   async function refreshActiveMailbox() {
     if (!state.allowFetch || !state.isAppReady || state.isLoadingEmails) {
-      return 0;
+      return { newCount: 0, totalEmails: null };
     }
 
     const folderKey = getActiveBackendFolderKey(state);
@@ -327,10 +361,25 @@ export function createSyncController(
         provider,
       });
 
-      const latest = Array.isArray(fetched) ? fetched : [];
+      const payload =
+        fetched && typeof fetched === "object" && !Array.isArray(fetched)
+          ? fetched
+          : {
+              emails: Array.isArray(fetched) ? fetched : [],
+              newEmailsCount: 0,
+              totalEmails: null,
+            };
+
+      const latest = Array.isArray(payload.emails) ? payload.emails : [];
+      const totalEmails =
+        typeof payload.totalEmails === "number" ? payload.totalEmails : null;
+
+      if (typeof totalEmails === "number") {
+        state.totalEmailsByFolder[folderKey] = totalEmails;
+      }
 
       if (latest.length === 0) {
-        return 0;
+        return { newCount: 0, totalEmails };
       }
 
       const existingIds = new Set(
@@ -339,7 +388,7 @@ export function createSyncController(
       const uniqueLatest = latest.filter((mail) => !existingIds.has(mail.id));
 
       if (uniqueLatest.length === 0) {
-        return 0;
+        return { newCount: 0, totalEmails };
       }
 
       state.cachedByFolder[folderKey] = [
@@ -353,7 +402,7 @@ export function createSyncController(
 
       saveCachedEmails(state, storage);
 
-      return uniqueLatest.length;
+      return { newCount: uniqueLatest.length, totalEmails };
     } finally {
       state.isLoadingEmails = false;
       renderer.renderList();

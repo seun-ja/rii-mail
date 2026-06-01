@@ -3,7 +3,8 @@ mod emails_db;
 use std::{fs, path::PathBuf};
 
 pub use emails_db::{
-    check_email_db_empty, cleanup, get_emails, get_last_uid, populate_storage, set_last_uid,
+    check_email_db_empty, cleanup, get_email_count, get_emails, get_last_uid,
+    populate_inbox_folder_count, populate_sent_folder_count, populate_storage, set_last_uid,
 };
 
 use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
@@ -76,6 +77,12 @@ async fn create_table_for_provider(
             labels TEXT
         );
 
+        CREATE TABLE total_emails (
+            provider TEXT PRIMARY KEY,
+            Sent INTEGER NOT NULL DEFAULT 0,
+            INBOX INTEGER NOT NULL DEFAULT 0
+        );
+
         CREATE TABLE IF NOT EXISTS mailbox_sync_state (
             mailbox TEXT PRIMARY KEY,
             last_uid INTEGER NOT NULL
@@ -124,7 +131,7 @@ impl From<String> for Providers {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, Hash, PartialEq)]
 pub enum MailBox {
     Inbox,
     Sent,
@@ -153,4 +160,9 @@ impl From<String> for MailBox {
             _ => MailBox::Inbox, // Default to Inbox if unknown
         }
     }
+}
+
+pub struct EmailCount {
+    pub inbox_count: u32,
+    pub sent_count: u32,
 }

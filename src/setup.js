@@ -4,10 +4,23 @@ import { tauriInvoke as invoke } from "./shared/tauri.js";
 window.addEventListener("DOMContentLoaded", () => {
   const setupForm = document.querySelector("#setup-form");
   const setupMsgEl = document.querySelector("#setup-msg");
-  const imapServerInput = document.querySelector("#imap-server-input");
-  const imapPortInput = document.querySelector("#imap-port-input");
+  const providerInput = document.querySelector("#selected-provider-input");
+  const imapServerInput = document.querySelector("#selected-imap-server-input");
+  const imapPortInput = document.querySelector("#selected-imap-port-input");
+  const setupButton = document.querySelector(".setup-button");
+  const providerOptions = Array.from(
+    document.querySelectorAll(".provider-item"),
+  );
 
-  if (!setupForm || !setupMsgEl || !imapServerInput || !imapPortInput) {
+  if (
+    !setupForm ||
+    !setupMsgEl ||
+    !providerInput ||
+    !imapServerInput ||
+    !imapPortInput ||
+    !setupButton ||
+    providerOptions.length === 0
+  ) {
     return;
   }
 
@@ -16,6 +29,56 @@ window.addEventListener("DOMContentLoaded", () => {
     return;
   }
 
+  const setSelectedProvider = (providerOption) => {
+    // Ignore clicks on disabled options
+    if (
+      !providerOption ||
+      providerOption.disabled ||
+      providerOption.classList.contains("disabled")
+    ) {
+      return;
+    }
+
+    // Toggle active state for CSS highlighting
+    providerOptions.forEach((option) => {
+      const isSelected = option === providerOption;
+      option.classList.toggle("active", isSelected);
+      option.setAttribute("aria-checked", isSelected ? "true" : "false");
+    });
+
+    const nameElement = providerOption.querySelector(".custom-server-text");
+    const providerName =
+      providerOption.dataset.providerName ||
+      (nameElement ? nameElement.textContent.trim() : "Email");
+
+    // Update hidden inputs for backend submission
+    providerInput.value = providerOption.dataset.provider || "";
+    imapServerInput.value = providerOption.dataset.imapServer || "";
+    imapPortInput.value = providerOption.dataset.imapPort || "";
+
+    // Update button text dynamically based on the extracted name
+    setupButton.textContent = `Continue with ${providerName}`;
+  };
+
+  // Attach click listeners to all options
+  providerOptions.forEach((providerOption) => {
+    providerOption.addEventListener("click", () => {
+      setSelectedProvider(providerOption);
+    });
+  });
+
+  // Set default active option on page load
+  const defaultOption =
+    providerOptions.find(
+      (option) =>
+        option.classList.contains("active") &&
+        !option.classList.contains("disabled"),
+    ) ||
+    providerOptions.find((option) => !option.classList.contains("disabled"));
+
+  setSelectedProvider(defaultOption);
+
+  // --- Preserved Original Backend Logic ---
   setupForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
@@ -37,9 +100,7 @@ window.addEventListener("DOMContentLoaded", () => {
         imapPort: imapPort,
       });
 
-      const normalizedProvider = imapServer.toLowerCase().includes("yahoo")
-        ? "yahoo"
-        : "gmail";
+      const normalizedProvider = providerInput?.value?.trim() || "yahoo";
       window.localStorage.setItem("pemail.provider", normalizedProvider);
       window.localStorage.setItem("pemail.imapServer", imapServer);
 
