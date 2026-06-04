@@ -101,8 +101,8 @@ window.addEventListener("DOMContentLoaded", () => {
       });
 
       const normalizedProvider = providerInput?.value?.trim() || "yahoo";
-      window.localStorage.setItem("pemail.provider", normalizedProvider);
-      window.localStorage.setItem("pemail.imapServer", imapServer);
+      window.localStorage.setItem("riimail.provider", normalizedProvider);
+      window.localStorage.setItem("riimail.imapServer", imapServer);
 
       setupMsgEl.textContent = "Configuration saved. Redirecting to login...";
 

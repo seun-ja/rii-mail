@@ -9,9 +9,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let rust_log = std::env::var("RUST_LOG").unwrap_or("info".to_string());
 
-    pemail_lib::tracing::init_subscriber(&rust_log, &otlp_collector_endpoint)?;
+    riimail_lib::tracing::init_subscriber(&rust_log, &otlp_collector_endpoint)?;
 
-    pemail_lib::run().await;
+    riimail_lib::run().await;
 
     Ok(())
 }

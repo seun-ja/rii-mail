@@ -4042,44 +4042,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pemail"
-version = "0.1.0"
-dependencies = [
- "arc-swap",
- "async-imap",
- "async-native-tls",
- "async-trait",
- "aws-config",
- "aws-sdk-sagemaker",
- "aws-sdk-sagemakerruntime",
- "chrono",
- "dotenv",
- "futures",
- "hex",
- "mail-parser",
- "opentelemetry 0.31.0",
- "opentelemetry-otlp",
- "opentelemetry_sdk 0.31.0",
- "pyo3",
- "rig-core",
- "rpc-agent",
- "schemars 1.2.1",
- "security-framework",
- "serde",
- "serde_json",
- "sqlx",
- "tarpc",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
- "tracing-opentelemetry 0.32.1",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4817,6 +4779,44 @@ dependencies = [
  "tracing",
  "tracing-futures",
  "url",
+]
+
+[[package]]
+name = "riimail"
+version = "0.1.0"
+dependencies = [
+ "arc-swap",
+ "async-imap",
+ "async-native-tls",
+ "async-trait",
+ "aws-config",
+ "aws-sdk-sagemaker",
+ "aws-sdk-sagemakerruntime",
+ "chrono",
+ "dotenv",
+ "futures",
+ "hex",
+ "mail-parser",
+ "opentelemetry 0.31.0",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk 0.31.0",
+ "pyo3",
+ "rig-core",
+ "rpc-agent",
+ "schemars 1.2.1",
+ "security-framework",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tarpc",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-opener",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "tracing-opentelemetry 0.32.1",
+ "tracing-subscriber",
 ]
 
 [[package]]

@@ -2,8 +2,8 @@ use crate::email_cache::{map_folder_and_starred, normalize_text, CompleteEmail, 
 
 #[test]
 fn normalize_text_compacts_whitespace() {
-    let value = "  hello\n\tworld   from   pemail  ";
-    assert_eq!(normalize_text(value, 100), "hello world from pemail");
+    let value = "  hello\n\tworld   from   riimail  ";
+    assert_eq!(normalize_text(value, 100), "hello world from riimail");
 }
 
 #[test]

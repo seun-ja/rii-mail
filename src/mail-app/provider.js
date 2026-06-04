@@ -1,19 +1,19 @@
 export function getProviderLiteral(storage = window.localStorage) {
   const savedImapServer = (
-    storage.getItem("pemail.imapServer") || ""
+    storage.getItem("riimail.imapServer") || ""
   ).toLowerCase();
 
   if (savedImapServer.includes("yahoo")) {
-    storage.setItem("pemail.provider", "yahoo");
+    storage.setItem("riimail.provider", "yahoo");
     return "yahoo";
   }
 
   if (savedImapServer.includes("gmail")) {
-    storage.setItem("pemail.provider", "gmail");
+    storage.setItem("riimail.provider", "gmail");
     return "gmail";
   }
 
-  const savedProvider = storage.getItem("pemail.provider");
+  const savedProvider = storage.getItem("riimail.provider");
   if (savedProvider === "gmail" || savedProvider === "yahoo") {
     return savedProvider;
   }

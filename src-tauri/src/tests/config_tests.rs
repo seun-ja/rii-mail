@@ -6,7 +6,7 @@ fn unique_config_path(prefix: &str) -> std::path::PathBuf {
         .duration_since(UNIX_EPOCH)
         .expect("clock should be monotonic for tests")
         .as_nanos();
-    std::env::temp_dir().join(format!("pemail-{prefix}-{nanos}.json"))
+    std::env::temp_dir().join(format!("riimail-{prefix}-{nanos}.json"))
 }
 
 #[tokio::test]

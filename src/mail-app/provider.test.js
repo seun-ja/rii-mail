@@ -16,32 +16,34 @@ function createStorage(initial = {}) {
 }
 
 test("getProviderLiteral infers yahoo from imap server and persists", () => {
-  const storage = createStorage({ "pemail.imapServer": "imap.mail.yahoo.com" });
+  const storage = createStorage({
+    "riimail.imapServer": "imap.mail.yahoo.com",
+  });
 
   const provider = getProviderLiteral(storage);
 
   assert.equal(provider, "yahoo");
-  assert.equal(storage.getItem("pemail.provider"), "yahoo");
+  assert.equal(storage.getItem("riimail.provider"), "yahoo");
 });
 
 test("getProviderLiteral infers gmail from imap server and persists", () => {
-  const storage = createStorage({ "pemail.imapServer": "imap.gmail.com" });
+  const storage = createStorage({ "riimail.imapServer": "imap.gmail.com" });
 
   const provider = getProviderLiteral(storage);
 
   assert.equal(provider, "gmail");
-  assert.equal(storage.getItem("pemail.provider"), "gmail");
+  assert.equal(storage.getItem("riimail.provider"), "gmail");
 });
 
 test("getProviderLiteral returns saved valid provider when imap server is absent", () => {
-  const gmailStorage = createStorage({ "pemail.provider": "gmail" });
+  const gmailStorage = createStorage({ "riimail.provider": "gmail" });
   assert.equal(getProviderLiteral(gmailStorage), "gmail");
 
-  const yahooStorage = createStorage({ "pemail.provider": "yahoo" });
+  const yahooStorage = createStorage({ "riimail.provider": "yahoo" });
   assert.equal(getProviderLiteral(yahooStorage), "yahoo");
 });
 
 test("getProviderLiteral falls back to gmail for unknown values", () => {
-  const storage = createStorage({ "pemail.provider": "other" });
+  const storage = createStorage({ "riimail.provider": "other" });
   assert.equal(getProviderLiteral(storage), "gmail");
 });
