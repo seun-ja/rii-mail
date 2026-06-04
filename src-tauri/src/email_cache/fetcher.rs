@@ -55,7 +55,7 @@ pub async fn fetch_emails(
         return Ok(FetchResult::Populated);
     }
 
-    let background_task = if !matches!(mailbox, MailBox::Sent) {
+    let email_population_background_task = if !matches!(mailbox, MailBox::Sent) {
         background_session.map(|session_background| {
             let pool = pool.clone();
             let provider = provider.clone();
@@ -82,7 +82,7 @@ pub async fn fetch_emails(
         None
     };
 
-    let result =
+    let email_population_result =
         handle_email_population_locked(session, pool, MailBox::Inbox, table_name).await.map( async |res| {
             populate_inbox_folder_count(pool, provider.as_ref(), res.count() as u32).await.unwrap_or_else(|err| {
                     tracing::error!(error = ?err, "Failed to populate sent folder count after background fetch");
@@ -90,13 +90,13 @@ pub async fn fetch_emails(
             res
         })?.await;
 
-    if let Some(background_task) = background_task {
+    if let Some(background_task) = email_population_background_task {
         if let Err(err) = background_task.await {
             tracing::error!(error = ?err, "Background sent mailbox task join failed");
         }
     }
 
-    Ok(result)
+    Ok(email_population_result)
 }
 
 async fn handle_email_population_locked(
