@@ -70,7 +70,7 @@ pub async fn fetch_emails(
                     sent_table_name.clone(),
                 ).await {
                     Ok(res) => {
-                        let _ = populate_sent_folder_count(&pool, provider.as_ref(), res.count() as u32).await.unwrap_or_else(|err| {
+                        populate_sent_folder_count(&pool, provider.as_ref(), res.count() as u32).await.unwrap_or_else(|err| {
                             tracing::error!(error = ?err, "Failed to populate sent folder count after background fetch");
                         });
                     },
@@ -83,8 +83,8 @@ pub async fn fetch_emails(
     };
 
     let result =
-        handle_email_population_locked(session, &pool, MailBox::Inbox, table_name).await.map( async |res| {
-            let _ = populate_inbox_folder_count(&pool, provider.as_ref(), res.count() as u32).await.unwrap_or_else(|err| {
+        handle_email_population_locked(session, pool, MailBox::Inbox, table_name).await.map( async |res| {
+            populate_inbox_folder_count(pool, provider.as_ref(), res.count() as u32).await.unwrap_or_else(|err| {
                     tracing::error!(error = ?err, "Failed to populate sent folder count after background fetch");
                 });
             res

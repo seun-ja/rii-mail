@@ -21,7 +21,7 @@ fn parse_date(value: &str) -> DateTime<FixedOffset> {
 #[tokio::test]
 async fn get_emails_as_front_end_from_pool_maps_rows_to_frontend_shape() {
     let app_dir = unique_test_dir("handler-email");
-    let pool = init_db(app_dir.clone(), "emails.db", &Providers::Gmail)
+    let pool = init_db(&app_dir, "emails.db", &Providers::Gmail)
         .await
         .expect("db should initialize");
 

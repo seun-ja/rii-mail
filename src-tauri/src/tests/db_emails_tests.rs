@@ -23,7 +23,7 @@ fn parse_date(value: &str) -> DateTime<FixedOffset> {
 #[tokio::test]
 async fn populate_storage_and_get_emails_work_with_pagination() {
     let app_dir = unique_test_dir("emails-pagination");
-    let pool = init_db(app_dir.clone(), "emails.db", &Providers::Gmail)
+    let pool = init_db(&app_dir, "emails.db", &Providers::Gmail)
         .await
         .expect("db should initialize");
 
@@ -83,7 +83,7 @@ async fn populate_storage_and_get_emails_work_with_pagination() {
 #[tokio::test]
 async fn populate_storage_with_empty_input_is_noop() {
     let app_dir = unique_test_dir("emails-empty");
-    let pool = init_db(app_dir.clone(), "emails.db", &Providers::Yahoo)
+    let pool = init_db(&app_dir, "emails.db", &Providers::Yahoo)
         .await
         .expect("db should initialize");
 
@@ -105,7 +105,7 @@ async fn populate_storage_with_empty_input_is_noop() {
 #[tokio::test]
 async fn populate_storage_ignores_duplicate_uids() {
     let app_dir = unique_test_dir("emails-dup-uids");
-    let pool = init_db(app_dir.clone(), "emails.db", &Providers::Gmail)
+    let pool = init_db(&app_dir, "emails.db", &Providers::Gmail)
         .await
         .expect("db should initialize");
 
@@ -146,7 +146,7 @@ async fn populate_storage_ignores_duplicate_uids() {
 #[tokio::test]
 async fn populate_storage_keeps_all_unique_uids_when_replayed() {
     let app_dir = unique_test_dir("emails-replay");
-    let pool = init_db(app_dir.clone(), "emails.db", &Providers::Yahoo)
+    let pool = init_db(&app_dir, "emails.db", &Providers::Yahoo)
         .await
         .expect("db should initialize");
 
@@ -209,7 +209,7 @@ async fn populate_storage_keeps_all_unique_uids_when_replayed() {
 #[tokio::test]
 async fn check_email_db_empty_reflects_table_state() {
     let app_dir = unique_test_dir("emails-empty-flag");
-    let pool = init_db(app_dir.clone(), "emails.db", &Providers::Yahoo)
+    let pool = init_db(&app_dir, "emails.db", &Providers::Yahoo)
         .await
         .expect("db should initialize");
 
@@ -241,7 +241,7 @@ async fn check_email_db_empty_reflects_table_state() {
 #[tokio::test]
 async fn mailbox_sync_state_roundtrip_works() {
     let app_dir = unique_test_dir("emails-last-uid");
-    let pool = init_db(app_dir.clone(), "emails.db", &Providers::Gmail)
+    let pool = init_db(&app_dir, "emails.db", &Providers::Gmail)
         .await
         .expect("db should initialize");
 

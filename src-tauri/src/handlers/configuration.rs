@@ -46,6 +46,10 @@ pub async fn config_setup(
 
     let config_json = serde_json::to_string_pretty(&config)?;
 
+    let provider = provider_from_imap_server(&config.imap_server);
+
+    db::init_db(&config_dir, &config.sqlite_db, &provider).await?;
+
     // Create config directory if it doesn't exist
     create_dir_all(&config_dir).await?;
 
@@ -80,9 +84,7 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
     {
         let imap_client_channel_tx = app.state::<ReturningUserImapClientChannelTx>();
 
-        let provider = provider_from_imap_server(&config.imap_server);
-
-        let sqlite_pool = db::init_db(config_dir, &config.sqlite_db, &provider).await?;
+        let sqlite_pool = db::db_pool(&config_dir, &config.sqlite_db).await?;
 
         if config.accounts.is_empty() {
             ::tracing::warn!("Config accounts field is empty, cannot attempt returning user login");
@@ -240,7 +242,7 @@ async fn handle_initialization(
 ) -> Result<(InitializedState, Providers), Error> {
     let provider = provider_from_imap_server(&config.imap_server);
 
-    let sqlite_pool = db::init_db(config_dir, &config.sqlite_db, &provider).await?;
+    let sqlite_pool = db::db_pool(&config_dir, &config.sqlite_db).await?;
 
     let rpc_llm_client = config::init_rpc(&config.rpc_server).await?;
 

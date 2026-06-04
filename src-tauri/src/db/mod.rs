@@ -11,12 +11,8 @@ use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 
 use crate::error::Error;
 
-pub async fn init_db(
-    app_dir: PathBuf,
-    db: &str,
-    provider: &Providers,
-) -> Result<SqlitePool, Error> {
-    fs::create_dir_all(&app_dir)?;
+pub async fn db_pool(app_dir: &PathBuf, db: &str) -> Result<SqlitePool, sqlx::Error> {
+    fs::create_dir_all(app_dir)?;
 
     let data_dir = app_dir.join("data");
     fs::create_dir_all(&data_dir)?;
@@ -27,7 +23,15 @@ pub async fn init_db(
         .filename(&db_path)
         .create_if_missing(true);
 
-    let pool = SqlitePool::connect_with(options).await?;
+    SqlitePool::connect_with(options).await
+}
+
+pub async fn init_db(
+    app_dir: &PathBuf,
+    db: &str,
+    provider: &Providers,
+) -> Result<SqlitePool, Error> {
+    let pool = db_pool(app_dir, db).await?;
 
     sqlx::query("PRAGMA journal_mode = WAL;")
         .execute(&pool)

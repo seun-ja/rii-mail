@@ -49,7 +49,7 @@ fn mailbox_as_ref_and_from_string() {
 async fn init_db_creates_provider_tables_and_state_table() {
     let app_dir = unique_test_dir("init-db");
 
-    let pool = init_db(app_dir.clone(), "emails.db", &Providers::Yahoo)
+    let pool = init_db(&app_dir, "emails.db", &Providers::Yahoo)
         .await
         .expect("db should initialize");
 

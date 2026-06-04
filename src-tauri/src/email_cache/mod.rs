@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
+use async_imap::types::Fetch;
 use async_imap::Session;
 use async_native_tls::TlsStream;
-use async_imap::types::Fetch;
 use chrono::{DateTime, FixedOffset};
 use mail_parser::{Address, Message, MessageParser};
 use serde::{Deserialize, Serialize};

@@ -239,7 +239,20 @@ export function initializeMailApp({
       const score =
         typeof rating?.score === "number" ? rating.score.toFixed(2) : "N/A";
       const label = rating?.label ?? "Unknown";
-      ui.showMessage(`Spam rating: ${label} (score: ${score})`);
+
+      let labelText = "";
+
+      if (label === "Ham") {
+        labelText = "safe";
+      } else {
+        label = label.toLowerCase();
+      }
+
+      if (score !== "N/A" && score <= 0.2) {
+        ui.showMessage(`This email is likely ${labelText} (score: ${score})`);
+      } else if (score !== "N/A" && score >= 0.8) {
+        ui.showMessage(`This email is ${labelText} (score: ${score})`);
+      }
     } catch (error) {
       ui.showMessage(`Failed to check spam rating: ${error}`, true);
     }
