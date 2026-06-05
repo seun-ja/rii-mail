@@ -66,6 +66,8 @@ pub enum Error {
     ByteConversion(#[from] std::string::FromUtf8Error),
     #[error("Oneshot channel receive error: {0}")]
     OneShotRecv(#[from] RecvError),
+    #[error("Thread cancellation fails")]
+    ThreadCancel,
 }
 
 impl Serialize for Error {
@@ -97,6 +99,7 @@ impl Serialize for Error {
             Error::Keychain(e) => ("Keychain", e.to_string()),
             Error::ByteConversion(e) => ("ByteConversion", e.to_string()),
             Error::OneShotRecv(e) => ("OneShotRecv", e.to_string()),
+            Error::ThreadCancel => ("ThreadCancel", self.to_string()),
         };
 
         use serde::ser::SerializeStruct;
@@ -131,13 +134,51 @@ impl Error {
             | Error::Invoke(_)
             | Error::Keychain(_)
             | Error::OneShotRecv(_)
-            | Error::ByteConversion(_) => {
+            | Error::ByteConversion(_)
+            | Error::ThreadCancel => {
                 error!(error = ?self, "Error occurred: {}", self);
             }
             Error::NotFound | Error::Other(_) | Error::Authentication(_) => {
                 warn!(error = ?self, "Error occurred: {}", self);
             }
         }
+    }
+}
+
+pub(crate) fn friendly_login_error_message(stage: &str, raw: &str) -> String {
+    let lower = raw.to_ascii_lowercase();
+
+    if lower.contains("authentication")
+        || lower.contains("invalid credentials")
+        || lower.contains("login failed")
+        || lower.contains("auth")
+    {
+        return "Invalid email or password. Please verify your credentials and try again."
+            .to_string();
+    }
+
+    if lower.contains("timed out")
+        || lower.contains("timeout")
+        || lower.contains("connection")
+        || lower.contains("dns")
+        || lower.contains("network")
+        || lower.contains("refused")
+    {
+        return "Unable to reach the mail server. Check your internet connection and IMAP server settings."
+            .to_string();
+    }
+
+    if lower.contains("tls") || lower.contains("certificate") || lower.contains("ssl") {
+        return "Secure connection to the mail server failed. Please verify TLS/SSL settings."
+            .to_string();
+    }
+
+    match stage {
+        "init" => {
+            "Could not connect to the IMAP server. Please check server host and port.".to_string()
+        }
+        "login" => "Login failed due to a server error. Please try again shortly.".to_string(),
+        _ => "Login failed. Please try again.".to_string(),
     }
 }
 

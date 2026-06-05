@@ -4814,6 +4814,7 @@ dependencies = [
  "tauri-plugin-opener",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-opentelemetry 0.32.1",
  "tracing-subscriber",

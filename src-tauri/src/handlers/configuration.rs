@@ -6,6 +6,7 @@ use tokio::{
     fs::{self, create_dir_all},
     sync::{mpsc::UnboundedSender, oneshot},
 };
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     auth::AppleKeychainManager,
@@ -13,7 +14,8 @@ use crate::{
     db::{self, MailBox, Providers},
     error::Error,
     imap::ImapCommand,
-    ImapClientChannelTx, ReturningUserImapClientChannelTx, LOGGED_IN,
+    workers::SharedFetchManager,
+    ImapClientChannelTx, ReturningUserImapClientChannelTx, LOGGED_IN, LOGGING_IN,
 };
 
 pub(crate) fn provider_from_imap_server(imap_server: &str) -> Providers {
@@ -71,6 +73,7 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
     let config_path = config_dir.join("config.json");
 
     let Ok(config) = Config::init(&config_path).await else {
+        ensure_compact_startup_window(&app)?;
         return Ok(InitStatus::Setup);
     };
 
@@ -88,6 +91,7 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
 
         if config.accounts.is_empty() {
             ::tracing::warn!("Config accounts field is empty, cannot attempt returning user login");
+            ensure_compact_startup_window(&app)?;
             return Ok(InitStatus::Login);
         }
 
@@ -114,6 +118,7 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
             }
             Err(message) => {
                 ::tracing::error!(error = ?message, "Returning user login failed: {message}");
+                ensure_compact_startup_window(&app)?;
                 return Ok(InitStatus::Login);
             }
         }
@@ -131,6 +136,7 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
         Ok(InitStatus::SignedIn)
     } else {
         ::tracing::info!("No stored credentials found, user needs to login");
+        ensure_compact_startup_window(&app)?;
         Ok(InitStatus::Login)
     }
 }
@@ -150,11 +156,27 @@ fn ensure_expanded_startup_window(app: &tauri::AppHandle) -> Result<(), Error> {
     Ok(())
 }
 
+fn ensure_compact_startup_window(app: &tauri::AppHandle) -> Result<(), Error> {
+    if let Some(window) = app.get_webview_window("main") {
+        let compact_size = Size::Logical(LogicalSize::new(500.0, 700.0));
+
+        window.set_resizable(false)?;
+        window.set_max_size::<Size>(Some(compact_size))?;
+        window.set_min_size(Some(compact_size))?;
+        window.set_size(compact_size)?;
+        window.center()?;
+    }
+
+    Ok(())
+}
+
 /// Login command - used when config exists but user needs to authenticate
 /// Only requires username and password
 #[tauri::command]
 #[tracing::instrument(name = "command.user.login", skip(app, password))]
 pub async fn login(app: tauri::AppHandle, username: String, password: String) -> Result<(), Error> {
+    *LOGGING_IN.lock().await = true;
+
     let app_service_name = app.config().identifier.clone();
     let config_dir = app.path().app_config_dir()?;
     let config_path = config_dir.join("config.json");
@@ -167,6 +189,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
 
     fs::write(config_path, serde_json::to_string_pretty(&config)?).await?;
 
+    ::tracing::info!("Configuration updated with username and saved to disk");
     let (initialized_state, provider) =
         handle_initialization(config.clone(), config_dir, &app_service_name).await?;
 
@@ -182,6 +205,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
         sqlite_pool: initialized_state.sqlite_pool.clone(),
         login_result_tx: Some(login_result_tx),
     };
+    ::tracing::info!("Sending IMAP client config to worker for authentication");
     imap_client_channel_tx.0.send(imap_client_config)?;
 
     match login_result_rx.await? {
@@ -200,7 +224,21 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
         .apple_keychain_manager
         .store_password(&username, &password)?;
 
-    imap_cmd_channel_tx.send(ImapCommand::FetchEmails(MailBox::Inbox, provider.clone()))?;
+    let fetch_manager = app.state::<SharedFetchManager>();
+
+    let fetch_token = {
+        let mut parent = fetch_manager.logout_token.lock().await;
+
+        *parent = CancellationToken::new();
+
+        parent.child_token()
+    };
+
+    imap_cmd_channel_tx.send(ImapCommand::FetchEmails(
+        MailBox::Inbox,
+        provider.clone(),
+        fetch_token,
+    ))?;
 
     let initialized_state = config::InitializedState {
         rpc_llm_client: initialized_state.rpc_llm_client,
@@ -213,6 +251,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
 
     ::tracing::info!("User Logged in and emails fetching initiated");
 
+    *LOGGING_IN.lock().await = false;
     *LOGGED_IN.lock().await = true;
 
     Ok(())

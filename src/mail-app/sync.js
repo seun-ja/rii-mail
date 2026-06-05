@@ -257,7 +257,9 @@ export function createSyncController(
               provider,
             });
             const latest =
-              refreshed && typeof refreshed === "object" && !Array.isArray(refreshed)
+              refreshed &&
+              typeof refreshed === "object" &&
+              !Array.isArray(refreshed)
                 ? refreshed
                 : null;
 

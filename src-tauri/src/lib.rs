@@ -1,4 +1,4 @@
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 use arc_swap::ArcSwap;
 
@@ -10,7 +10,7 @@ use tokio::sync::{mpsc, Mutex};
 use crate::config::ImapClientConfig;
 use crate::handlers::{fetch_emails_handler, refresh_emails_handler};
 use crate::imap::ImapCommand;
-use crate::workers::session_thread;
+use crate::workers::{session_thread, FetchManager};
 use crate::{
     config::AppState,
     handlers::{check_app_status, config_setup, login, logout_with_state, open_main_window, rater},
@@ -34,7 +34,10 @@ pub struct ReturningUserImapClientChannelTx(pub mpsc::UnboundedSender<ImapClient
 #[cfg(test)]
 mod tests;
 
-pub static LOGGED_IN: LazyLock<Mutex<bool>> = LazyLock::new(|| Mutex::new(false));
+pub static LOGGED_IN: LazyLock<Arc<Mutex<bool>>> = LazyLock::new(|| Arc::new(Mutex::new(false)));
+pub static LOGGING_IN: LazyLock<Arc<Mutex<bool>>> = LazyLock::new(|| Arc::new(Mutex::new(false)));
+pub static FETCH_MANAGER: LazyLock<Arc<FetchManager>> =
+    LazyLock::new(|| Arc::new(FetchManager::default()));
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub async fn run() {
@@ -64,6 +67,7 @@ pub async fn run() {
         ))
         .manage(imap_cmd_channel_tx)
         .manage(Mutex::new(logout_state_rx))
+        .manage(FETCH_MANAGER.clone())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let app_about = PredefinedMenuItem::about(app, None, None)?;

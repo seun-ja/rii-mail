@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{config::AppState, db, error::Error, imap::ImapCommand};
+use crate::{config::AppState, db, error::Error, imap::ImapCommand, workers::SharedFetchManager};
 use arc_swap::ArcSwap;
 use tauri::Manager as _;
 use tokio::{
@@ -12,6 +12,10 @@ use tokio::{
 pub async fn logout_with_state(app: tauri::AppHandle) -> Result<(), Error> {
     let imap_cmd_channel_tx = app.state::<UnboundedSender<ImapCommand>>();
     imap_cmd_channel_tx.send(ImapCommand::Logout)?;
+
+    let fetch_manager = app.state::<SharedFetchManager>();
+    fetch_manager.logout_token.lock().await.cancel();
+    fetch_manager.refresh_token.lock().await.cancel();
 
     let config_dir = app.path().app_config_dir()?;
     let config_path = config_dir.join("config.json");
@@ -25,12 +29,10 @@ pub async fn logout_with_state(app: tauri::AppHandle) -> Result<(), Error> {
     let app_state = app.state::<ArcSwap<AppState>>();
     let logout_state_rx = app.state::<Mutex<tokio::sync::mpsc::UnboundedReceiver<()>>>();
 
-    let db_path = config_dir.join("data");
-    db::cleanup(db_path).await?;
-
     let mut logout_state_rx = logout_state_rx.lock().await;
     let _ = logout_state_rx.recv().await;
-
+    let db_path = config_dir.join("data");
+    db::cleanup(db_path).await?;
     tracing::info!("Received logout confirmation from session thread");
 
     app_state.store(Arc::new(AppState::Fresh));

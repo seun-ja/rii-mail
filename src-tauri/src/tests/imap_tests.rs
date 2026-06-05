@@ -1,13 +1,15 @@
 use crate::db::{MailBox, Providers};
 use crate::imap::{ImapCommand, RefreshSummary};
 use tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
 
 #[test]
 fn imap_command_fetch_emails_variant_preserves_values() {
-    let cmd = ImapCommand::FetchEmails(MailBox::Inbox, Providers::Gmail);
+    let cancel_token = CancellationToken::new();
+    let cmd = ImapCommand::FetchEmails(MailBox::Inbox, Providers::Gmail, cancel_token);
 
     match cmd {
-        ImapCommand::FetchEmails(mailbox, provider) => {
+        ImapCommand::FetchEmails(mailbox, provider, _cancel_token) => {
             assert_eq!(mailbox.as_ref(), "INBOX");
             assert_eq!(provider.as_ref(), "gmail");
         }

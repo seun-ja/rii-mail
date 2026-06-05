@@ -1,6 +1,7 @@
 use async_imap::Client;
 use async_native_tls::TlsStream;
 use tokio::net::TcpStream;
+use tokio_util::sync::CancellationToken;
 
 use crate::{db, error::Error};
 
@@ -13,7 +14,7 @@ pub struct RefreshSummary {
 #[derive(Debug)]
 pub enum ImapCommand {
     Logout,
-    FetchEmails(db::MailBox, db::Providers),
+    FetchEmails(db::MailBox, db::Providers, CancellationToken),
     RefreshEmails(
         db::MailBox,
         db::Providers,

@@ -1,4 +1,4 @@
-use crate::workers::friendly_login_error_message;
+use crate::error::friendly_login_error_message;
 
 #[test]
 fn login_error_message_maps_auth_failures() {
