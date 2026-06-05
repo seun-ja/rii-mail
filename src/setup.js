@@ -1,6 +1,32 @@
 import { getErrorMessage } from "./shared/errors.js";
 import { tauriInvoke as invoke } from "./shared/tauri.js";
 
+function setLoadingState(
+  loading,
+  setupContentEl,
+  setupLoadingEl,
+  setupLoadingTextEl,
+  message,
+) {
+  if (loading) {
+    setupContentEl.classList.add("hidden");
+    setupContentEl.setAttribute("aria-hidden", "true");
+
+    setupLoadingEl.classList.remove("hidden");
+
+    if (message) {
+      setupLoadingTextEl.textContent = message;
+    }
+
+    return;
+  }
+
+  setupLoadingEl.classList.add("hidden");
+
+  setupContentEl.classList.remove("hidden");
+  setupContentEl.setAttribute("aria-hidden", "false");
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   const setupForm = document.querySelector("#setup-form");
   const setupMsgEl = document.querySelector("#setup-msg");
@@ -8,8 +34,14 @@ window.addEventListener("DOMContentLoaded", () => {
   const imapServerInput = document.querySelector("#selected-imap-server-input");
   const imapPortInput = document.querySelector("#selected-imap-port-input");
   const setupButton = document.querySelector(".setup-button");
+  const setupContentEl = document.querySelector("#setup-content");
+  const setupLoadingEl = document.querySelector("#setup-loading");
+  const setupLoadingTextEl = document.querySelector("#setup-loading-text");
   const providerOptions = Array.from(
     document.querySelectorAll(".provider-item"),
+  );
+  const setupLoadingSpinnerEl = document.querySelector(
+    "#setup-loading-spinner",
   );
 
   if (
@@ -19,6 +51,9 @@ window.addEventListener("DOMContentLoaded", () => {
     !imapServerInput ||
     !imapPortInput ||
     !setupButton ||
+    !setupContentEl ||
+    !setupLoadingEl ||
+    !setupLoadingTextEl ||
     providerOptions.length === 0
   ) {
     return;
@@ -93,7 +128,13 @@ window.addEventListener("DOMContentLoaded", () => {
     }
 
     try {
-      setupMsgEl.textContent = "Saving configuration...";
+      setLoadingState(
+        true,
+        setupContentEl,
+        setupLoadingEl,
+        setupLoadingTextEl,
+        "Saving configuration...",
+      );
 
       await invoke("config_setup", {
         imapServer: imapServer,
@@ -104,13 +145,30 @@ window.addEventListener("DOMContentLoaded", () => {
       window.localStorage.setItem("riimail.provider", normalizedProvider);
       window.localStorage.setItem("riimail.imapServer", imapServer);
 
-      setupMsgEl.textContent = "Configuration saved. Redirecting to login...";
+      setupLoadingSpinnerEl?.classList.add("hidden");
+      setupLoadingTextEl.textContent =
+        "✓ Configuration saved. Redirecting to login...";
+
+      setLoadingState(
+        true,
+        setupContentEl,
+        setupLoadingEl,
+        setupLoadingTextEl,
+        "Configuration saved. Redirecting to login...",
+      );
 
       // Redirect to login page after setup completes
       setTimeout(() => {
         window.location.replace("/login.html");
       }, 500);
     } catch (error) {
+      setLoadingState(
+        false,
+        setupContentEl,
+        setupLoadingEl,
+        setupLoadingTextEl,
+      );
+
       setupMsgEl.textContent = `Setup failed: ${getErrorMessage(error)}`;
     }
   });

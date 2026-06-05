@@ -11,116 +11,145 @@
     <body>
         <div class="setup-page">
             <div class="setup-container">
-                <div class="setup-header">
-                    <img
-                        class="setup-brand-img"
-                        src="/assets/riiemail-logo.png"
-                        alt="RiiEmail"
-                    />
+                <div
+                    id="setup-loading"
+                    class="login-loading hidden"
+                    aria-live="polite"
+                    aria-busy="true"
+                >
+                    <div
+                        id="setup-loading-spinner"
+                        class="login-loading-spinner"
+                        aria-hidden="true"
+                    ></div>
 
-                    <h1>Connect your inbox</h1>
-
-                    <p class="setup-subtitle">
-                        Choose an email provider to get started.
+                    <p id="setup-loading-text" class="login-loading-text">
+                        Saving configuration...
                     </p>
                 </div>
 
-                <form id="setup-form" class="setup-form">
-                    <div class="provider-list">
-                        <button
-                            type="button"
-                            class="provider-item active"
-                            data-provider="yahoo"
-                            data-provider-name="Yahoo"
-                            data-imap-server="imap.mail.yahoo.com"
-                            data-imap-port="993"
-                        >
-                            <div class="provider-left">
-                                <img
-                                    class="provider-logo"
-                                    src="/assets/yahoo.png"
-                                    alt="Yahoo Mail"
-                                />
-                                <span class="custom-server-text"
-                                    >Yahoo Mail</span
-                                >
-                            </div>
+                <div
+                    id="setup-content"
+                    class="setup-content"
+                    aria-hidden="false"
+                >
+                    <div class="setup-header">
+                        <img
+                            class="setup-brand-img"
+                            src="/assets/riiemail-logo.png"
+                            alt="RiiEmail"
+                        />
 
-                            <div class="provider-right">
-                                <div class="selected-dot"></div>
-                            </div>
-                        </button>
+                        <h1>Connect your inbox</h1>
 
-                        <button
-                            type="button"
-                            class="provider-item"
-                            data-provider="custom"
-                        >
-                            <div class="provider-left">
-                                <span class="custom-server-text">
-                                    Custom IMAP Server
-                                </span>
-                            </div>
-                        </button>
-
-                        <div class="provider-item disabled">
-                            <div class="provider-left">
-                                <img
-                                    class="provider-logo"
-                                    src="/assets/outlook_small_64.png"
-                                    alt="Outlook"
-                                />
-                                <span
-                                    class="custom-server-text"
-                                    style="color: inherit"
-                                    >Outlook</span
-                                >
-                            </div>
-                            <span class="coming-soon">Coming Soon</span>
-                        </div>
-
-                        <div class="provider-item disabled">
-                            <div class="provider-left">
-                                <img
-                                    class="provider-logo"
-                                    src="/assets/gmail_64px.png"
-                                    alt="Gmail"
-                                />
-                                <span
-                                    class="custom-server-text"
-                                    style="color: inherit"
-                                    >Gmail</span
-                                >
-                            </div>
-                            <span class="coming-soon">Coming Soon</span>
-                        </div>
+                        <p class="setup-subtitle">
+                            Choose an email provider to get started.
+                        </p>
                     </div>
 
-                    <input
-                        id="selected-provider-input"
-                        name="provider"
-                        type="hidden"
-                        value="yahoo"
-                    />
+                    <form id="setup-form" class="setup-form">
+                        <div class="provider-list">
+                            <button
+                                type="button"
+                                class="provider-item active"
+                                data-provider="yahoo"
+                                data-provider-name="Yahoo"
+                                data-imap-server="imap.mail.yahoo.com"
+                                data-imap-port="993"
+                            >
+                                <div class="provider-left">
+                                    <img
+                                        class="provider-logo"
+                                        src="/assets/yahoo.png"
+                                        alt="Yahoo Mail"
+                                    />
+                                    <span class="custom-server-text">
+                                        Yahoo Mail
+                                    </span>
+                                </div>
 
-                    <input
-                        id="selected-imap-server-input"
-                        name="imap_server"
-                        type="hidden"
-                        value="imap.mail.yahoo.com"
-                    />
+                                <div class="provider-right">
+                                    <div class="selected-dot"></div>
+                                </div>
+                            </button>
 
-                    <input
-                        id="selected-imap-port-input"
-                        name="imap_port"
-                        type="hidden"
-                        value="993"
-                    />
+                            <button
+                                type="button"
+                                class="provider-item"
+                                data-provider="custom"
+                            >
+                                <div class="provider-left">
+                                    <span class="custom-server-text">
+                                        Custom IMAP Server
+                                    </span>
+                                </div>
+                            </button>
 
-                    <button type="submit" class="setup-button">Continue</button>
-                </form>
+                            <div class="provider-item disabled">
+                                <div class="provider-left">
+                                    <img
+                                        class="provider-logo"
+                                        src="/assets/outlook_small_64.png"
+                                        alt="Outlook"
+                                    />
+                                    <span
+                                        class="custom-server-text"
+                                        style="color: inherit"
+                                    >
+                                        Outlook
+                                    </span>
+                                </div>
 
-                <div id="setup-msg" class="setup-message"></div>
+                                <span class="coming-soon">Coming Soon</span>
+                            </div>
+
+                            <div class="provider-item disabled">
+                                <div class="provider-left">
+                                    <img
+                                        class="provider-logo"
+                                        src="/assets/gmail_64px.png"
+                                        alt="Gmail"
+                                    />
+                                    <span
+                                        class="custom-server-text"
+                                        style="color: inherit"
+                                    >
+                                        Gmail
+                                    </span>
+                                </div>
+
+                                <span class="coming-soon">Coming Soon</span>
+                            </div>
+                        </div>
+
+                        <input
+                            id="selected-provider-input"
+                            name="provider"
+                            type="hidden"
+                            value="yahoo"
+                        />
+
+                        <input
+                            id="selected-imap-server-input"
+                            name="imap_server"
+                            type="hidden"
+                            value="imap.mail.yahoo.com"
+                        />
+
+                        <input
+                            id="selected-imap-port-input"
+                            name="imap_port"
+                            type="hidden"
+                            value="993"
+                        />
+
+                        <button type="submit" class="setup-button">
+                            Continue
+                        </button>
+                    </form>
+
+                    <div id="setup-msg" class="setup-message"></div>
+                </div>
             </div>
         </div>
     </body>

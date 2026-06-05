@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use arc_swap::ArcSwap;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
@@ -32,6 +34,8 @@ pub struct ReturningUserImapClientChannelTx(pub mpsc::UnboundedSender<ImapClient
 #[cfg(test)]
 mod tests;
 
+pub static LOGGED_IN: LazyLock<Mutex<bool>> = LazyLock::new(|| Mutex::new(false));
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub async fn run() {
     let (imap_client_channel_tx, imap_client_channel_rx) =
@@ -49,7 +53,8 @@ pub async fn run() {
         imap_client_returning_user_channel_rx,
         imap_cmd_channel_rx,
         logout_state_tx,
-    );
+    )
+    .await;
 
     tauri::Builder::default()
         .manage(ArcSwap::from_pointee(AppState::Fresh))

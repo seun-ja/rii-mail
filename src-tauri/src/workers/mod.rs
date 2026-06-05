@@ -11,11 +11,11 @@ use tokio::sync::oneshot::{self};
 use tokio::time::{self, MissedTickBehavior};
 use tokio::{net::TcpStream, sync::mpsc::UnboundedReceiver};
 
-use crate::auth;
 use crate::config::ImapClientConfig;
 use crate::db::{MailBox, Providers};
 use crate::email_cache::SharedImapSession;
 use crate::imap::{init_imap_client, ImapCommand, RefreshSummary};
+use crate::{auth, LOGGED_IN};
 
 pub(crate) fn friendly_login_error_message(stage: &str, raw: &str) -> String {
     let lower = raw.to_ascii_lowercase();
@@ -59,7 +59,7 @@ pub(crate) struct _FetchEmailsCmd {
     pub provider: Providers,
 }
 
-pub fn session_thread(
+pub async fn session_thread(
     mut imap_client_channel_rx: UnboundedReceiver<ImapClientConfig>,
     mut imap_client_returning_user_channel_rx: UnboundedReceiver<ImapClientConfig>,
     mut imap_cmd_channel_rx: UnboundedReceiver<ImapCommand>,
@@ -76,6 +76,8 @@ pub fn session_thread(
         let mut initial_fetch_completed: HashSet<(Providers, MailBox)> = HashSet::new();
         let mut database_initialized = false;
 
+        let logged_in = LOGGED_IN.lock().await;
+
         let (_email_cmd_tx, _email_cmd_rx) = oneshot::channel::<()>();
 
         // 1. Create an interval timer (e.g., every 3 seconds)
@@ -84,7 +86,7 @@ pub fn session_thread(
         // Optional: Prevents bursts of ticks if your other code runs slow
         ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
-        while imap_client_channel_open || imap_cmd_channel_open {
+        while imap_client_channel_open || imap_cmd_channel_open || !*logged_in {
             tokio::select! {
                 maybe_config = imap_client_channel_rx.recv(), if imap_client_channel_open => {
                     let Some(mut config) = maybe_config else {
@@ -264,6 +266,8 @@ pub fn session_thread(
                             providers.clear();
                             initial_fetch_completed.clear();
                             database_initialized = false;
+
+                            *LOGGED_IN.lock().await = false;
                         }
                         ImapCommand::RefreshEmails(mail_box, provider, login_result_tx) => {
                             let Some(session) = initialized_session.as_ref() else {

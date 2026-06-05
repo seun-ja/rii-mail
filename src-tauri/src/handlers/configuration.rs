@@ -13,7 +13,7 @@ use crate::{
     db::{self, MailBox, Providers},
     error::Error,
     imap::ImapCommand,
-    ImapClientChannelTx, ReturningUserImapClientChannelTx,
+    ImapClientChannelTx, ReturningUserImapClientChannelTx, LOGGED_IN,
 };
 
 pub(crate) fn provider_from_imap_server(imap_server: &str) -> Providers {
@@ -144,6 +144,7 @@ fn ensure_expanded_startup_window(app: &tauri::AppHandle) -> Result<(), Error> {
         window.set_max_size::<Size>(None)?;
         window.set_min_size(Some(expanded_min_size))?;
         window.set_size(expanded_size)?;
+        window.center()?;
     }
 
     Ok(())
@@ -212,6 +213,8 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
 
     ::tracing::info!("User Logged in and emails fetching initiated");
 
+    *LOGGED_IN.lock().await = true;
+
     Ok(())
 }
 
@@ -228,6 +231,7 @@ pub async fn open_main_window(current_window: tauri::WebviewWindow) -> Result<()
     current_window.set_max_size::<Size>(None)?;
     current_window.set_min_size(Some(expanded_min_size))?;
     current_window.set_size(expanded_size)?;
+    current_window.center()?;
     current_window.eval("window.location.replace('/')")?;
     current_window.show()?;
     current_window.set_focus()?;
