@@ -3,10 +3,9 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
-mod email_fetcher;
-mod general;
+mod imap_session;
 
-pub use general::session_thread;
+pub use imap_session::worker;
 
 #[derive(Default)]
 pub struct FetchManager {

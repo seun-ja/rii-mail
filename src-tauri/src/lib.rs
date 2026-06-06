@@ -10,7 +10,7 @@ use tokio::sync::{mpsc, Mutex};
 use crate::config::ImapClientConfig;
 use crate::handlers::{fetch_emails_handler, refresh_emails_handler};
 use crate::imap::ImapCommand;
-use crate::workers::{session_thread, FetchManager};
+use crate::workers::{worker, FetchManager};
 use crate::{
     config::AppState,
     handlers::{check_app_status, config_setup, login, logout_with_state, open_main_window, rater},
@@ -51,7 +51,7 @@ pub async fn run() {
 
     let (logout_state_tx, logout_state_rx) = mpsc::unbounded_channel::<()>();
 
-    session_thread(
+    worker(
         imap_client_channel_rx,
         imap_client_returning_user_channel_rx,
         imap_cmd_channel_rx,

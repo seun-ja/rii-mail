@@ -1,5 +1,4 @@
-use crate::db::Providers;
-use crate::handlers::configuration::provider_from_imap_server;
+use crate::{db::Providers, handlers::provider_from_imap_server};
 
 #[test]
 fn provider_from_imap_server_maps_yahoo_case_insensitively() {

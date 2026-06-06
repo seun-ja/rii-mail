@@ -16,7 +16,7 @@ use crate::error::{friendly_login_error_message, Error};
 use crate::imap::{init_imap_client, ImapCommand, RefreshSummary};
 use crate::{auth, FETCH_MANAGER, LOGGED_IN, LOGGING_IN};
 
-pub async fn session_thread(
+pub async fn worker(
     mut imap_client_channel_rx: UnboundedReceiver<ImapClientConfig>,
     mut imap_client_returning_user_channel_rx: UnboundedReceiver<ImapClientConfig>,
     mut imap_cmd_channel_rx: UnboundedReceiver<ImapCommand>,
