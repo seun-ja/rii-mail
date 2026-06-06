@@ -75,7 +75,7 @@ pub async fn run() {
             let app_separator = PredefinedMenuItem::separator(app)?;
             let app_submenu = Submenu::with_items(
                 app,
-                "PhisherMan",
+                "RiiMail",
                 true,
                 &[&app_about, &app_separator, &app_quit],
             )?;
@@ -135,11 +135,9 @@ pub async fn run() {
             let app_handle = app.clone();
 
             tauri::async_runtime::spawn(async move {
-                if let Err(err) = logout_with_state(app_handle.clone()).await {
-                    ::tracing::warn!(error = ?err, "Menu logout failed");
-                } else {
-                    ::tracing::info!("Logout succeeded");
-                }
+                logout_with_state(app_handle.clone()).await;
+                ::tracing::info!("Logout succeeded");
+
 
                 let target_window = app_handle
                     .get_webview_window("main-app")

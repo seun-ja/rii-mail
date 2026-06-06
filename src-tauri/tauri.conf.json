@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "PhisherMan",
+  "productName": "RiiMail",
   "version": "0.1.0",
   "identifier": "com.seunaminu.riimail",
   "build": {
@@ -10,7 +10,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "PhisherMan",
+        "title": "RiiMail",
         "url": "login.html",
         "width": 500,
         "height": 700,

@@ -54,7 +54,7 @@ pub async fn worker(
                 maybe_config = imap_client_channel_rx.recv(), if imap_client_channel_open => {
                     let Some(mut config) = maybe_config else {
                         imap_client_channel_open = false;
-                        ::tracing::warn!("IMAP config channel closed");
+                        tracing::warn!("IMAP config channel closed");
                         continue;
                     };
 
@@ -72,7 +72,7 @@ pub async fn worker(
                             login(config, &mut initialized_session, imap_client, &mut pool).await;
                         }
                         Err(err) => {
-                            ::tracing::error!(error = ?err, "Failed to initialize IMAP client");
+                            tracing::error!(error = ?err, "Failed to initialize IMAP client");
 
                             if let Some(tx) = config.login_result_tx.take() {
                                 let _ = tx.send(Err(friendly_login_error_message("init", &err.to_string())));
@@ -90,18 +90,16 @@ pub async fn worker(
                                 &mut pool,
                             )
                             .await;
-
-                            ::tracing::info!("IMAP sessions initialized");
                         }
                         Err(err) => {
-                            ::tracing::error!(error = ?err, "Failed to initialize background IMAP client");
+                            tracing::error!(error = ?err, "Failed to initialize background IMAP client");
                         }
                     }
                 }
                 maybe_returning_user_config = imap_client_returning_user_channel_rx.recv() => {
-                    ::tracing::info!("Received IMAP config for returning user");
+                    tracing::info!("Received IMAP config for returning user");
                     let Some(mut config) = maybe_returning_user_config else {
-                        ::tracing::warn!("Returning user IMAP config channel closed");
+                        tracing::warn!("Returning user IMAP config channel closed");
                         continue;
                     };
 
@@ -120,7 +118,7 @@ pub async fn worker(
                             login(config, &mut initialized_session, imap_client, &mut pool).await;
                         }
                         Err(err) => {
-                            ::tracing::error!(error = ?err, "Failed to initialize IMAP client for returning user");
+                            tracing::error!(error = ?err, "Failed to initialize IMAP client for returning user");
 
                             if let Some(tx) = config.login_result_tx.take() {
                                 let _ = tx.send(Err(friendly_login_error_message("init", &err.to_string())));
@@ -139,10 +137,10 @@ pub async fn worker(
                             )
                             .await;
 
-                            ::tracing::info!("IMAP sessions initialized for returning user");
+                            tracing::info!("IMAP sessions initialized for returning user");
                         }
                         Err(err) => {
-                            ::tracing::error!(error = ?err, "Failed to initialize background IMAP client for returning user");
+                            tracing::error!(error = ?err, "Failed to initialize background IMAP client for returning user");
                         }
                     }
                 }
@@ -157,7 +155,7 @@ pub async fn worker(
                             let fetch_key = (provider.clone(), mail_box.clone());
 
                             if initial_fetch_completed.contains(&fetch_key) {
-                                ::tracing::info!(
+                                tracing::info!(
                                     mailbox = mail_box.as_ref(),
                                     provider = provider.as_ref(),
                                     "Skipping duplicate initial mailbox fetch command"
@@ -166,17 +164,17 @@ pub async fn worker(
                             }
 
                             let Some(session) = initialized_session.as_ref() else {
-                                ::tracing::warn!("FetchEmails ignored: IMAP session is not initialized");
+                                tracing::warn!("FetchEmails ignored: IMAP session is not initialized");
                                 continue;
                             };
 
                             let Some(session_background) = initialized_session_background.as_ref() else {
-                                ::tracing::warn!("FetchEmails ignored: background IMAP session is not initialized");
+                                tracing::warn!("FetchEmails ignored: background IMAP session is not initialized");
                                 continue;
                             };
 
                             let Some(pool_ref) = pool.as_ref() else {
-                                ::tracing::warn!("FetchEmails ignored: sqlite pool is not initialized");
+                                tracing::warn!("FetchEmails ignored: sqlite pool is not initialized");
                                 continue;
                             };
 
@@ -205,22 +203,21 @@ pub async fn worker(
                             if let Some(session) = initialized_session.take() {
                                 let mut session = session.lock().await;
                                 if let Err(err) = session.logout().await {
-                                    ::tracing::warn!(error = ?err, "Failed to logout IMAP session");
+                                    tracing::warn!(error = ?err, "Failed to logout IMAP session");
                                 }
                             } else {
-                                ::tracing::info!("Logout ignored: IMAP session is not initialized");
+                                tracing::info!("Logout ignored: IMAP session is not initialized");
                             }
 
                             if let Some(session_background) = initialized_session_background.take() {
                                 let mut session_background = session_background.lock().await;
                                 if let Err(err) = session_background.logout().await {
-                                    ::tracing::warn!(error = ?err, "Failed to logout background IMAP session");
+                                    tracing::warn!(error = ?err, "Failed to logout background IMAP session");
                                 }
                             } else {
-                                ::tracing::info!("Logout ignored: background IMAP session is not initialized");
+                                tracing::info!("Logout ignored: background IMAP session is not initialized");
                             }
 
-                            let _ = logout_result_tx.send(());
                             pool = None;
                             providers.clear();
                             initial_fetch_completed.clear();
@@ -228,15 +225,16 @@ pub async fn worker(
                             logging_out = true;
 
                             *LOGGED_IN.lock().await = false;
+                            let _ = logout_result_tx.send(());
                         }
                         ImapCommand::RefreshEmails(mail_box, provider, login_result_tx) => {
                             let Some(session) = initialized_session.as_ref() else {
-                                ::tracing::warn!("FetchEmails ignored: IMAP session is not initialized");
+                                tracing::warn!("FetchEmails ignored: IMAP session is not initialized");
                                 continue;
                             };
 
                             let Some(pool_ref) = pool.as_ref() else {
-                                ::tracing::warn!("FetchEmails ignored: sqlite pool is not initialized");
+                                tracing::warn!("FetchEmails ignored: sqlite pool is not initialized");
                                 continue;
                             };
 
@@ -263,17 +261,17 @@ pub async fn worker(
                 }
                 _ =  ticker.tick(), if database_initialized && !logging_out => {
                     let Some(session) = initialized_session.as_ref() else {
-                        ::tracing::warn!("FetchEmails ignored: IMAP session is not initialized");
+                        tracing::warn!("FetchEmails ignored: IMAP session is not initialized");
                         continue;
                     };
 
                     let Some(session_background) = initialized_session_background.as_ref() else {
-                        ::tracing::warn!("FetchEmails ignored: background IMAP session is not initialized");
+                        tracing::warn!("FetchEmails ignored: background IMAP session is not initialized");
                         continue;
                     };
 
                     let Some(pool_ref) = pool.as_ref() else {
-                        ::tracing::warn!("FetchEmails ignored: sqlite pool is not initialized");
+                        tracing::warn!("FetchEmails ignored: sqlite pool is not initialized");
                         continue;
                     };
 
@@ -303,18 +301,18 @@ pub async fn worker(
                         );
 
                         if let Err(err) = inbox_result {
-                            ::tracing::error!(error = ?err, "Failed inbox periodic refresh");
+                            tracing::error!(error = ?err, "Failed inbox periodic refresh");
                         }
 
                         if let Err(err) = sent_result {
-                            ::tracing::error!(error = ?err, "Failed sent periodic refresh");
+                            tracing::error!(error = ?err, "Failed sent periodic refresh");
                         }
                     }
                 }
             }
         }
 
-        ::tracing::info!("IMAP worker task stopped");
+        tracing::info!("IMAP worker task stopped");
     });
 }
 
@@ -334,7 +332,7 @@ async fn login(
             }
         }
         Err(err) => {
-            ::tracing::error!(error = ?err, "IMAP login failed");
+            tracing::error!(error = ?err, "IMAP login failed");
 
             if let Some(tx) = config.login_result_tx.take() {
                 let _ = tx.send(Err(friendly_login_error_message("login", &err.to_string())));

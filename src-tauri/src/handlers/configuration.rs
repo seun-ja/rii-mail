@@ -41,6 +41,10 @@ pub async fn config_setup(
     let provider = provider_from_imap_server(&config.imap_server);
 
     db::init_db(&config_dir, &config.sqlite_db, &provider).await?;
+    tracing::info!(
+        "Database initialized successfully for provider: {}",
+        provider.as_ref()
+    );
 
     // Create config directory if it doesn't exist
     create_dir_all(&config_dir).await?;

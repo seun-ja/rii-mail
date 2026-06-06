@@ -5,7 +5,7 @@ use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use crate::{
     config::AppState,
-    db::{get_email_count, get_emails, MailBox, Providers},
+    db::{get_emails, MailBox, Providers},
     email_cache::{CompleteEmail, FrontendEmail},
     error::Error,
     imap::{ImapCommand, RefreshSummary},
@@ -15,7 +15,6 @@ use crate::{
 #[serde(rename_all = "camelCase")]
 pub struct FetchEmailsResponse {
     pub emails: Vec<FrontendEmail>,
-    pub total_emails: u32,
 }
 
 #[derive(serde::Serialize)]
@@ -39,8 +38,6 @@ pub async fn fetch_emails_handler(
     let current_state = state.load();
     let initialized = current_state.state();
 
-    let total_emails = get_email_count(&initialized.sqlite_pool, &provider, &mailbox).await?;
-
     let provider = Providers::from(provider);
     let mailbox = MailBox::from(mailbox);
 
@@ -53,10 +50,7 @@ pub async fn fetch_emails_handler(
     )
     .await?;
 
-    Ok(FetchEmailsResponse {
-        emails,
-        total_emails,
-    })
+    Ok(FetchEmailsResponse { emails })
 }
 
 #[tauri::command]

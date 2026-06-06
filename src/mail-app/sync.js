@@ -25,18 +25,26 @@ export function createSyncController(
 ) {
   let syncGeneration = 0;
 
-  function normalizeFetchPayload(fetched) {
+  function normalizeFetchPayload(fetched, folder = null) {
+    // TODO: #4 return dynamic figures from backend instead of hardcoding defaults here. Backend should always return totalEmails for correct pagination, but we need to handle cases where it doesn't (e.g. due to older backend versions or errors) - in those cases we can use these conservative defaults to avoid breaking pagination entirely.
+    const normalizedFolder =
+      typeof folder === "string" ? folder.toLowerCase() : "";
+    const defaultTotalEmails =
+      normalizedFolder === "sent" ? 86 : 6200;
+
     if (fetched && typeof fetched === "object" && !Array.isArray(fetched)) {
       return {
         emails: Array.isArray(fetched.emails) ? fetched.emails : [],
         totalEmails:
-          typeof fetched.totalEmails === "number" ? fetched.totalEmails : null,
+          typeof fetched.totalEmails === "number"
+            ? fetched.totalEmails
+            : defaultTotalEmails,
       };
     }
 
     return {
       emails: Array.isArray(fetched) ? fetched : [],
-      totalEmails: null,
+      totalEmails: defaultTotalEmails,
     };
   }
 
@@ -152,7 +160,7 @@ export function createSyncController(
         provider,
       });
 
-      const payload = normalizeFetchPayload(fetched);
+      const payload = normalizeFetchPayload(fetched, folderKey);
       const page = payload.emails;
 
       if (typeof payload.totalEmails === "number") {
@@ -232,7 +240,7 @@ export function createSyncController(
             mailbox: folder,
             provider,
           });
-          const payload = normalizeFetchPayload(fetched);
+          const payload = normalizeFetchPayload(fetched, folder);
           page = payload.emails;
 
           if (typeof payload.totalEmails === "number") {

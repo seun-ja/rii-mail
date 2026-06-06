@@ -1,6 +1,6 @@
-# PhisherMan (Email Desktop Client)
+# RiiMail (Email Desktop Client)
 
-PhisherMan is a Tauri 2 desktop app for triaging email with IMAP sync and AI-assisted phishing/spam checks.
+RiiMail is a Tauri 2 desktop app for triaging email with IMAP sync and AI-assisted phishing/spam checks.
 
 ## What It Does
 

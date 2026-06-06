@@ -213,7 +213,6 @@ async fn handle_email_population(
             return Err(Error::ThreadCancel);
         }
     } {
-        tracing::info!("Received message from stream");
         let message = message?;
 
         if let Some(uid) = message.uid {
