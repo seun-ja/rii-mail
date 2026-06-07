@@ -16,6 +16,8 @@ export function createInitialState() {
     query: "",
     isAppReady: false,
     isLoadingEmails: false,
+    emailPopulationProgress: 0,
+    isEmailPopulationComplete: false,
     paginationByFolder: {
       INBOX: {
         nextOffset: 0,

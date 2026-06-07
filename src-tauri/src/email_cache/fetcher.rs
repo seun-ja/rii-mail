@@ -14,6 +14,7 @@ use crate::{
     },
     email_cache::{Email, SharedImapSession},
     error::Error,
+    POPULATE_UPDATE,
 };
 
 pub enum FetchResult {
@@ -201,6 +202,8 @@ async fn handle_email_population(
     let mut inserted_count = 0usize;
     let mut highest_uid = 0u32;
 
+    let mut email_count: u8 = 0;
+
     while let Some(message) = tokio::select! {
         msg = messages_stream.next() => msg,
 
@@ -213,6 +216,14 @@ async fn handle_email_population(
             return Err(Error::ThreadCancel);
         }
     } {
+        email_count += 1;
+        let percentage = ((email_count as u32 * 100) / mailbox_info.exists) as u8;
+
+        POPULATE_UPDATE
+            .lock()
+            .await
+            .store(percentage, std::sync::atomic::Ordering::Relaxed);
+
         let message = message?;
 
         if let Some(uid) = message.uid {

@@ -67,6 +67,7 @@ pub async fn worker(
                         login_result_tx: None,
                     };
 
+                    tracing::info!("Initiating IMAP session");
                     match init_imap_client(&config.imap_server, config.imap_port).await {
                         Ok(imap_client) => {
                             login(config, &mut initialized_session, imap_client, &mut pool).await;
@@ -113,6 +114,7 @@ pub async fn worker(
                     };
 
 
+                    tracing::info!("Initiating IMAP session for returning user");
                     match init_imap_client(&config.imap_server, config.imap_port).await {
                         Ok(imap_client) => {
                             login(config, &mut initialized_session, imap_client, &mut pool).await;
