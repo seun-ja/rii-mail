@@ -115,6 +115,7 @@ pub async fn worker(
 
 
                     tracing::info!("Initiating IMAP session for returning user");
+                    // TODO: A retry mechanism or timeout
                     match init_imap_client(&config.imap_server, config.imap_port).await {
                         Ok(imap_client) => {
                             login(config, &mut initialized_session, imap_client, &mut pool).await;
@@ -197,7 +198,7 @@ pub async fn worker(
                                     tracing::info!("Initial sync cancelled");
                                 }
                                 Err(err) => {
-                                    tracing::error!(error=?err, "Initial sync failed");
+                                    tracing::error!(error=%err, "Initial sync failed");
                                 }
                             }
                         }

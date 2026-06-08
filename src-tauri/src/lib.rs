@@ -9,7 +9,9 @@ use tauri::{Emitter as _, LogicalSize, Manager as _, Size};
 use tokio::sync::{mpsc, Mutex};
 
 use crate::config::ImapClientConfig;
-use crate::handlers::{email_populated, fetch_emails_handler, refresh_emails_handler};
+use crate::handlers::{
+    fetch_emails_handler, inbox_email_populated, refresh_emails_handler, sent_email_populated,
+};
 use crate::imap::ImapCommand;
 use crate::workers::{worker, FetchManager};
 use crate::{
@@ -35,12 +37,20 @@ pub struct ReturningUserImapClientChannelTx(pub mpsc::UnboundedSender<ImapClient
 #[cfg(test)]
 mod tests;
 
+#[derive(Clone)]
+pub struct InboxPopulateUpdateState(pub Arc<Mutex<AtomicU8>>);
+
+#[derive(Clone)]
+pub struct SentPopulateUpdateState(pub Arc<Mutex<AtomicU8>>);
+
 pub static LOGGED_IN: LazyLock<Arc<Mutex<bool>>> = LazyLock::new(|| Arc::new(Mutex::new(false)));
 pub static LOGGING_IN: LazyLock<Arc<Mutex<bool>>> = LazyLock::new(|| Arc::new(Mutex::new(false)));
 pub static FETCH_MANAGER: LazyLock<Arc<FetchManager>> =
     LazyLock::new(|| Arc::new(FetchManager::default()));
-pub static POPULATE_UPDATE: LazyLock<Arc<Mutex<AtomicU8>>> =
-    LazyLock::new(|| Arc::new(Mutex::new(AtomicU8::new(0))));
+pub static INBOX_POPULATE_UPDATE: LazyLock<InboxPopulateUpdateState> =
+    LazyLock::new(|| InboxPopulateUpdateState(Arc::new(Mutex::new(AtomicU8::new(0)))));
+pub static SENT_POPULATE_UPDATE: LazyLock<SentPopulateUpdateState> =
+    LazyLock::new(|| SentPopulateUpdateState(Arc::new(Mutex::new(AtomicU8::new(0)))));
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub async fn run() {
@@ -71,7 +81,8 @@ pub async fn run() {
         .manage(imap_cmd_channel_tx)
         .manage(Mutex::new(logout_state_rx))
         .manage(FETCH_MANAGER.clone())
-        .manage(POPULATE_UPDATE.clone())
+        .manage(INBOX_POPULATE_UPDATE.clone())
+        .manage(SENT_POPULATE_UPDATE.clone())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let app_about = PredefinedMenuItem::about(app, None, None)?;
@@ -178,13 +189,14 @@ pub async fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             check_app_status,
-            email_populated,
+            inbox_email_populated,
             config_setup,
             fetch_emails_handler,
             login,
             open_main_window,
             rater,
             refresh_emails_handler,
+            sent_email_populated
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

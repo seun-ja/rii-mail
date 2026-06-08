@@ -14,7 +14,7 @@ use crate::{
     },
     email_cache::{Email, SharedImapSession},
     error::Error,
-    POPULATE_UPDATE,
+    INBOX_POPULATE_UPDATE, SENT_POPULATE_UPDATE,
 };
 
 pub enum FetchResult {
@@ -66,66 +66,83 @@ pub async fn fetch_emails(
         return Ok(FetchResult::Populated);
     }
 
-    let background_task = if !matches!(mailbox, MailBox::Sent) {
-        background_session.map(|session_background| {
+    let background_task = match (&mailbox, background_session) {
+        (MailBox::Inbox, Some(background_session)) => {
             let pool = pool.clone();
             let provider = provider.clone();
-            let cancel_token = cancel_token.clone();
             let token = cancel_token.child_token();
 
-            tokio::spawn(async move {
-                let sent_table_name = format!("{}_{}", provider.as_ref(), MailBox::Sent.as_ref());
+            Some(tokio::spawn(async move {
+                let table_name = format!("{}_{}", provider.as_ref(), MailBox::Sent.as_ref());
 
-                match handle_email_population_locked(
-                    session_background,
+                let result = handle_email_population_locked(
+                    background_session,
                     &pool,
-                    MailBox::Sent,
-                    sent_table_name,
+                    &MailBox::Sent,
+                    table_name,
                     token,
                 )
-                .await {
-                    Ok(res) => {
-                        let _ = tokio::select! {
-                            result = populate_sent_folder_count(&pool, provider.as_ref(), res.count() as u32) => result,
-                            _ = cancel_token.cancelled() => {
-                                   Err(Error::ThreadCancel)
-                               }
-                        };
-                    },
-                    Err(err) => {if !matches!(err, Error::ThreadCancel) {
-                        tracing::error!(
-                            error = ?err,
-                            "Failed background sent mailbox fetch"
-                        );
-                    }}
-                }
+                .await?;
 
-            })
-        })
-    } else {
-        None
+                populate_sent_folder_count(&pool, provider.as_ref(), result.count() as u32).await?;
+
+                Ok::<_, Error>(())
+            }))
+        }
+
+        (MailBox::Sent, Some(background_session)) => {
+            let pool = pool.clone();
+            let provider = provider.clone();
+            let token = cancel_token.child_token();
+
+            Some(tokio::spawn(async move {
+                let table_name = format!("{}_{}", provider.as_ref(), MailBox::Inbox.as_ref());
+
+                let result = handle_email_population_locked(
+                    background_session,
+                    &pool,
+                    &MailBox::Inbox,
+                    table_name,
+                    token,
+                )
+                .await?;
+
+                populate_inbox_folder_count(&pool, provider.as_ref(), result.count() as u32)
+                    .await?;
+
+                Ok::<_, Error>(())
+            }))
+        }
+
+        _ => None,
     };
 
     let result =
-        handle_email_population_locked(session, pool, mailbox, table_name, cancel_token.clone())
+        handle_email_population_locked(session, pool, &mailbox, table_name, cancel_token.clone())
             .await?;
 
-    tokio::select! {
-        result = populate_inbox_folder_count(pool, provider.as_ref(), result.count() as u32) => result?,
-        _ = cancel_token.cancelled() => {
-               return Err(Error::ThreadCancel);
-           }
-    };
+    match mailbox {
+        MailBox::Inbox => {
+            populate_inbox_folder_count(pool, provider.as_ref(), result.count() as u32).await?;
+        }
+
+        MailBox::Sent => {
+            populate_sent_folder_count(pool, provider.as_ref(), result.count() as u32).await?;
+        }
+
+        _ => {}
+    }
 
     if let Some(task) = background_task {
         match task.await {
-            Ok(_) => {}
+            Ok(Ok(())) => {}
+            Ok(Err(Error::ThreadCancel)) => {}
             Err(err) if err.is_cancelled() => {}
+            Ok(Err(err)) => {
+                tracing::error!(?err, "Background mailbox task failed");
+            }
             Err(err) => {
-                tracing::error!(
-                    error = ?err,
-                    "Background sent mailbox task failed"
-                );
+                tracing::error!(?err, "Background mailbox task panicked");
             }
         }
     }
@@ -140,7 +157,7 @@ pub async fn fetch_emails(
 async fn handle_email_population_locked(
     session: SharedImapSession,
     pool: &SqlitePool,
-    mailbox: MailBox,
+    mailbox: &MailBox,
     table_name: String,
     cancel_token: CancellationToken,
 ) -> Result<FetchResult, Error> {
@@ -156,13 +173,13 @@ async fn handle_email_population_locked(
         }
     };
 
-    handle_email_population(&mut session, pool, mailbox, table_name, cancel_token).await
+    handle_email_population(&mut session, pool, &mailbox, table_name, cancel_token).await
 }
 
 async fn handle_email_population(
     session: &mut Session<TlsStream<TcpStream>>,
     pool: &SqlitePool,
-    mailbox: MailBox,
+    mailbox: &MailBox,
     table_name: String,
     cancel_token: CancellationToken,
 ) -> Result<FetchResult, Error> {
@@ -202,7 +219,7 @@ async fn handle_email_population(
     let mut inserted_count = 0usize;
     let mut highest_uid = 0u32;
 
-    let mut email_count: u8 = 0;
+    let mut email_count: u32 = 0;
 
     while let Some(message) = tokio::select! {
         msg = messages_stream.next() => msg,
@@ -217,12 +234,21 @@ async fn handle_email_population(
         }
     } {
         email_count += 1;
-        let percentage = ((email_count as u32 * 100) / mailbox_info.exists) as u8;
+        let percentage = ((email_count * 100) / mailbox_info.exists) as u8;
 
-        POPULATE_UPDATE
-            .lock()
-            .await
-            .store(percentage, std::sync::atomic::Ordering::Relaxed);
+        if mailbox == &MailBox::Inbox {
+            INBOX_POPULATE_UPDATE
+                .0
+                .lock()
+                .await
+                .store(percentage, std::sync::atomic::Ordering::Release);
+        } else if mailbox == &MailBox::Sent {
+            SENT_POPULATE_UPDATE
+                .0
+                .lock()
+                .await
+                .store(percentage, std::sync::atomic::Ordering::Release);
+        }
 
         let message = message?;
 
@@ -232,7 +258,7 @@ async fn handle_email_population(
 
         emails.push(message.into());
 
-        if emails.len() >= INITIAL_BATCH_SIZE {
+        if emails.len() == INITIAL_BATCH_SIZE {
             if cancel_token.is_cancelled() {
                 return Err(Error::ThreadCancel);
             }
