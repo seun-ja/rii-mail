@@ -5,6 +5,7 @@ This document describes the backend architecture and behavior of the RiiMail app
 ## Overview
 
 The backend handles:
+
 - application startup and Tauri window lifecycle
 - configuration and initialization
 - IMAP authentication and session management
@@ -19,12 +20,14 @@ The main entrypoint is `src-tauri/src/main.rs`, which initializes tracing and ca
 ## Startup and App Bootstrap
 
 ### `src-tauri/src/main.rs`
+
 - Loads environment variables with `dotenv::dotenv()`.
 - Reads `OTLP_COLLECTOR_ENDPOINT` and `RUST_LOG`.
 - Initializes tracing using `riimail_lib::tracing::init_subscriber`.
 - Calls `riimail_lib::run().await`.
 
 ### `src-tauri/src/lib.rs`
+
 - Defines global runtime state and `run()` logic.
 - Creates communication channels for IMAP worker commands and login flows.
 - Spawns the IMAP worker via `workers::worker(...)`.
@@ -44,8 +47,10 @@ The main entrypoint is `src-tauri/src/main.rs`, which initializes tracing and ca
   - `open_main_window`
   - `rater`
   - `refresh_emails_handler`
+  - `logout`
 
 ### Global Flags and State
+
 - `LOGGED_IN`: true when the user is authenticated.
 - `LOGGING_IN`: true while login is in progress.
 - `FETCH_MANAGER`: provides `logout_token` and `refresh_token` for canceling tasks.
@@ -53,6 +58,7 @@ The main entrypoint is `src-tauri/src/main.rs`, which initializes tracing and ca
 ## Configuration and Initialization
 
 ### `src-tauri/src/config.rs`
+
 - Defines `Config` with:
   - `rpc_server`
   - `imap_server`
@@ -68,6 +74,7 @@ The main entrypoint is `src-tauri/src/main.rs`, which initializes tracing and ca
 - Provides `init_rpc(rpc_server)` to connect to an external tarpc RPC server.
 
 ### `src-tauri/src/handlers/configuration.rs`
+
 - `config_setup(app, imap_server, imap_port)`:
   - uses environment variables `RPC_SERVER` and `SQLITE_DB`
   - writes `config.json`
@@ -77,6 +84,7 @@ The main entrypoint is `src-tauri/src/main.rs`, which initializes tracing and ca
     - `InitStatus::Setup`
     - `InitStatus::Login`
     - `InitStatus::SignedIn`
+    - `InitStatus::ReturningSigned`
   - attempts returning-user login if credentials are stored in Apple Keychain.
   - resizes the app window for compact auth or expanded main UI.
 - `open_main_window(current_window)`:
@@ -85,6 +93,7 @@ The main entrypoint is `src-tauri/src/main.rs`, which initializes tracing and ca
 ## Authentication and Login Flow
 
 ### `src-tauri/src/handlers/login.rs`
+
 - `login(app, username, password)` performs:
   - sets `LOGGING_IN` to true.
   - loads `config.json`.
@@ -103,17 +112,20 @@ The main entrypoint is `src-tauri/src/main.rs`, which initializes tracing and ca
     - sets `LOGGED_IN` true and `LOGGING_IN` false
 
 ### `src-tauri/src/auth/apple_keychain_access.rs`
+
 - Stores and retrieves passwords on macOS.
 - Used for returning-user login and secure credential storage.
 - On non-macOS, operations return a keychain error.
 
 ### `src-tauri/src/auth/login.rs`
+
 - Performs IMAP login using `async_imap`.
 - Converts the IMAP client to an authenticated session.
 
 ## IMAP Worker and Background Tasks
 
 ### `src-tauri/src/workers/imap_session.rs`
+
 - The IMAP worker is the backend's central long-running task.
 - It listens to:
   - `imap_client_channel_rx` for first-time login requests
@@ -130,6 +142,7 @@ The main entrypoint is `src-tauri/src/main.rs`, which initializes tracing and ca
 - Creates a periodic refresh ticker every 60 seconds.
 
 ### Worker Command Handling
+
 - `ImapCommand::FetchEmails(mailbox, provider, cancel_token)`:
   - initial sync for a mailbox
   - rejects duplicate initial fetches
@@ -146,12 +159,14 @@ The main entrypoint is `src-tauri/src/main.rs`, which initializes tracing and ca
   - sends completion over logout channel
 
 ### Automatic Periodic Refresh
+
 - Every 60 seconds, if the database is initialized and not logging out:
   - refreshes Inbox and Sent for each provider
   - uses `email_cache::fetch_latest(...)`
   - runs both inbox and sent refreshes concurrently
 
 ### Login Initialization
+
 - When receiving an IMAP config, the worker:
   - establishes an IMAP client and authenticates it
   - stores the authenticated session as `SharedImapSession`
@@ -162,6 +177,7 @@ The main entrypoint is `src-tauri/src/main.rs`, which initializes tracing and ca
 ## IMAP Connection Management
 
 ### `src-tauri/src/imap.rs`
+
 - `init_imap_client(imap_server, imap_port)`:
   - opens TCP connection to IMAP host
   - wraps it in TLS using `async_native_tls`
@@ -177,6 +193,7 @@ The main entrypoint is `src-tauri/src/main.rs`, which initializes tracing and ca
 ## Email Fetching and Storage
 
 ### `src-tauri/src/email_cache/fetcher.rs`
+
 - `fetch_emails(...)`:
   - initial mailbox synchronization
   - avoids fetching if DB already contains mailbox records
@@ -192,6 +209,7 @@ The main entrypoint is `src-tauri/src/main.rs`, which initializes tracing and ca
 - Uses cancellation tokens to abort in-progress operations cleanly.
 
 ### `src-tauri/src/email_cache/mod.rs`
+
 - Defines the email data model:
   - `Email`
   - `CompleteEmail`
@@ -204,6 +222,7 @@ The main entrypoint is `src-tauri/src/main.rs`, which initializes tracing and ca
 ## SQLite Database Schema and Utilities
 
 ### `src-tauri/src/db/mod.rs`
+
 - Creates local SQLite database under app config directory.
 - Builds provider-specific mailbox tables:
   - `gmail_INBOX`, `gmail_Sent`
@@ -213,6 +232,7 @@ The main entrypoint is `src-tauri/src/main.rs`, which initializes tracing and ca
 - Initializes the DB with PRAGMA configuration.
 
 ### `src-tauri/src/db/emails_db.rs`
+
 - `populate_storage(...)` inserts email rows with deduplication.
 - `get_emails(...)` returns messages for frontend pagination.
 - `populate_inbox_folder_count(...)` and `populate_sent_folder_count(...)`
@@ -224,6 +244,7 @@ The main entrypoint is `src-tauri/src/main.rs`, which initializes tracing and ca
 ## Frontend Communication Endpoints
 
 ### `src-tauri/src/handlers/email.rs`
+
 - `fetch_emails_handler(app, min_range, max_range, mailbox, provider)`:
   - loads emails from SQLite
   - converts them to `FrontendEmail`
@@ -234,12 +255,14 @@ The main entrypoint is `src-tauri/src/main.rs`, which initializes tracing and ca
   - returns message list plus counts
 
 ### `src-tauri/src/handlers/rater.rs`
+
 - `rater(app, subject, email_from, body)`:
   - creates an `EmailRequest`
   - forwards it to the LLM RPC client
   - returns `SpamRating`
 
 ### `src-tauri/src/handlers/menu.rs`
+
 - `logout_with_state(app)`:
   - sends `ImapCommand::Logout`
   - cancels fetch and refresh tokens
@@ -251,17 +274,20 @@ The main entrypoint is `src-tauri/src/main.rs`, which initializes tracing and ca
 ## LLM / Spam Rating Integration
 
 ### `src-tauri/src/llm/rpc/mod.rs`
+
 - Defines the RPC service trait.
 - Uses `tarpc` and `rpc_agent` types.
 - `caller(rpc_client, email)` sends a message to the external agent server.
 
 ### `src-tauri/src/llm/rpc/call.rs`
+
 - Sends an RPC request with a 120-second deadline.
 - Retries on connection errors.
 - Detects inference errors like `MODEL_OOM` and retries.
 - Converts returned JSON into `SpamRating`.
 
 ### `src-tauri/src/llm/mod.rs`
+
 - Defines provider abstractions for:
   - `ollama`
   - `openai`
@@ -271,6 +297,7 @@ The main entrypoint is `src-tauri/src/main.rs`, which initializes tracing and ca
 - Provides initialization helper functions.
 
 ### `src-tauri/src/llm/providers/local_inference.rs`
+
 - Uses PyO3 to import a Python inference module.
 - Calls `predict(prompt)` in Python and returns JSON.
 - Supports local model inference from `python/local_inference.py`.
@@ -278,6 +305,7 @@ The main entrypoint is `src-tauri/src/main.rs`, which initializes tracing and ca
 ## Local Python Inference
 
 ### `python/local_inference.py`
+
 - Loads a local Transformers model from `python/merged-model-new`.
 - Selects device priority:
   - MPS on Apple Silicon
@@ -318,6 +346,7 @@ The main entrypoint is `src-tauri/src/main.rs`, which initializes tracing and ca
 ## Backend Responsibilities
 
 The backend is responsible for:
+
 - managing Tauri application state and window configuration
 - persisting app config and account metadata
 - handling secure credential storage on macOS

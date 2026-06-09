@@ -1,6 +1,10 @@
 use std::{path::PathBuf, sync::Arc};
 
-use crate::{auth::AppleKeychainManager, error::Error, llm::AgentWorkerClient};
+use crate::{
+    auth::AppleKeychainManager,
+    error::{Error, ErrorMessage},
+    llm::AgentWorkerClient,
+};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use tarpc::{client, serde_transport::tcp, tokio_serde::formats::Json};
@@ -12,7 +16,9 @@ pub enum InitStatus {
     /// Configuration file doesn't exist - user needs to complete full setup
     Setup,
     /// Configuration exists but user is not authenticated - show login page
-    Login,
+    ///
+    /// In case where there's a redirect because of error, there would be `Some`
+    Login(Option<ErrorMessage>),
     /// User is fully authenticated and app is ready
     SignedIn,
     /// User is returning and already authenticated

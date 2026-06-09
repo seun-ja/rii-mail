@@ -38,8 +38,32 @@ export function createUiController(dom) {
       ?.classList.toggle("sync-locked", locked);
   }
 
+  function updateDbPopulation() {
+    const container = document.getElementById("db-population");
+    const bar = document.getElementById("db-population-bar");
+    const text = document.getElementById("db-population-text");
+
+    const value = Math.max(
+      state.folderPopulation.inbox,
+      state.folderPopulation.sent,
+    );
+
+    bar.style.width = `${value}%`;
+    text.textContent = `Building local mailbox... ${value}%`;
+
+    if (
+      state.folderPopulation.inbox >= 100 &&
+      state.folderPopulation.sent >= 100
+    ) {
+      container.classList.add("hidden");
+    } else {
+      container.classList.remove("hidden");
+    }
+  }
+
   return {
     showMessage,
     setSyncUiState,
+    updateDbPopulation,
   };
 }

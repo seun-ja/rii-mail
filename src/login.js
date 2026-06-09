@@ -42,6 +42,9 @@ export async function checkInitializationStatus(
       return true;
     }
 
+    if (normalized !== "" && normalized !== "[object object]") {
+      loginMsgEl.textContent = normalized;
+    }
     return false;
   } catch (_error) {
     loginMsgEl.textContent = "Could not verify app status.";

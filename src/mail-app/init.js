@@ -1,4 +1,9 @@
-import { INITIAL_BATCH_SIZE, NEXT_BATCH_SIZE } from "./constants.js";
+import {
+  inboxFolderPopulationListener,
+  sentFolderPopulationListener,
+  inboxInitialPopulationCompleted,
+  sentInitialPopulationCompleted,
+} from "./listener.js";
 import { createInitialState } from "./state.js";
 import { getMailAppDom } from "./dom.js";
 import { createUiController } from "./ui.js";
@@ -40,6 +45,10 @@ export function initializeMailApp({
   }
 
   const state = createInitialState();
+  state.folderPopulation = {
+    inbox: 0,
+    sent: 0,
+  };
   const ui = createUiController(dom);
   const renderer = createRenderer(state, dom);
   const layout = createLayoutController(state, dom);
@@ -50,6 +59,50 @@ export function initializeMailApp({
   }
 
   const sync = createSyncController(state, renderer, ui, invoke, storage);
+  invoke("inbox_email_populated").catch(console.error);
+  invoke("sent_email_populated").catch(console.error);
+
+  invoke("inbox_intial_email_populated").catch(console.error);
+  invoke("sent_intial_email_populated").catch(console.error);
+  const cleanupListeners = [];
+
+  (async () => {
+    const inboxProgress = await inboxFolderPopulationListener((progress) => {
+      state.folderPopulation.inbox = progress;
+      updateDbPopulation();
+    });
+
+    cleanupListeners.push(inboxProgress);
+
+    const sentProgress = await sentFolderPopulationListener((progress) => {
+      state.folderPopulation.sent = progress;
+      updateDbPopulation();
+    });
+
+    cleanupListeners.push(sentProgress);
+
+    const inboxReady = await inboxInitialPopulationCompleted(async () => {
+      if (state.isInitialSyncComplete) {
+        return;
+      }
+
+      state.isInitialSyncComplete = true;
+
+      await sync.loadMoreEmails(INITIAL_BATCH_SIZE, {
+        reset: true,
+      });
+
+      ui.setSyncUiState(false);
+    });
+
+    cleanupListeners.push(inboxReady);
+
+    const sentReady = await sentInitialPopulationCompleted(() => {
+      console.log("Initial Sent mailbox population complete");
+    });
+
+    cleanupListeners.push(sentReady);
+  })();
 
   const haltSyncAndClearCache = () => {
     sync.haltAllSync();
@@ -76,6 +129,12 @@ export function initializeMailApp({
   }
 
   window.addEventListener("pagehide", () => {
+    cleanupListeners.forEach((unlisten) => {
+      try {
+        unlisten();
+      } catch (_) {}
+    });
+
     haltSyncAndClearCache();
   });
 
@@ -273,16 +332,6 @@ export function initializeMailApp({
     console.log("Starts the initial app");
     ui.setSyncUiState(true, "Syncing mailbox...", 0);
 
-    console.log("Checking initial sync status...");
-
     state.isAppReady = true;
-    console.log("Starts the sync process");
-    await sync.runInitialSync();
-
-    if (!state.isInitialSyncComplete) {
-      return;
-    }
-
-    ui.setSyncUiState(false);
   })();
 }

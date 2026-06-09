@@ -18,6 +18,12 @@ export function createInitialState() {
     isLoadingEmails: false,
     emailPopulationProgress: 0,
     isEmailPopulationComplete: false,
+    isInitialInboxDbPopulated: false,
+    isInitialSentDbPopulated: false,
+    folderPopulation: {
+      inbox: 0,
+      sent: 0,
+    },
     paginationByFolder: {
       INBOX: {
         nextOffset: 0,

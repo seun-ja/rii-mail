@@ -86,7 +86,7 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
         if config.accounts.is_empty() {
             ::tracing::warn!("Config accounts field is empty, cannot attempt returning user login");
             ensure_compact_startup_window(&app)?;
-            return Ok(InitStatus::Login);
+            return Ok(InitStatus::Login(None));
         }
 
         let imap_client_config = ImapClientConfig {
@@ -113,7 +113,7 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
             Err(message) => {
                 ::tracing::error!(error = ?message, "Returning user login failed: {message}");
                 ensure_compact_startup_window(&app)?;
-                return Ok(InitStatus::Login);
+                return Ok(InitStatus::Login(Some(message)));
             }
         }
 
@@ -131,7 +131,7 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
     } else {
         ::tracing::info!("No stored credentials found, user needs to login");
         ensure_compact_startup_window(&app)?;
-        Ok(InitStatus::Login)
+        Ok(InitStatus::Login(None))
     }
 }
 

@@ -145,6 +145,8 @@ impl Error {
     }
 }
 
+pub type ErrorMessage = String;
+
 pub(crate) fn friendly_login_error_message(stage: &str, raw: &str) -> String {
     let lower = raw.to_ascii_lowercase();
 

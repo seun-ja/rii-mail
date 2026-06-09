@@ -6,11 +6,12 @@ use arc_swap::ArcSwap;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Emitter as _, LogicalSize, Manager as _, Size};
 
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::config::ImapClientConfig;
 use crate::handlers::{
-    fetch_emails_handler, inbox_email_populated, refresh_emails_handler, sent_email_populated,
+    fetch_emails_handler, inbox_email_populated, inbox_intial_email_populated,
+    refresh_emails_handler, sent_email_populated, sent_intial_email_populated,
 };
 use crate::imap::ImapCommand;
 use crate::workers::{worker, FetchManager};
@@ -52,6 +53,23 @@ pub static INBOX_POPULATE_UPDATE: LazyLock<InboxPopulateUpdateState> =
 pub static SENT_POPULATE_UPDATE: LazyLock<SentPopulateUpdateState> =
     LazyLock::new(|| SentPopulateUpdateState(Arc::new(Mutex::new(AtomicU8::new(0)))));
 
+pub struct InitialDbPopulation {
+    inbox_rx: Mutex<Option<oneshot::Receiver<()>>>,
+    sent_rx: Mutex<Option<oneshot::Receiver<()>>>,
+}
+
+impl InitialDbPopulation {
+    fn new(
+        inbox_intial_email_populated_rx: oneshot::Receiver<()>,
+        sent_intial_email_populated_rx: oneshot::Receiver<()>,
+    ) -> Self {
+        Self {
+            inbox_rx: Mutex::new(Some(inbox_intial_email_populated_rx)),
+            sent_rx: Mutex::new(Some(sent_intial_email_populated_rx)),
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub async fn run() {
     let (imap_client_channel_tx, imap_client_channel_rx) =
@@ -64,11 +82,18 @@ pub async fn run() {
 
     let (logout_state_tx, logout_state_rx) = mpsc::unbounded_channel::<()>();
 
+    let (inbox_intial_email_populated_tx, inbox_intial_email_populated_rx) =
+        oneshot::channel::<()>();
+
+    let (sent_intial_email_populated_tx, sent_intial_email_populated_rx) = oneshot::channel::<()>();
+
     worker(
         imap_client_channel_rx,
         imap_client_returning_user_channel_rx,
         imap_cmd_channel_rx,
         logout_state_tx,
+        Arc::new(Mutex::new(Some(inbox_intial_email_populated_tx))),
+        Arc::new(Mutex::new(Some(sent_intial_email_populated_tx))),
     )
     .await;
 
@@ -83,6 +108,7 @@ pub async fn run() {
         .manage(FETCH_MANAGER.clone())
         .manage(INBOX_POPULATE_UPDATE.clone())
         .manage(SENT_POPULATE_UPDATE.clone())
+        .manage(InitialDbPopulation::new(inbox_intial_email_populated_rx, sent_intial_email_populated_rx))
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let app_about = PredefinedMenuItem::about(app, None, None)?;
@@ -190,13 +216,15 @@ pub async fn run() {
         .invoke_handler(tauri::generate_handler![
             check_app_status,
             inbox_email_populated,
+            inbox_intial_email_populated,
             config_setup,
             fetch_emails_handler,
             login,
             open_main_window,
             rater,
             refresh_emails_handler,
-            sent_email_populated
+            sent_email_populated,
+            sent_intial_email_populated,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

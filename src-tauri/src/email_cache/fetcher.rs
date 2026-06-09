@@ -1,10 +1,13 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 
 use async_imap::Session;
 use async_native_tls::TlsStream;
 use futures::StreamExt;
 use sqlx::SqlitePool;
-use tokio::net::TcpStream;
+use tokio::{
+    net::TcpStream,
+    sync::{oneshot::Sender, Mutex},
+};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -47,6 +50,7 @@ const INITIAL_BATCH_SIZE: usize = 100;
     name = "emails.fetch",
     skip(session, pool, background_session, cancel_token)
 )]
+#[allow(clippy::too_many_arguments)]
 pub async fn fetch_emails(
     session: SharedImapSession,
     background_session: Option<SharedImapSession>,
@@ -54,6 +58,8 @@ pub async fn fetch_emails(
     mailbox: MailBox,
     provider: Providers,
     cancel_token: CancellationToken,
+    inbox_intial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
+    sent_intial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
 ) -> Result<FetchResult, Error> {
     if cancel_token.is_cancelled() {
         return Err(Error::ThreadCancel);
@@ -65,6 +71,9 @@ pub async fn fetch_emails(
         tracing::info!("Emails already fetched");
         return Ok(FetchResult::Populated);
     }
+
+    let inbox_tx = inbox_intial_email_populated_tx.clone();
+    let sent_tx = sent_intial_email_populated_tx.clone();
 
     let background_task = match (&mailbox, background_session) {
         (MailBox::Inbox, Some(background_session)) => {
@@ -81,6 +90,8 @@ pub async fn fetch_emails(
                     &MailBox::Sent,
                     table_name,
                     token,
+                    inbox_intial_email_populated_tx,
+                    sent_intial_email_populated_tx,
                 )
                 .await?;
 
@@ -104,6 +115,8 @@ pub async fn fetch_emails(
                     &MailBox::Inbox,
                     table_name,
                     token,
+                    inbox_intial_email_populated_tx,
+                    sent_intial_email_populated_tx,
                 )
                 .await?;
 
@@ -117,9 +130,16 @@ pub async fn fetch_emails(
         _ => None,
     };
 
-    let result =
-        handle_email_population_locked(session, pool, &mailbox, table_name, cancel_token.clone())
-            .await?;
+    let result = handle_email_population_locked(
+        session,
+        pool,
+        &mailbox,
+        table_name,
+        cancel_token.clone(),
+        inbox_tx,
+        sent_tx,
+    )
+    .await?;
 
     match mailbox {
         MailBox::Inbox => {
@@ -160,6 +180,8 @@ async fn handle_email_population_locked(
     mailbox: &MailBox,
     table_name: String,
     cancel_token: CancellationToken,
+    inbox_intial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
+    sent_intial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
 ) -> Result<FetchResult, Error> {
     if cancel_token.is_cancelled() {
         return Err(Error::ThreadCancel);
@@ -173,7 +195,16 @@ async fn handle_email_population_locked(
         }
     };
 
-    handle_email_population(&mut session, pool, &mailbox, table_name, cancel_token).await
+    handle_email_population(
+        &mut session,
+        pool,
+        mailbox,
+        table_name,
+        cancel_token,
+        inbox_intial_email_populated_tx,
+        sent_intial_email_populated_tx,
+    )
+    .await
 }
 
 async fn handle_email_population(
@@ -182,6 +213,8 @@ async fn handle_email_population(
     mailbox: &MailBox,
     table_name: String,
     cancel_token: CancellationToken,
+    inbox_intial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
+    sent_intial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
 ) -> Result<FetchResult, Error> {
     if cancel_token.is_cancelled() {
         return Err(Error::ThreadCancel);
@@ -220,6 +253,9 @@ async fn handle_email_population(
     let mut highest_uid = 0u32;
 
     let mut email_count: u32 = 0;
+
+    let sent_tx = sent_intial_email_populated_tx.clone();
+    let inbox_tx = inbox_intial_email_populated_tx.clone();
 
     while let Some(message) = tokio::select! {
         msg = messages_stream.next() => msg,
@@ -275,6 +311,21 @@ async fn handle_email_population(
                 _ = cancel_token.cancelled() => {
                     return Err(Error::ThreadCancel);
                 }
+            }
+
+            match mailbox {
+                MailBox::Inbox => {
+                    if let Some(tx) = inbox_tx.lock().await.take() {
+                        _ = tx.send(());
+                    }
+                }
+                MailBox::Sent => {
+                    if let Some(tx) = sent_tx.lock().await.take() {
+                        _ = tx.send(())
+                    }
+                }
+                MailBox::Drafts => unimplemented!("Coming soon"),
+                MailBox::Trash => unimplemented!("Coming soon"),
             }
 
             inserted_count += INITIAL_BATCH_SIZE;

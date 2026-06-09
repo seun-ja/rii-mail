@@ -5,7 +5,8 @@ use std::time::Duration;
 use async_native_tls::TlsStream;
 use sqlx::SqlitePool;
 use tokio::sync::mpsc::UnboundedSender;
-use tokio::sync::oneshot::{self};
+use tokio::sync::oneshot::{self, Sender};
+use tokio::sync::Mutex;
 use tokio::time::{self, MissedTickBehavior};
 use tokio::{net::TcpStream, sync::mpsc::UnboundedReceiver};
 
@@ -21,6 +22,8 @@ pub async fn worker(
     mut imap_client_returning_user_channel_rx: UnboundedReceiver<ImapClientConfig>,
     mut imap_cmd_channel_rx: UnboundedReceiver<ImapCommand>,
     logout_result_tx: UnboundedSender<()>,
+    inbox_intial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
+    sent_intial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
 ) {
     tokio::spawn(async move {
         let mut initialized_session: Option<SharedImapSession> = None;
@@ -113,7 +116,6 @@ pub async fn worker(
                         login_result_tx: None,
                     };
 
-
                     tracing::info!("Initiating IMAP session for returning user");
                     // TODO: A retry mechanism or timeout
                     match init_imap_client(&config.imap_server, config.imap_port).await {
@@ -181,13 +183,18 @@ pub async fn worker(
                                 continue;
                             };
 
+                            let inbox_tx = inbox_intial_email_populated_tx.clone();
+                            let sent_tx = sent_intial_email_populated_tx.clone();
+
                             match crate::email_cache::fetch_emails(
                                 session.clone(),
                                 Some(session_background.clone()),
                                 pool_ref,
                                 mail_box,
                                 provider.clone(),
-                                cancel_token
+                                cancel_token,
+                                inbox_tx,
+                                sent_tx,
                             )
                             .await
                             {
