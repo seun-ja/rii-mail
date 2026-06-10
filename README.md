@@ -140,7 +140,7 @@ What is covered now:
 - `config_setup(imap_server, imap_port)`
 - `login(username, password)`
 - `open_main_window()`
-- `fetch_emails_handler(...)`
+- `fetch_emails(...)`
 - `rater(subject, email_from, body)`
 
 ## Mail Sync Model

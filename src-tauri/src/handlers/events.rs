@@ -65,10 +65,11 @@ pub async fn inbox_intial_email_populated(
 
     if let Some(rx) = lock.take() {
         if let Ok(()) = rx.await {
+            tracing::info!("Inbox initial population complete");
             app.emit("inbox-initial-population-complete", ())?;
         }
     } else {
-        tracing::warn!("Receiver was already consumed or is missing");
+        tracing::warn!("Inbox receiver was already consumed or is missing");
     }
 
     Ok(())
@@ -83,10 +84,11 @@ pub async fn sent_intial_email_populated(
 
     if let Some(rx) = lock.take() {
         if let Ok(()) = rx.await {
+            tracing::info!("Sent initial population complete");
             app.emit("sent-initial-population-complete", ())?;
         }
     } else {
-        tracing::warn!("Receiver was already consumed or is missing");
+        tracing::warn!("Sent receiver was already consumed or is missing");
     }
 
     Ok(())

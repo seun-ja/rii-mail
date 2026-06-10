@@ -44,11 +44,18 @@ impl FetchResult {
     }
 }
 
-const INITIAL_BATCH_SIZE: usize = 100;
+const INITIAL_BATCH_SIZE: u32 = 100;
 
 #[tracing::instrument(
     name = "emails.fetch",
-    skip(session, pool, background_session, cancel_token)
+    skip(
+        session,
+        pool,
+        background_session,
+        cancel_token,
+        inbox_intial_email_populated_tx,
+        sent_intial_email_populated_tx
+    )
 )]
 #[allow(clippy::too_many_arguments)]
 pub async fn fetch_emails(
@@ -172,7 +179,15 @@ pub async fn fetch_emails(
 
 #[tracing::instrument(
     name = "handler.populate_emails",
-    skip(session, pool, mailbox, table_name, cancel_token)
+    skip(
+        session,
+        pool,
+        mailbox,
+        table_name,
+        cancel_token,
+        inbox_intial_email_populated_tx,
+        sent_intial_email_populated_tx
+    )
 )]
 async fn handle_email_population_locked(
     session: SharedImapSession,
@@ -247,15 +262,21 @@ async fn handle_email_population(
         }
     };
 
-    tracing::info!("uid_fetch established");
+    tracing::info!(mailbox = ?mailbox, "uid_fetch established, starting to stream messages");
 
-    let mut inserted_count = 0usize;
+    let mut inserted_count = 0u32;
     let mut highest_uid = 0u32;
 
     let mut email_count: u32 = 0;
 
     let sent_tx = sent_intial_email_populated_tx.clone();
     let inbox_tx = inbox_intial_email_populated_tx.clone();
+
+    tracing::info!(
+        mailbox = ?mailbox,
+        total_emails = mailbox_info.exists,
+        "Beginning to stream messages"
+    );
 
     while let Some(message) = tokio::select! {
         msg = messages_stream.next() => msg,
@@ -294,7 +315,13 @@ async fn handle_email_population(
 
         emails.push(message.into());
 
-        if emails.len() == INITIAL_BATCH_SIZE {
+        let mut initial_batch = INITIAL_BATCH_SIZE;
+
+        if mailbox_info.exists < INITIAL_BATCH_SIZE {
+            initial_batch = mailbox_info.exists;
+        }
+
+        if emails.len() == initial_batch as usize {
             if cancel_token.is_cancelled() {
                 return Err(Error::ThreadCancel);
             }
@@ -316,11 +343,13 @@ async fn handle_email_population(
             match mailbox {
                 MailBox::Inbox => {
                     if let Some(tx) = inbox_tx.lock().await.take() {
+                        tracing::info!(mailbox = ?mailbox, "Inbox initial population complete, notifying UI");
                         _ = tx.send(());
                     }
                 }
                 MailBox::Sent => {
                     if let Some(tx) = sent_tx.lock().await.take() {
+                        tracing::info!(mailbox = ?mailbox, "Sent initial population complete, notifying UI");
                         _ = tx.send(())
                     }
                 }
@@ -337,7 +366,7 @@ async fn handle_email_population(
             return Err(Error::ThreadCancel);
         }
 
-        inserted_count += emails.len();
+        inserted_count += emails.len() as u32;
 
         populate_storage(pool, emails, &table_name).await?;
     }

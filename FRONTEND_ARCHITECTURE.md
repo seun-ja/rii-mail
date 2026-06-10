@@ -10,14 +10,14 @@
 - UI primitives: Headless components + Tailwind or Chakra UI for accessibility and consistency
 
 ## API / IPC Layer
-- Single `api/` module that wraps all Tauri commands (`check_app_status`, `login`, `fetch_emails_handler`, `refresh_emails_handler`, `rater`, `config_setup`, `logout_with_state`).
+- Single `api/` module that wraps all Tauri commands (`check_app_status`, `login`, `fetch_emails`, `refresh_emails_handler`, `rater`, `config_setup`, `logout_with_state`).
 - Contract-first: keep TypeScript types aligned with backend models (`Email`, `RefreshSummary`, `AppState`). Generate or hand-maintain types to avoid drift.
 - Centralized retry / timeout / backoff logic and error normalization for RPC/LLM calls.
 
 ## Data Layer & Sync
 - Use TanStack Query (React Query) for caching, background refetch, pagination, invalidation, and optimistic updates.
 - Drive long-running incremental sync by calling `refresh_emails_handler` on intervals and on resume/visibility; coordinate with backend cancel tokens.
-- Use virtualized lists (react-window) and server-side pagination via `fetch_emails_handler` to handle large mailboxes.
+- Use virtualized lists (react-window) and server-side pagination via `fetch_emails` to handle large mailboxes.
 - Prefetch likely next data (threads or mailboxes) to improve perceived performance.
 
 ## State Management

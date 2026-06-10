@@ -27,7 +27,7 @@ pub struct RefreshEmailsResponse {
 
 #[tauri::command]
 #[tracing::instrument(name = "command.email.fetch", skip(app))]
-pub async fn fetch_emails_handler(
+pub async fn fetch_emails(
     app: tauri::AppHandle,
     min_range: u32,
     max_range: u32,
@@ -70,11 +70,11 @@ pub async fn refresh_emails_handler(
     let provider = Providers::from(provider);
     let mailbox = MailBox::from(mailbox);
 
-    imap_cmd_channel_tx.send(ImapCommand::RefreshEmails(
-        mailbox.clone(),
-        provider.clone(),
-        fetch_update_tx,
-    ))?;
+    imap_cmd_channel_tx.send(ImapCommand::RefreshEmails {
+        mail_box: mailbox.clone(),
+        provider: provider.clone(),
+        response_channel: fetch_update_tx,
+    })?;
 
     match fetch_update_rx.await? {
         Ok(refresh_summary) => {
@@ -135,4 +135,28 @@ pub(crate) async fn get_emails_as_front_end_from_pool(
         .collect();
 
     Ok(frontend)
+}
+
+#[tauri::command]
+#[tracing::instrument(name = "command.email.send", skip(app))]
+pub async fn send_email(
+    app: tauri::AppHandle,
+    to: Vec<String>,
+    subject: String,
+    body: String,
+) -> Result<(), Error> {
+    let state = app.state::<ArcSwap<AppState>>();
+    let _current_state = state.load();
+    // let initialized = current_state.state();
+
+    // let imap_cmd_channel_tx = app.state::<UnboundedSender<ImapCommand>>();
+
+    // imap_cmd_channel_tx.send(ImapCommand::SendEmail {
+    //     to,
+    //     subject,
+    //     body,
+    //     response_channel: todo!(), // create a oneshot channel and await the response in the frontend
+    // })?;
+
+    Ok(())
 }

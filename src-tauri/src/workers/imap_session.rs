@@ -237,7 +237,7 @@ pub async fn worker(
                             *LOGGED_IN.lock().await = false;
                             let _ = logout_result_tx.send(());
                         }
-                        ImapCommand::RefreshEmails(mail_box, provider, login_result_tx) => {
+                        ImapCommand::RefreshEmails{mail_box, provider, response_channel: login_result_tx} => {
                             let Some(session) = initialized_session.as_ref() else {
                                 tracing::warn!("FetchEmails ignored: IMAP session is not initialized");
                                 continue;
@@ -266,6 +266,9 @@ pub async fn worker(
                                     total_emails: fetched_count.total_emails(),
                                 }));
                             }
+                        }
+                        ImapCommand::SendEmail { .. } => {
+                            todo!("Implement send email command handling in IMAP worker");
                         }
                     }
                 }

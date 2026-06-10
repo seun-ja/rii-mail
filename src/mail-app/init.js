@@ -21,6 +21,7 @@ import {
   getFolderPaginationState,
   resetFolderPagination,
 } from "./helpers.js";
+import { INITIAL_BATCH_SIZE, NEXT_BATCH_SIZE } from "./constants.js";
 
 export function initializeMailApp({
   invoke,
@@ -69,15 +70,21 @@ export function initializeMailApp({
   (async () => {
     const inboxProgress = await inboxFolderPopulationListener((progress) => {
       state.folderPopulation.inbox = progress;
-      updateDbPopulation();
-    });
+      ui.updateDbPopulation(
+        state.folderPopulation.inbox,
+        state.folderPopulation.sent,
+      );
+    }, listen);
 
     cleanupListeners.push(inboxProgress);
 
     const sentProgress = await sentFolderPopulationListener((progress) => {
       state.folderPopulation.sent = progress;
-      updateDbPopulation();
-    });
+      ui.updateDbPopulation(
+        state.folderPopulation.inbox,
+        state.folderPopulation.sent,
+      );
+    }, listen);
 
     cleanupListeners.push(sentProgress);
 
@@ -93,13 +100,13 @@ export function initializeMailApp({
       });
 
       ui.setSyncUiState(false);
-    });
+    }, listen);
 
     cleanupListeners.push(inboxReady);
 
     const sentReady = await sentInitialPopulationCompleted(() => {
       console.log("Initial Sent mailbox population complete");
-    });
+    }, listen);
 
     cleanupListeners.push(sentReady);
   })();

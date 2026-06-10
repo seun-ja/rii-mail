@@ -15,11 +15,18 @@ pub struct RefreshSummary {
 pub enum ImapCommand {
     Logout,
     FetchEmails(db::MailBox, db::Providers, CancellationToken),
-    RefreshEmails(
-        db::MailBox,
-        db::Providers,
-        tokio::sync::oneshot::Sender<Result<RefreshSummary, String>>,
-    ),
+    RefreshEmails {
+        mail_box: db::MailBox,
+        provider: db::Providers,
+        response_channel: tokio::sync::oneshot::Sender<Result<RefreshSummary, String>>,
+    },
+
+    SendEmail {
+        to: Vec<String>,
+        subject: String,
+        body: String,
+        response_channel: tokio::sync::oneshot::Sender<Result<(), String>>,
+    },
 }
 
 pub async fn init_imap_client(

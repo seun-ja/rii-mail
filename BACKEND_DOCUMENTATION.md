@@ -42,7 +42,7 @@ The main entrypoint is `src-tauri/src/main.rs`, which initializes tracing and ca
 - Registers Tauri commands:
   - `check_app_status`
   - `config_setup`
-  - `fetch_emails_handler`
+  - `fetch_emails`
   - `login`
   - `open_main_window`
   - `rater`
@@ -245,7 +245,7 @@ The main entrypoint is `src-tauri/src/main.rs`, which initializes tracing and ca
 
 ### `src-tauri/src/handlers/email.rs`
 
-- `fetch_emails_handler(app, min_range, max_range, mailbox, provider)`:
+- `fetch_emails(app, min_range, max_range, mailbox, provider)`:
   - loads emails from SQLite
   - converts them to `FrontendEmail`
 - `refresh_emails_handler(app, mailbox, provider)`:
@@ -339,7 +339,7 @@ The main entrypoint is `src-tauri/src/main.rs`, which initializes tracing and ca
    - app state becomes initialized
    - email sync begins
    - main window opens/expands
-8. Frontend uses `fetch_emails_handler` and `refresh_emails_handler` for mailbox data.
+8. Frontend uses `fetch_emails` and `refresh_emails_handler` for mailbox data.
 9. `rater` sends email content to the LLM RPC backend.
 10. Logout triggers `logout_with_state`, session cleanup, and config deletion.
 

@@ -7,5 +7,8 @@
     "test:frontend": "node --test src/**/*.test.js",
     "test:backend": "cd src-tauri && PYO3_PYTHON=/opt/homebrew/bin/python3.12 cargo test",
     "test:all": "npm run test:frontend && npm run test:backend"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.11.0"
   }
 }

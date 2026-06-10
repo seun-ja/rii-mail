@@ -10,8 +10,8 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::config::ImapClientConfig;
 use crate::handlers::{
-    fetch_emails_handler, inbox_email_populated, inbox_intial_email_populated,
-    refresh_emails_handler, sent_email_populated, sent_intial_email_populated,
+    fetch_emails, inbox_email_populated, inbox_intial_email_populated, refresh_emails_handler,
+    send_email, sent_email_populated, sent_intial_email_populated,
 };
 use crate::imap::ImapCommand;
 use crate::workers::{worker, FetchManager};
@@ -218,11 +218,12 @@ pub async fn run() {
             inbox_email_populated,
             inbox_intial_email_populated,
             config_setup,
-            fetch_emails_handler,
+            fetch_emails,
             login,
             open_main_window,
             rater,
             refresh_emails_handler,
+            send_email,
             sent_email_populated,
             sent_intial_email_populated,
         ])

@@ -20,11 +20,17 @@ fn imap_command_fetch_emails_variant_preserves_values() {
 #[test]
 fn imap_command_refresh_emails_variant_preserves_values() {
     let (tx, _rx) = oneshot::channel::<Result<RefreshSummary, String>>();
-    let cmd = ImapCommand::RefreshEmails(MailBox::Sent, Providers::Yahoo, tx);
+    let cmd = ImapCommand::RefreshEmails {
+        mail_box: MailBox::Sent,
+        provider: Providers::Yahoo,
+        response_channel: tx,
+    };
 
     match cmd {
-        ImapCommand::RefreshEmails(mailbox, provider, _sender) => {
-            assert_eq!(mailbox.as_ref(), "Sent");
+        ImapCommand::RefreshEmails {
+            mail_box, provider, ..
+        } => {
+            assert_eq!(mail_box.as_ref(), "Sent");
             assert_eq!(provider.as_ref(), "yahoo");
         }
         _ => panic!("expected refresh emails variant"),

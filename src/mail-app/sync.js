@@ -152,7 +152,7 @@ export function createSyncController(
       const mailbox = getActiveMailboxLiteral(state);
       const provider = getProviderLiteral(storage);
 
-      const fetched = await invoke("fetch_emails_handler", {
+      const fetched = await invoke("fetch_emails", {
         minRange,
         maxRange,
         mailbox,
@@ -233,7 +233,7 @@ export function createSyncController(
         }
 
         try {
-          const fetched = await invoke("fetch_emails_handler", {
+          const fetched = await invoke("fetch_emails", {
             minRange: 0,
             maxRange: INITIAL_BATCH_SIZE,
             mailbox: folder,

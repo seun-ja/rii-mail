@@ -1,4 +1,4 @@
-export const INITIAL_BATCH_SIZE = 50;
+export const INITIAL_BATCH_SIZE = 100;
 export const NEXT_BATCH_SIZE = 50;
 export const INITIAL_EMPTY_RETRY_DELAY_MS = 3000;
 export const INITIAL_EMPTY_RETRY_MAX = 30;
