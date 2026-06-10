@@ -30,15 +30,15 @@ pub enum ImapCommand {
 }
 
 pub async fn init_imap_client(
-    imap_server: &str,
+    imap_server_url: &str,
     imap_port: u16,
 ) -> Result<Client<TlsStream<TcpStream>>, Error> {
-    let imap_addr = (imap_server, imap_port);
+    let imap_addr = (imap_server_url, imap_port);
     let tcp_stream = TcpStream::connect(imap_addr).await?;
     let tls = async_native_tls::TlsConnector::new().danger_accept_invalid_certs(false);
-    let tls_stream = tls.connect(imap_server, tcp_stream).await?;
+    let tls_stream = tls.connect(imap_server_url, tcp_stream).await?;
 
-    tracing::info!("IMAP connected to {}", imap_server);
+    tracing::info!("IMAP connected to {}", imap_server_url);
 
     let client = async_imap::Client::new(tls_stream);
 

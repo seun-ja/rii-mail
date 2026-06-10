@@ -27,8 +27,8 @@ pub enum InitStatus {
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct Config {
-    pub rpc_server: String,
-    pub imap_server: String,
+    pub rpc_server_url: String,
+    pub imap_server_url: String,
     pub imap_port: u16,
     pub sqlite_db: String,
     pub accounts: Vec<String>,
@@ -39,7 +39,7 @@ impl Config {
         let config_json = fs::read_to_string(path).await?;
         let config: Self = serde_json::from_str(&config_json)?;
 
-        if config.imap_port == 0 || config.imap_server.is_empty() {
+        if config.imap_port == 0 || config.imap_server_url.is_empty() {
             return Err("IMAP Port and Server not set".into());
         }
 
@@ -79,7 +79,7 @@ pub async fn init_rpc(rpc_server: &str) -> Result<AgentWorkerClient, Error> {
 pub struct ImapClientConfig {
     pub username: String,
     pub password: String,
-    pub imap_server: String,
+    pub imap_server_url: String,
     pub imap_port: u16,
     pub sqlite_pool: SqlitePool,
     pub login_result_tx: Option<tokio::sync::oneshot::Sender<Result<(), String>>>,

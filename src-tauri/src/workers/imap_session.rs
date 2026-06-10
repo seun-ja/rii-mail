@@ -64,14 +64,14 @@ pub async fn worker(
                     let background_config = ImapClientConfig {
                         username: config.username.clone(),
                         password: config.password.clone(),
-                        imap_server: config.imap_server.clone(),
+                        imap_server_url: config.imap_server_url.clone(),
                         imap_port: config.imap_port,
                         sqlite_pool: config.sqlite_pool.clone(),
                         login_result_tx: None,
                     };
 
                     tracing::info!("Initiating IMAP session");
-                    match init_imap_client(&config.imap_server, config.imap_port).await {
+                    match init_imap_client(&config.imap_server_url, config.imap_port).await {
                         Ok(imap_client) => {
                             login(config, &mut initialized_session, imap_client, &mut pool).await;
                         }
@@ -85,7 +85,7 @@ pub async fn worker(
                         }
                     }
 
-                    match init_imap_client(&background_config.imap_server, background_config.imap_port).await {
+                    match init_imap_client(&background_config.imap_server_url, background_config.imap_port).await {
                         Ok(imap_client) => {
                             login(
                                 background_config,
@@ -110,7 +110,7 @@ pub async fn worker(
                     let background_config = ImapClientConfig {
                         username: config.username.clone(),
                         password: config.password.clone(),
-                        imap_server: config.imap_server.clone(),
+                        imap_server_url: config.imap_server_url.clone(),
                         imap_port: config.imap_port,
                         sqlite_pool: config.sqlite_pool.clone(),
                         login_result_tx: None,
@@ -118,7 +118,7 @@ pub async fn worker(
 
                     tracing::info!("Initiating IMAP session for returning user");
                     // TODO: A retry mechanism or timeout
-                    match init_imap_client(&config.imap_server, config.imap_port).await {
+                    match init_imap_client(&config.imap_server_url, config.imap_port).await {
                         Ok(imap_client) => {
                             login(config, &mut initialized_session, imap_client, &mut pool).await;
                         }
@@ -132,7 +132,7 @@ pub async fn worker(
                         }
                     }
 
-                    match init_imap_client(&background_config.imap_server, background_config.imap_port).await {
+                    match init_imap_client(&background_config.imap_server_url, background_config.imap_port).await {
                         Ok(imap_client) => {
                             login(
                                 background_config,

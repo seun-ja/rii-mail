@@ -49,7 +49,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
     let imap_client_config = ImapClientConfig {
         username: username.clone(),
         password: password.clone(),
-        imap_server: config.imap_server.clone(),
+        imap_server_url: config.imap_server_url.clone(),
         imap_port: config.imap_port,
         sqlite_pool: initialized_state.sqlite_pool.clone(),
         login_result_tx: Some(login_result_tx),
@@ -111,11 +111,11 @@ async fn handle_initialization(
     config_dir: PathBuf,
     app_service_name: &str,
 ) -> Result<(InitializedState, Providers), Error> {
-    let provider = provider_from_imap_server(&config.imap_server);
+    let provider = provider_from_imap_server(&config.imap_server_url);
 
     let sqlite_pool = db::db_pool(&config_dir, &config.sqlite_db).await?;
 
-    let rpc_llm_client = config::init_rpc(&config.rpc_server).await?;
+    let rpc_llm_client = config::init_rpc(&config.rpc_server_url).await?;
 
     let apple_keychain_manager = AppleKeychainManager::new(app_service_name);
 

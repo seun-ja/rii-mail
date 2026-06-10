@@ -137,7 +137,7 @@ window.addEventListener("DOMContentLoaded", () => {
       );
 
       await invoke("config_setup", {
-        imapServer: imapServer,
+        imapServerUrl: imapServer,
         imapPort: imapPort,
       });
 

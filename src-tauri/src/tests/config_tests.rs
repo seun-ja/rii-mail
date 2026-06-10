@@ -27,7 +27,7 @@ async fn config_init_reads_valid_config() {
 
     let parsed = Config::init(&path).await.expect("config should parse");
 
-    assert_eq!(parsed.imap_server, "imap.gmail.com");
+    assert_eq!(parsed.imap_server_url, "imap.gmail.com");
     assert_eq!(parsed.imap_port, 993);
     assert_eq!(parsed.accounts.len(), 1);
 

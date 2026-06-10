@@ -17,18 +17,18 @@ use crate::{
 };
 
 #[tauri::command]
-#[tracing::instrument(name = "command.config.setup", skip(app, imap_server, imap_port,))]
+#[tracing::instrument(name = "command.config.setup", skip(app, imap_server_url, imap_port,))]
 pub async fn config_setup(
     app: tauri::AppHandle,
-    imap_server: String,
+    imap_server_url: String,
     imap_port: u16,
 ) -> Result<(), Error> {
-    let rpc_server = std::env::var("RPC_SERVER").unwrap_or("0.0.0.0:5500".to_string());
+    let rpc_server_url = std::env::var("RPC_SERVER").unwrap_or("0.0.0.0:5500".to_string());
     let sqlite_db = std::env::var("SQLITE_DB").unwrap_or("emails.db".to_string());
 
     let config = Config {
-        rpc_server,
-        imap_server,
+        rpc_server_url,
+        imap_server_url,
         imap_port,
         sqlite_db,
         accounts: vec![],
@@ -38,7 +38,7 @@ pub async fn config_setup(
 
     let config_json = serde_json::to_string_pretty(&config)?;
 
-    let provider = provider_from_imap_server(&config.imap_server);
+    let provider = provider_from_imap_server(&config.imap_server_url);
 
     db::init_db(&config_dir, &config.sqlite_db, &provider).await?;
     tracing::info!(
@@ -90,7 +90,7 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
         }
 
         let imap_client_config = ImapClientConfig {
-            imap_server: config.imap_server.clone(),
+            imap_server_url: config.imap_server_url.clone(),
             imap_port: config.imap_port,
             username: config.accounts.first().cloned().unwrap_or_default(),
             password,
@@ -118,7 +118,7 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
         }
 
         let initialized_state = config::InitializedState {
-            rpc_llm_client: config::init_rpc(&config.rpc_server).await?,
+            rpc_llm_client: config::init_rpc(&config.rpc_server_url).await?,
             sqlite_pool,
             apple_keychain_manager,
         };
