@@ -1,5 +1,8 @@
 use arc_swap::ArcSwap;
-use lettre::{message::header::ContentType, Message, Transport};
+use lettre::{
+    message::{header::ContentType, MessageBuilder},
+    Message, Transport,
+};
 use sqlx::SqlitePool;
 use tauri::Manager as _;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
@@ -142,7 +145,9 @@ pub(crate) async fn get_emails_as_front_end_from_pool(
 #[tracing::instrument(name = "command.email.send", skip(app))]
 pub async fn send_email(
     app: tauri::AppHandle,
-    to: (Option<String>, String),
+    to: Vec<(Option<String>, String)>,
+    cc: Vec<(Option<String>, String)>,
+    bcc: Vec<(Option<String>, String)>,
     subject: String,
     body: String,
     content_type: String,
@@ -152,12 +157,16 @@ pub async fn send_email(
 
     // TODO: make this dynamic
     let from: crate::handlers::MailAddress = app_state.state().accounts[0].clone().try_into()?;
-    let to: crate::handlers::MailAddress = to.try_into()?;
 
-    let message = Message::builder()
+    let builder = Message::builder()
         .from(from.clone().into())
-        .reply_to(from.into())
-        .to(to.into())
+        .reply_to(from.into());
+
+    let to_populated_builder = populate_to_address(builder, to)?;
+    let cc_populated_builder = populate_cc_address(to_populated_builder, cc)?;
+    let bcc_populated_builder = populate_bcc_address(cc_populated_builder, bcc)?;
+
+    let message = bcc_populated_builder
         .subject(&subject)
         .header(content_type.parse().unwrap_or(ContentType::TEXT_PLAIN))
         .body(body)?;
@@ -167,4 +176,94 @@ pub async fn send_email(
     tracing::info!("SMTP response: {:?}", response);
 
     Ok(())
+}
+
+fn populate_to_address(
+    builder: MessageBuilder,
+    addresses: impl IntoIterator<Item = (Option<String>, String)>,
+) -> Result<MessageBuilder, Error> {
+    addresses.into_iter().try_fold(builder, |b, addr| {
+        let mail_addr: crate::handlers::MailAddress = addr.try_into()?;
+        Ok(b.to(mail_addr.into()))
+    })
+}
+
+fn populate_cc_address(
+    builder: MessageBuilder,
+    addresses: impl IntoIterator<Item = (Option<String>, String)>,
+) -> Result<MessageBuilder, Error> {
+    addresses.into_iter().try_fold(builder, |b, addr| {
+        let mail_addr: crate::handlers::MailAddress = addr.try_into()?;
+        Ok(b.cc(mail_addr.into()))
+    })
+}
+
+fn populate_bcc_address(
+    builder: MessageBuilder,
+    addresses: impl IntoIterator<Item = (Option<String>, String)>,
+) -> Result<MessageBuilder, Error> {
+    addresses.into_iter().try_fold(builder, |b, addr| {
+        let mail_addr: crate::handlers::MailAddress = addr.try_into()?;
+        Ok(b.bcc(mail_addr.into()))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lettre::message::MessageBuilder;
+
+    #[test]
+    fn test_populate_to_address_success() {
+        let builder = MessageBuilder::default();
+        let addresses = vec![
+            (
+                Some("Recipient 1".to_string()),
+                "recipient1@example.com".to_string(),
+            ),
+            (
+                Some("Recipient 2".to_string()),
+                "recipient2@example.com".to_string(),
+            ),
+        ];
+
+        let result = populate_to_address(builder, addresses);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_populate_cc_address_success() {
+        let builder = MessageBuilder::default();
+        let addresses = vec![(Some("CC 1".to_string()), "cc1@example.com".to_string())];
+
+        let result = populate_cc_address(builder, addresses);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_populate_bcc_address_success() {
+        let builder = MessageBuilder::default();
+        let addresses = vec![(Some("BCC 1".to_string()), "bcc1@example.com".to_string())];
+
+        let result = populate_bcc_address(builder, addresses);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_populate_address_invalid_format() {
+        let builder = MessageBuilder::default();
+        let addresses = vec![(Some("Invalid".to_string()), "not-an-email".to_string())];
+
+        let result = populate_to_address(builder, addresses);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_populate_empty_addresses() {
+        let builder = MessageBuilder::default();
+        let addresses: Vec<(Option<String>, String)> = vec![];
+
+        let result = populate_to_address(builder, addresses);
+        assert!(result.is_ok());
+    }
 }

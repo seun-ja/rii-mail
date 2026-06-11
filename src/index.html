@@ -42,10 +42,20 @@
                             class="brand-icon-img"
                         />
                     </span>
+
                     <div>
                         <h1>RiiMail</h1>
                         <p>Unified Inbox</p>
                     </div>
+                </div>
+
+                <div class="topbar-center">
+                    <input
+                        id="global-search"
+                        class="global-search"
+                        type="search"
+                        placeholder="Search mail..."
+                    />
                 </div>
 
                 <div class="topbar-actions">
@@ -54,11 +64,13 @@
                         class="action-btn primary"
                         type="button"
                     >
-                        Compose
+                        ✏ Compose
                     </button>
+
                     <button id="refresh-btn" class="action-btn" type="button">
                         Refresh
                     </button>
+
                     <button
                         id="spam-check-btn"
                         class="action-btn"
@@ -181,39 +193,107 @@
             aria-live="polite"
         ></div>
         <div id="compose-modal" class="modal hidden">
-            <div class="modal-content">
+            <div class="modal-content composer-modal">
                 <div class="modal-header">
-                    <h2 class="modal-title">Compose New Email</h2>
-                    <button id="close-compose-btn" class="action-btn">
-                        Cancel
+                    <h2 class="modal-title">New Message</h2>
+
+                    <button
+                        id="close-compose-btn"
+                        class="composer-close-btn"
+                        type="button"
+                    >
+                        ✕
                     </button>
                 </div>
-                <div class="modal-body">
-                    <div class="form-group">
-                        <label for="compose-to">To:</label>
+
+                <div class="composer-fields">
+                    <div class="composer-row">
+                        <span class="composer-label">To</span>
+
                         <input
                             id="compose-to"
+                            class="composer-input"
                             type="email"
                             placeholder="recipient@example.com"
                         />
                     </div>
-                    <div class="form-group">
-                        <label for="compose-subject">Subject:</label>
+
+                    <div
+                        id="compose-cc-row"
+                        class="composer-row composer-extra hidden"
+                    >
+                        <span class="composer-label">CC</span>
+
                         <input
-                            id="compose-subject"
+                            id="compose-cc"
+                            class="composer-input"
                             type="text"
-                            placeholder="How is it going?"
+                            placeholder="cc@example.com"
                         />
                     </div>
-                    <div class="form-group">
-                        <label for="compose-body">Message:</label>
-                        <textarea id="compose-body" rows="10"></textarea>
+
+                    <div
+                        id="compose-bcc-row"
+                        class="composer-row composer-extra hidden"
+                    >
+                        <span class="composer-label">BCC</span>
+
+                        <input
+                            id="compose-bcc"
+                            class="composer-input"
+                            type="text"
+                            placeholder="bcc@example.com"
+                        />
+                    </div>
+
+                    <div class="composer-row">
+                        <span class="composer-label">Subject</span>
+
+                        <input
+                            id="compose-subject"
+                            class="composer-input"
+                            type="text"
+                            placeholder="What's on your mind?"
+                        />
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button id="send-compose-btn" class="action-btn primary">
-                        Send Email
-                    </button>
+
+                <div class="composer-editor-wrapper">
+                    <textarea
+                        id="compose-body"
+                        class="composer-editor"
+                        placeholder="Write your message..."
+                    ></textarea>
+                </div>
+
+                <div class="composer-footer">
+                    <div class="composer-footer-left">
+                        <button
+                            id="toggle-cc-btn"
+                            class="composer-link-btn"
+                            type="button"
+                        >
+                            CC
+                        </button>
+
+                        <button
+                            id="toggle-bcc-btn"
+                            class="composer-link-btn"
+                            type="button"
+                        >
+                            BCC
+                        </button>
+                    </div>
+
+                    <div class="composer-footer-right">
+                        <button
+                            id="send-compose-btn"
+                            class="action-btn primary composer-send-btn"
+                            type="button"
+                        >
+                            Send Email
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

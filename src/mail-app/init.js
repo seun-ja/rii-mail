@@ -224,11 +224,14 @@ export function initializeMailApp({
   });
 
   dom.sendComposeBtnEl.addEventListener("click", async () => {
-    const toEmail = dom.composeToInput.value.trim();
+    const toEmails = dom.composeToInput.value
+      .split(/[,;]/)
+      .map((e) => e.trim())
+      .filter(Boolean);
     const subject = dom.composeSubjectInput.value.trim();
     const body = dom.composeBodyInput.value.trim();
 
-    if (!toEmail) {
+    if (toEmails.length === 0) {
       ui.showMessage("Recipient email is required.", true);
       return;
     }
@@ -242,7 +245,9 @@ export function initializeMailApp({
       ui.showMessage("Sending email...");
 
       await invoke("send_email", {
-        to: ["", toEmail],
+        to: toEmails.map((email) => ["", email]),
+        cc: [],
+        bcc: [],
         subject,
         body,
         contentType: "text/plain",
@@ -372,5 +377,8 @@ export function initializeMailApp({
     ui.setSyncUiState(true, "Syncing mailbox...", 0);
 
     state.isAppReady = true;
+
+    await sync.runInitialSync();
+    ui.setSyncUiState(false);
   })();
 }

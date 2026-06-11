@@ -134,7 +134,10 @@ body.home-page {
     align-items: center;
     padding: 0.9rem 1.1rem;
     border-bottom: 1px solid var(--mail-border);
-    background: rgba(233, 240, 248, 0.85);
+    height: 72px;
+    padding: 0 24px;
+    background: rgba(255, 255, 255, 0.75);
+    backdrop-filter: blur(20px);
 }
 
 .topbar-brand {
@@ -201,6 +204,10 @@ body.home-page {
 }
 
 .action-btn.primary {
+    height: 44px;
+    padding: 0 20px;
+    border-radius: 12px;
+    font-weight: 700;
     background: linear-gradient(
         145deg,
         var(--mail-accent),
@@ -426,6 +433,9 @@ body.home-page {
     display: flex;
     gap: 0.6rem;
     transition: background-color 0.2s ease;
+    min-height: 88px;
+    padding: 16px;
+    gap: 12px;
 }
 
 .mail-item:hover {
@@ -502,10 +512,12 @@ body.home-page {
 
 .mail-reader {
     height: 100%;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 32px;
     border: 1px solid var(--mail-border);
-    border-radius: 12px;
-    padding: 1rem;
-    background: #fff;
+    border-radius: 16px;
+    background: white;
 }
 
 .mail-reader.empty-state {
@@ -1248,7 +1260,8 @@ button.provider-item {
 .modal {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.45);
+    background: rgba(15, 23, 42, 0.35);
+    backdrop-filter: blur(8px);
 
     display: flex;
     align-items: center;
@@ -1267,4 +1280,377 @@ button.provider-item {
     background: white;
     border-radius: 12px;
     padding: 20px;
+}
+
+/* =====================================================
+   MODERN MAIL UI ENHANCEMENTS
+   ===================================================== */
+
+.topbar-center {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    padding: 0 2rem;
+}
+
+.global-search {
+    width: min(500px, 100%);
+    height: 42px;
+
+    border: none;
+    border-radius: 14px;
+
+    background: #f4f7fb;
+
+    padding: 0 16px;
+
+    box-shadow: none;
+
+    color: var(--mail-text);
+}
+
+.global-search:focus {
+    border: none;
+    outline: none;
+}
+
+/* =====================================================
+   TOPBAR
+   ===================================================== */
+
+.mail-topbar {
+    height: 72px;
+
+    padding: 0 24px;
+
+    background: rgba(255, 255, 255, 0.75);
+
+    backdrop-filter: blur(20px);
+}
+
+.action-btn.primary {
+    height: 44px;
+
+    padding: 0 20px;
+
+    border-radius: 12px;
+
+    font-weight: 700;
+}
+
+/* =====================================================
+   SIDEBAR
+   ===================================================== */
+
+.mail-sidebar {
+    background: rgba(248, 250, 252, 0.95);
+}
+
+.folder-btn {
+    min-height: 48px;
+}
+
+.folder-btn.active {
+    background: rgba(0, 103, 192, 0.12);
+
+    border-color: rgba(0, 103, 192, 0.25);
+
+    color: #0f4e8a;
+}
+
+/* =====================================================
+   MAIL LIST
+   ===================================================== */
+
+.mail-item {
+    min-height: 88px;
+
+    padding: 16px;
+
+    gap: 12px;
+
+    transition:
+        background-color 0.2s ease,
+        transform 0.15s ease;
+}
+
+.mail-item:hover {
+    background: #eef5ff;
+}
+
+.mail-item.active {
+    background: #dcecff;
+}
+
+.mail-item-avatar {
+    width: 42px;
+    height: 42px;
+
+    font-size: 15px;
+}
+
+.mail-item-sender {
+    font-size: 14px;
+}
+
+.mail-item-subject {
+    margin-top: 2px;
+
+    font-size: 14px;
+}
+
+.mail-item-preview {
+    margin-top: 3px;
+
+    font-size: 13px;
+}
+
+.mail-item-time {
+    font-size: 12px;
+}
+
+/* =====================================================
+   READER PANEL
+   ===================================================== */
+
+.mail-reader-panel {
+    background: #f8fafc;
+
+    padding: 20px;
+}
+
+.mail-reader {
+    max-width: 900px;
+
+    margin: 0 auto;
+
+    padding: 32px;
+
+    border-radius: 18px;
+
+    background: white;
+
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.06);
+}
+
+.reader-subject {
+    font-size: 1.5rem;
+
+    font-weight: 700;
+
+    margin-bottom: 16px;
+}
+
+.reader-meta {
+    font-size: 0.85rem;
+
+    gap: 12px;
+}
+
+.reader-body {
+    margin-top: 24px;
+
+    font-size: 15px;
+
+    line-height: 1.8;
+}
+
+/* =====================================================
+   COMPOSE MODAL
+   ===================================================== */
+
+.modal {
+    background: rgba(15, 23, 42, 0.35);
+
+    backdrop-filter: blur(8px);
+}
+
+/* prevent conflict with old modal styles */
+.modal-content:not(.composer-modal) {
+    width: 700px;
+    max-width: 90vw;
+
+    background: white;
+
+    border-radius: 12px;
+
+    padding: 20px;
+}
+
+.composer-modal {
+    width: min(900px, 92vw);
+
+    height: min(760px, 90vh);
+
+    display: flex;
+    flex-direction: column;
+
+    overflow: hidden;
+
+    padding: 0;
+
+    border-radius: 20px;
+
+    background: white;
+
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.22);
+}
+
+.modal-header {
+    height: 72px;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    padding: 0 24px;
+
+    border-bottom: 1px solid #edf2f7;
+}
+
+.modal-title {
+    font-size: 1.2rem;
+
+    font-weight: 700;
+}
+
+.composer-close-btn {
+    border: none;
+
+    background: transparent;
+
+    box-shadow: none;
+
+    padding: 8px 12px;
+
+    font-size: 18px;
+
+    color: #64748b;
+}
+
+.composer-close-btn:hover {
+    background: #f1f5f9;
+}
+
+.composer-fields {
+    display: flex;
+    flex-direction: column;
+}
+
+.composer-row {
+    display: flex;
+    align-items: center;
+
+    min-height: 56px;
+
+    border-bottom: 1px solid #edf2f7;
+}
+
+.composer-label {
+    width: 80px;
+
+    padding-left: 24px;
+
+    color: #64748b;
+
+    font-weight: 600;
+}
+
+.composer-input {
+    flex: 1;
+
+    border: none;
+
+    box-shadow: none;
+
+    background: transparent;
+}
+
+.composer-input:focus {
+    border: none;
+
+    box-shadow: none;
+}
+
+.composer-editor-wrapper {
+    flex: 1;
+
+    min-height: 0;
+}
+
+.composer-editor {
+    width: 100%;
+    height: 100%;
+
+    border: none;
+
+    resize: none;
+
+    padding: 24px;
+
+    box-shadow: none;
+
+    font-size: 15px;
+
+    line-height: 1.7;
+}
+
+.composer-editor:focus {
+    border: none;
+
+    box-shadow: none;
+}
+
+.composer-footer {
+    height: 72px;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    padding: 0 24px;
+
+    border-top: 1px solid #edf2f7;
+}
+
+.composer-footer-left {
+    display: flex;
+    gap: 10px;
+}
+
+.composer-link-btn {
+    border: none;
+
+    background: transparent;
+
+    box-shadow: none;
+
+    color: var(--mail-accent);
+
+    font-weight: 600;
+
+    padding: 8px 10px;
+}
+
+.composer-link-btn:hover {
+    background: #f1f5f9;
+}
+
+.composer-send-btn {
+    min-width: 140px;
+}
+
+/* =====================================================
+   RESPONSIVE
+   ===================================================== */
+
+@media (max-width: 900px) {
+    .composer-modal {
+        width: 96vw;
+        height: 92vh;
+    }
+
+    .topbar-center {
+        display: none;
+    }
 }
