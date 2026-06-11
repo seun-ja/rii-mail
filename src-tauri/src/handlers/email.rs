@@ -1,11 +1,12 @@
 use arc_swap::ArcSwap;
+use lettre::{message::header::ContentType, Message, Transport};
 use sqlx::SqlitePool;
 use tauri::Manager as _;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use crate::{
     config::AppState,
-    db::{get_emails, MailBox, Providers},
+    db::{get_emails, MailBox, Provider},
     email_cache::{CompleteEmail, FrontendEmail},
     error::Error,
     imap::{ImapCommand, RefreshSummary},
@@ -38,7 +39,7 @@ pub async fn fetch_emails(
     let current_state = state.load();
     let initialized = current_state.state();
 
-    let provider = Providers::from(provider);
+    let provider = Provider::from(provider);
     let mailbox = MailBox::from(mailbox);
 
     let emails = get_emails_as_front_end_from_pool(
@@ -67,7 +68,7 @@ pub async fn refresh_emails_handler(
     let imap_cmd_channel_tx = app.state::<UnboundedSender<ImapCommand>>();
     let (fetch_update_tx, fetch_update_rx) = oneshot::channel::<Result<RefreshSummary, String>>();
 
-    let provider = Providers::from(provider);
+    let provider = Provider::from(provider);
     let mailbox = MailBox::from(mailbox);
 
     imap_cmd_channel_tx.send(ImapCommand::RefreshEmails {
@@ -107,7 +108,7 @@ pub async fn refresh_emails_handler(
 }
 
 pub(crate) async fn get_emails_as_front_end_from_pool(
-    provider: Providers,
+    provider: Provider,
     mailbox: MailBox,
     min_range: u16,
     max_range: u16,
@@ -141,22 +142,29 @@ pub(crate) async fn get_emails_as_front_end_from_pool(
 #[tracing::instrument(name = "command.email.send", skip(app))]
 pub async fn send_email(
     app: tauri::AppHandle,
-    to: Vec<String>,
+    to: (Option<String>, String),
     subject: String,
     body: String,
+    content_type: String,
 ) -> Result<(), Error> {
     let state = app.state::<ArcSwap<AppState>>();
-    let _current_state = state.load();
-    // let initialized = current_state.state();
+    let app_state = state.load();
 
-    // let imap_cmd_channel_tx = app.state::<UnboundedSender<ImapCommand>>();
+    // TODO: make this dynamic
+    let from: crate::handlers::MailAddress = app_state.state().accounts[0].clone().try_into()?;
+    let to: crate::handlers::MailAddress = to.try_into()?;
 
-    // imap_cmd_channel_tx.send(ImapCommand::SendEmail {
-    //     to,
-    //     subject,
-    //     body,
-    //     response_channel: todo!(), // create a oneshot channel and await the response in the frontend
-    // })?;
+    let message = Message::builder()
+        .from(from.clone().into())
+        .reply_to(from.into())
+        .to(to.into())
+        .subject(&subject)
+        .header(content_type.parse().unwrap_or(ContentType::TEXT_PLAIN))
+        .body(body)?;
+
+    let response = app_state.state().smtp_transport_client.send(&message)?;
+
+    tracing::info!("SMTP response: {:?}", response);
 
     Ok(())
 }

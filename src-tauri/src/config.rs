@@ -2,9 +2,11 @@ use std::{path::PathBuf, sync::Arc};
 
 use crate::{
     auth::AppleKeychainManager,
+    db::Provider,
     error::{Error, ErrorMessage},
     llm::AgentWorkerClient,
 };
+use lettre::{transport::smtp::authentication::Credentials, SmtpTransport};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use tarpc::{client, serde_transport::tcp, tokio_serde::formats::Json};
@@ -25,10 +27,18 @@ pub enum InitStatus {
     ReturningSigned,
 }
 
+#[derive(Clone)]
+pub struct Account {
+    pub name: Option<String>,
+    pub email: String,
+    pub provider: Provider,
+}
+
 #[derive(Deserialize, Serialize, Clone)]
 pub struct Config {
     pub rpc_server_url: String,
     pub imap_server_url: String,
+    pub smtp_relay_url: String,
     pub imap_port: u16,
     pub sqlite_db: String,
     pub accounts: Vec<String>,
@@ -66,6 +76,8 @@ pub struct InitializedState {
     pub rpc_llm_client: AgentWorkerClient,
     pub sqlite_pool: SqlitePool,
     pub apple_keychain_manager: AppleKeychainManager,
+    pub smtp_transport_client: SmtpTransport,
+    pub accounts: Vec<Account>,
 }
 
 pub async fn init_rpc(rpc_server: &str) -> Result<AgentWorkerClient, Error> {
@@ -74,6 +86,17 @@ pub async fn init_rpc(rpc_server: &str) -> Result<AgentWorkerClient, Error> {
     let client = AgentWorkerClient::new(client::Config::default(), transport).spawn();
 
     Ok(client)
+}
+
+pub fn smtp_transport_client(
+    smtp_server_url: &str,
+    creds: Credentials,
+) -> Result<SmtpTransport, Error> {
+    let transport = SmtpTransport::relay(smtp_server_url)?
+        .credentials(creds)
+        .build();
+
+    Ok(transport)
 }
 
 pub struct ImapClientConfig {

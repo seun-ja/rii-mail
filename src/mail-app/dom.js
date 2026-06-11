@@ -17,5 +17,11 @@ export function getMailAppDom(documentRef = document) {
     syncOverlayEl: documentRef.querySelector("#sync-overlay"),
     syncMessageEl: documentRef.querySelector("#sync-message"),
     syncProgressBarEl: documentRef.querySelector("#sync-progress-bar"),
+    sendComposeBtnEl: documentRef.querySelector("#send-compose-btn"),
+    closeComposeBtnEl: documentRef.querySelector("#close-compose-btn"),
+    composeModalEl: documentRef.querySelector("#compose-modal"),
+    composeToInput: documentRef.querySelector("#compose-to"),
+    composeSubjectInput: documentRef.querySelector("#compose-subject"),
+    composeBodyInput: documentRef.querySelector("#compose-body"),
   };
 }

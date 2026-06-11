@@ -43,6 +43,10 @@ export function createUiController(dom) {
     const bar = document.getElementById("db-population-bar");
     const text = document.getElementById("db-population-text");
 
+    if (!container || !bar || !text) {
+      return;
+    }
+
     const value = Math.max(inbox, sent);
 
     bar.style.width = `${value}%`;

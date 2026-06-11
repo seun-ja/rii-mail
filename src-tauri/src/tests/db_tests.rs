@@ -1,4 +1,4 @@
-use crate::db::{init_db, MailBox, Providers};
+use crate::db::{init_db, MailBox, Provider};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn unique_test_dir(prefix: &str) -> std::path::PathBuf {
@@ -11,20 +11,20 @@ fn unique_test_dir(prefix: &str) -> std::path::PathBuf {
 
 #[test]
 fn providers_as_ref_and_from_string() {
-    assert_eq!(Providers::Yahoo.as_ref(), "yahoo");
-    assert_eq!(Providers::Gmail.as_ref(), "gmail");
+    assert_eq!(Provider::Yahoo.as_ref(), "yahoo");
+    assert_eq!(Provider::Gmail.as_ref(), "gmail");
 
     assert!(matches!(
-        Providers::from("yahoo".to_string()),
-        Providers::Yahoo
+        Provider::from("yahoo".to_string()),
+        Provider::Yahoo
     ));
     assert!(matches!(
-        Providers::from("gmail".to_string()),
-        Providers::Gmail
+        Provider::from("gmail".to_string()),
+        Provider::Gmail
     ));
     assert!(matches!(
-        Providers::from("unknown".to_string()),
-        Providers::Yahoo
+        Provider::from("unknown".to_string()),
+        Provider::Yahoo
     ));
 }
 
@@ -49,7 +49,7 @@ fn mailbox_as_ref_and_from_string() {
 async fn init_db_creates_provider_tables_and_state_table() {
     let app_dir = unique_test_dir("init-db");
 
-    let pool = init_db(&app_dir, "emails.db", &Providers::Yahoo)
+    let pool = init_db(&app_dir, "emails.db", &Provider::Yahoo)
         .await
         .expect("db should initialize");
 

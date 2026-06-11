@@ -13,7 +13,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     db::{
         get_last_uid, populate_inbox_folder_count, populate_sent_folder_count, populate_storage,
-        set_last_uid, MailBox, Providers,
+        set_last_uid, MailBox, Provider,
     },
     email_cache::{Email, SharedImapSession},
     error::Error,
@@ -63,7 +63,7 @@ pub async fn fetch_emails(
     background_session: Option<SharedImapSession>,
     pool: &SqlitePool,
     mailbox: MailBox,
-    provider: Providers,
+    provider: Provider,
     cancel_token: CancellationToken,
     inbox_intial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
     sent_intial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
@@ -379,6 +379,7 @@ async fn handle_email_population(
 
     tracing::info!(
         inserted = inserted_count,
+        mail = ?mailbox,
         highest_uid,
         "Initial mailbox sync completed"
     );
@@ -401,7 +402,7 @@ pub async fn fetch_latest(
     session: SharedImapSession,
     pool: &SqlitePool,
     mailbox: MailBox,
-    provider: Providers,
+    provider: Provider,
     cancel_token: CancellationToken,
 ) -> Result<FetchResult, Error> {
     let table_name = format!("{}_{}", provider.as_ref(), mailbox.as_ref());

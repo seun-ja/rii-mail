@@ -29,7 +29,7 @@ pub async fn db_pool(app_dir: &PathBuf, db: &str) -> Result<SqlitePool, sqlx::Er
 pub async fn init_db(
     app_dir: &PathBuf,
     db: &str,
-    provider: &Providers,
+    provider: &Provider,
 ) -> Result<SqlitePool, Error> {
     let pool = db_pool(app_dir, db).await?;
 
@@ -52,7 +52,7 @@ pub async fn init_db(
 
 async fn create_table_for_provider(
     pool: &SqlitePool,
-    provider: &Providers,
+    provider: &Provider,
 ) -> Result<(), sqlx::Error> {
     let inbox_table_name = format!("{}_{}", provider.as_ref(), MailBox::Inbox.as_ref());
     let sent_table_name = format!("{}_{}", provider.as_ref(), MailBox::Sent.as_ref());
@@ -111,26 +111,26 @@ async fn create_table_for_provider(
 }
 
 #[derive(Debug, Clone, Eq, Hash, PartialEq)]
-pub enum Providers {
+pub enum Provider {
     Yahoo,
     Gmail,
 }
 
-impl AsRef<str> for Providers {
+impl AsRef<str> for Provider {
     fn as_ref(&self) -> &str {
         match self {
-            Providers::Yahoo => "yahoo",
-            Providers::Gmail => "gmail",
+            Provider::Yahoo => "yahoo",
+            Provider::Gmail => "gmail",
         }
     }
 }
 
-impl From<String> for Providers {
+impl From<String> for Provider {
     fn from(s: String) -> Self {
         match s.as_str() {
-            "yahoo" => Providers::Yahoo,
-            "gmail" => Providers::Gmail,
-            _ => Providers::Yahoo, // Default to Yahoo if unknown
+            "yahoo" => Provider::Yahoo,
+            "gmail" => Provider::Gmail,
+            _ => Provider::Yahoo, // Default to Yahoo if unknown
         }
     }
 }

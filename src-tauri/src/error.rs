@@ -1,6 +1,7 @@
 use std::{error::Error as StdError, io::ErrorKind};
 
 use aws_sdk_sagemakerruntime::{error::SdkError, operation::invoke_endpoint::InvokeEndpointError};
+use lettre::address::AddressError;
 use pyo3::PyErr;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc::error::SendError, oneshot::error::RecvError};
@@ -68,6 +69,12 @@ pub enum Error {
     OneShotRecv(#[from] RecvError),
     #[error("Thread cancellation fails")]
     ThreadCancel,
+    #[error("SMTP Transport Relay Error: {0}")]
+    SmtpTransportRelay(#[from] lettre::transport::smtp::Error),
+    #[error("Error sending email: {0}")]
+    SendEmail(#[from] lettre::error::Error),
+    #[error("Error parsing Email Address")]
+    AddressParse(#[from] AddressError),
 }
 
 impl Serialize for Error {
@@ -100,6 +107,9 @@ impl Serialize for Error {
             Error::ByteConversion(e) => ("ByteConversion", e.to_string()),
             Error::OneShotRecv(e) => ("OneShotRecv", e.to_string()),
             Error::ThreadCancel => ("ThreadCancel", self.to_string()),
+            Error::SmtpTransportRelay(e) => ("SmtpTransportRelay", e.to_string()),
+            Error::SendEmail(e) => ("SendEmail", e.to_string()),
+            Error::AddressParse(e) => ("AddressParse", e.to_string()),
         };
 
         use serde::ser::SerializeStruct;
@@ -135,6 +145,9 @@ impl Error {
             | Error::Keychain(_)
             | Error::OneShotRecv(_)
             | Error::ByteConversion(_)
+            | Error::SmtpTransportRelay(_)
+            | Error::SendEmail(_)
+            | Error::AddressParse(_)
             | Error::ThreadCancel => {
                 error!(error = ?self, "Error occurred: {}", self);
             }

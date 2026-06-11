@@ -1244,3 +1244,27 @@ button.provider-item {
         font-size: 2.5rem;
     }
 }
+
+.modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    z-index: 1000;
+}
+
+.modal.hidden {
+    display: none;
+}
+
+.modal-content {
+    width: 700px;
+    max-width: 90vw;
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+}

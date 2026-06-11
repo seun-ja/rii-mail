@@ -180,11 +180,41 @@
             role="status"
             aria-live="polite"
         ></div>
-        <div id="db-population" class="db-population hidden">
-            <span id="db-population-text"> Building local mailbox... </span>
-
-            <div class="db-population-track">
-                <div id="db-population-bar" class="db-population-bar"></div>
+        <div id="compose-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title">Compose New Email</h2>
+                    <button id="close-compose-btn" class="action-btn">
+                        Cancel
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="compose-to">To:</label>
+                        <input
+                            id="compose-to"
+                            type="email"
+                            placeholder="recipient@example.com"
+                        />
+                    </div>
+                    <div class="form-group">
+                        <label for="compose-subject">Subject:</label>
+                        <input
+                            id="compose-subject"
+                            type="text"
+                            placeholder="How is it going?"
+                        />
+                    </div>
+                    <div class="form-group">
+                        <label for="compose-body">Message:</label>
+                        <textarea id="compose-body" rows="10"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="send-compose-btn" class="action-btn primary">
+                        Send Email
+                    </button>
+                </div>
             </div>
         </div>
     </body>

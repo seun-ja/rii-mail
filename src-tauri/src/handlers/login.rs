@@ -1,6 +1,7 @@
 use std::{path::PathBuf, sync::Arc};
 
 use arc_swap::ArcSwap;
+use lettre::transport::smtp::authentication::Credentials;
 use tauri::Manager as _;
 use tokio::{
     fs,
@@ -10,8 +11,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     auth::AppleKeychainManager,
-    config::{self, AppState, Config, ImapClientConfig, InitializedState},
-    db::{self, MailBox, Providers},
+    config::{self, Account, AppState, Config, ImapClientConfig, InitializedState},
+    db::{self, MailBox, Provider},
     error::Error,
     handlers::provider_from_imap_server,
     imap::ImapCommand,
@@ -40,7 +41,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
     tracing::info!("Configuration updated with username and saved to disk");
 
     let (initialized_state, provider) =
-        handle_initialization(config.clone(), config_dir, &app_service_name).await?;
+        handle_initialization(config.clone(), config_dir, &app_service_name, &password).await?;
 
     let imap_client_channel_tx = app.state::<ImapClientChannelTx>();
     let imap_cmd_channel_tx = app.state::<UnboundedSender<ImapCommand>>();
@@ -93,6 +94,12 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
         rpc_llm_client: initialized_state.rpc_llm_client,
         sqlite_pool: initialized_state.sqlite_pool,
         apple_keychain_manager: initialized_state.apple_keychain_manager,
+        smtp_transport_client: initialized_state.smtp_transport_client,
+        accounts: vec![Account {
+            name: None,
+            email: username,
+            provider: provider_from_imap_server(&config.imap_server_url),
+        }],
     };
 
     let app_state = app.state::<ArcSwap<AppState>>();
@@ -110,7 +117,8 @@ async fn handle_initialization(
     config: Config,
     config_dir: PathBuf,
     app_service_name: &str,
-) -> Result<(InitializedState, Providers), Error> {
+    password: &str,
+) -> Result<(InitializedState, Provider), Error> {
     let provider = provider_from_imap_server(&config.imap_server_url);
 
     let sqlite_pool = db::db_pool(&config_dir, &config.sqlite_db).await?;
@@ -119,10 +127,21 @@ async fn handle_initialization(
 
     let apple_keychain_manager = AppleKeychainManager::new(app_service_name);
 
+    let username = config.accounts.first().cloned().unwrap_or_default();
+    let credential = Credentials::new(username.clone(), password.to_string());
+
+    let smtp_transport_client = config::smtp_transport_client(&config.smtp_relay_url, credential)?;
+
     let initialized_state = config::InitializedState {
         rpc_llm_client,
         sqlite_pool,
         apple_keychain_manager,
+        smtp_transport_client,
+        accounts: vec![Account {
+            name: None,
+            email: username,
+            provider: provider_from_imap_server(&config.imap_server_url),
+        }],
     };
 
     Ok((initialized_state, provider))

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
+use lettre::transport::smtp::authentication::Credentials;
 use tauri::{LogicalSize, Manager as _, Size};
 use tokio::{
     fs::{self, create_dir_all},
@@ -9,7 +10,9 @@ use tokio::{
 
 use crate::{
     auth::AppleKeychainManager,
-    config::{self, AppState, Config, ImapClientConfig, InitStatus},
+    config::{
+        self, smtp_transport_client, Account, AppState, Config, ImapClientConfig, InitStatus,
+    },
     db,
     error::Error,
     handlers::provider_from_imap_server,
@@ -25,10 +28,13 @@ pub async fn config_setup(
 ) -> Result<(), Error> {
     let rpc_server_url = std::env::var("RPC_SERVER").unwrap_or("0.0.0.0:5500".to_string());
     let sqlite_db = std::env::var("SQLITE_DB").unwrap_or("emails.db".to_string());
+    let smtp_relay_url =
+        std::env::var("SMTP_RELAY_URL").unwrap_or("smtp.mail.yahoo.com".to_string());
 
     let config = Config {
         rpc_server_url,
         imap_server_url,
+        smtp_relay_url,
         imap_port,
         sqlite_db,
         accounts: vec![],
@@ -89,10 +95,15 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
             return Ok(InitStatus::Login(None));
         }
 
+        let username = config.accounts.first().cloned().unwrap_or_default();
+
+        let credential = Credentials::new(username.clone(), password.clone());
+        let smtp_transport_client = smtp_transport_client(&config.smtp_relay_url, credential)?;
+
         let imap_client_config = ImapClientConfig {
             imap_server_url: config.imap_server_url.clone(),
             imap_port: config.imap_port,
-            username: config.accounts.first().cloned().unwrap_or_default(),
+            username: username.clone(),
             password,
             sqlite_pool: sqlite_pool.clone(),
             login_result_tx: Some(login_result_tx),
@@ -102,6 +113,7 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
             .0
             .send(imap_client_config)
             .map_err(|e| Error::ReturningUserImapConfigChannelSend(e.to_string()))?;
+
         ensure_expanded_startup_window(&app)?;
 
         match login_result_rx.await.map_err(|_| {
@@ -121,6 +133,12 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
             rpc_llm_client: config::init_rpc(&config.rpc_server_url).await?,
             sqlite_pool,
             apple_keychain_manager,
+            smtp_transport_client,
+            accounts: vec![Account {
+                name: None,
+                email: username,
+                provider: provider_from_imap_server(&config.imap_server_url),
+            }],
         };
 
         let app_state = app.state::<ArcSwap<AppState>>();

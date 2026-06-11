@@ -1,5 +1,5 @@
 use crate::{
-    db::{init_db, populate_storage, MailBox, Providers},
+    db::{init_db, populate_storage, MailBox, Provider},
     email_cache::Email,
     handlers::email::get_emails_as_front_end_from_pool,
 };
@@ -21,7 +21,7 @@ fn parse_date(value: &str) -> DateTime<FixedOffset> {
 #[tokio::test]
 async fn get_emails_as_front_end_from_pool_maps_rows_to_frontend_shape() {
     let app_dir = unique_test_dir("handler-email");
-    let pool = init_db(&app_dir, "emails.db", &Providers::Gmail)
+    let pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
         .await
         .expect("db should initialize");
 
@@ -40,7 +40,7 @@ async fn get_emails_as_front_end_from_pool_maps_rows_to_frontend_shape() {
     .await
     .expect("storage should be populated");
 
-    let rows = get_emails_as_front_end_from_pool(Providers::Gmail, MailBox::Inbox, 0, 10, &pool)
+    let rows = get_emails_as_front_end_from_pool(Provider::Gmail, MailBox::Inbox, 0, 10, &pool)
         .await
         .expect("handler conversion should succeed");
 

@@ -11,7 +11,7 @@ use tokio::time::{self, MissedTickBehavior};
 use tokio::{net::TcpStream, sync::mpsc::UnboundedReceiver};
 
 use crate::config::ImapClientConfig;
-use crate::db::{MailBox, Providers};
+use crate::db::{MailBox, Provider};
 use crate::email_cache::SharedImapSession;
 use crate::error::{friendly_login_error_message, Error};
 use crate::imap::{init_imap_client, ImapCommand, RefreshSummary};
@@ -32,8 +32,8 @@ pub async fn worker(
         let mut pool: Option<SqlitePool> = None;
         let mut imap_client_channel_open = true;
         let mut imap_cmd_channel_open = true;
-        let mut providers: HashSet<Providers> = HashSet::new();
-        let mut initial_fetch_completed: HashSet<(Providers, MailBox)> = HashSet::new();
+        let mut providers: HashSet<Provider> = HashSet::new();
+        let mut initial_fetch_completed: HashSet<(Provider, MailBox)> = HashSet::new();
         let mut database_initialized = false;
 
         let logged_in_finalised = {
@@ -266,9 +266,6 @@ pub async fn worker(
                                     total_emails: fetched_count.total_emails(),
                                 }));
                             }
-                        }
-                        ImapCommand::SendEmail { .. } => {
-                            todo!("Implement send email command handling in IMAP worker");
                         }
                     }
                 }

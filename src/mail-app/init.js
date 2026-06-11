@@ -203,33 +203,65 @@ export function initializeMailApp({
   });
 
   dom.composeBtnEl.addEventListener("click", () => {
-    const draftId = `draft-${Date.now()}`;
-    state.cachedByFolder.Sent.unshift({
-      id: draftId,
-      folder: "Sent",
-      senderName: "You",
-      emailFrom: "you@company.com",
-      subject: "Draft: New message",
-      preview:
-        "This is a placeholder draft. Wire this to your compose modal later.",
-      body: "Draft created from the home UI. Replace this with your backend compose flow.",
-      time: "Now",
-      starred: false,
-      read: true,
-    });
+    ui.showMessage("Opening compose flow...");
+    dom.composeModalEl.classList.remove("hidden");
+  });
 
-    state.activeFolder = "Sent";
-    dom.folderButtons.forEach((otherButton) => {
-      otherButton.classList.toggle(
-        "active",
-        otherButton.dataset.folder === "Sent",
-      );
-    });
+  dom.closeComposeBtnEl.addEventListener("click", () => {
+    dom.composeModalEl.classList.add("hidden");
+  });
 
-    state.selectedId = draftId;
-    renderer.renderList();
-    saveCachedEmails(state, storage);
-    ui.showMessage("Draft created in Sent.");
+  dom.composeModalEl.addEventListener("click", (e) => {
+    if (e.target === dom.composeModalEl) {
+      dom.composeModalEl.classList.add("hidden");
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      dom.composeModalEl.classList.add("hidden");
+    }
+  });
+
+  dom.sendComposeBtnEl.addEventListener("click", async () => {
+    const toEmail = dom.composeToInput.value.trim();
+    const subject = dom.composeSubjectInput.value.trim();
+    const body = dom.composeBodyInput.value.trim();
+
+    if (!toEmail) {
+      ui.showMessage("Recipient email is required.", true);
+      return;
+    }
+
+    if (!subject || !body) {
+      ui.showMessage("Subject and body are required.", true);
+      return;
+    }
+
+    try {
+      ui.showMessage("Sending email...");
+
+      await invoke("send_email", {
+        to: ["", toEmail],
+        subject,
+        body,
+        contentType: "text/plain",
+      });
+
+      ui.showMessage("Email sent successfully!");
+
+      dom.composeModalEl.classList.add("hidden");
+
+      dom.composeToInput.value = "";
+      dom.composeSubjectInput.value = "";
+      dom.composeBodyInput.value = "";
+
+      state.activeFolder = "Sent";
+      renderer.renderList();
+    } catch (err) {
+      console.error(err);
+      ui.showMessage(`Error sending email: ${err?.message ?? err}`, true);
+    }
   });
 
   dom.refreshBtnEl.addEventListener("click", async () => {

@@ -1,4 +1,4 @@
-use crate::db::{MailBox, Providers};
+use crate::db::{MailBox, Provider};
 use crate::imap::{ImapCommand, RefreshSummary};
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 #[test]
 fn imap_command_fetch_emails_variant_preserves_values() {
     let cancel_token = CancellationToken::new();
-    let cmd = ImapCommand::FetchEmails(MailBox::Inbox, Providers::Gmail, cancel_token);
+    let cmd = ImapCommand::FetchEmails(MailBox::Inbox, Provider::Gmail, cancel_token);
 
     match cmd {
         ImapCommand::FetchEmails(mailbox, provider, _cancel_token) => {
@@ -22,7 +22,7 @@ fn imap_command_refresh_emails_variant_preserves_values() {
     let (tx, _rx) = oneshot::channel::<Result<RefreshSummary, String>>();
     let cmd = ImapCommand::RefreshEmails {
         mail_box: MailBox::Sent,
-        provider: Providers::Yahoo,
+        provider: Provider::Yahoo,
         response_channel: tx,
     };
 
