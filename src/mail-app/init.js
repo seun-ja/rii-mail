@@ -222,6 +222,28 @@ export function initializeMailApp({
     }
   });
 
+  const toggleCcBtn = document.getElementById("toggle-cc-btn");
+  const toggleBccBtn = document.getElementById("toggle-bcc-btn");
+
+  const ccRow = document.getElementById("compose-cc-row");
+  const bccRow = document.getElementById("compose-bcc-row");
+
+  toggleCcBtn?.addEventListener("click", () => {
+    ccRow.classList.toggle("hidden");
+
+    if (!ccRow.classList.contains("hidden")) {
+      document.getElementById("compose-cc").focus();
+    }
+  });
+
+  toggleBccBtn?.addEventListener("click", () => {
+    bccRow.classList.toggle("hidden");
+
+    if (!bccRow.classList.contains("hidden")) {
+      document.getElementById("compose-bcc").focus();
+    }
+  });
+
   dom.sendComposeBtnEl.addEventListener("click", async () => {
     const toEmails = dom.composeToInput.value
       .split(/[,;]/)
