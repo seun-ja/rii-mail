@@ -5,7 +5,7 @@ use sqlx::{QueryBuilder, SqlitePool};
 use tokio::fs;
 
 use crate::{
-    email_cache::{CompleteEmail, Email},
+    email_cache::{CompleteEmail, StandardEmail},
     error::Error,
 };
 
@@ -19,7 +19,7 @@ struct DbEmail {
 #[tracing::instrument(name = "db.populate_storage", skip(pool, emails))]
 pub async fn populate_storage(
     pool: &SqlitePool,
-    emails: Vec<Email>,
+    emails: Vec<StandardEmail>,
     table_name: &str,
 ) -> Result<(), Error> {
     if emails.is_empty() {
@@ -93,7 +93,7 @@ pub async fn get_emails(
                 }
             });
 
-            Ok(Email {
+            Ok(StandardEmail {
                 uid: None,
                 date: row.date,
                 body: row.body,

@@ -10,8 +10,8 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::config::ImapClientConfig;
 use crate::handlers::{
-    fetch_emails, inbox_email_populated, inbox_intial_email_populated, refresh_emails_handler,
-    send_email, sent_email_populated, sent_intial_email_populated,
+    email_generator, fetch_emails, inbox_email_populated, inbox_intial_email_populated,
+    refresh_emails_handler, send_email, sent_email_populated, sent_intial_email_populated,
 };
 use crate::imap::ImapCommand;
 use crate::workers::{worker, FetchManager};
@@ -28,7 +28,7 @@ mod email_providers;
 mod error;
 mod handlers;
 mod imap;
-mod llm;
+mod rpc_llm;
 pub mod tracing;
 mod workers;
 
@@ -215,6 +215,7 @@ pub async fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             check_app_status,
+            email_generator,
             inbox_email_populated,
             inbox_intial_email_populated,
             config_setup,

@@ -15,7 +15,7 @@ use crate::{
         get_last_uid, populate_inbox_folder_count, populate_sent_folder_count, populate_storage,
         set_last_uid, MailBox, Provider,
     },
-    email_cache::{Email, SharedImapSession},
+    email_cache::{SharedImapSession, StandardEmail},
     error::Error,
     INBOX_POPULATE_UPDATE, SENT_POPULATE_UPDATE,
 };
@@ -453,7 +453,7 @@ pub async fn fetch_latest(
         }
     };
 
-    let mut emails: Vec<Email> = Vec::new();
+    let mut emails: Vec<StandardEmail> = Vec::new();
 
     let mut highest_uid = last_uid;
     let mut inserted_count = 0usize;
@@ -476,7 +476,7 @@ pub async fn fetch_latest(
             highest_uid = highest_uid.max(uid);
         }
 
-        let email: Email = message.into();
+        let email: StandardEmail = message.into();
 
         emails.push(email);
     }

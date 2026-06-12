@@ -4,9 +4,11 @@ use crate::{
     auth::AppleKeychainManager,
     db::Provider,
     error::{Error, ErrorMessage},
-    llm::AgentWorkerClient,
+    rpc_llm::{AgentWorkerClient, Email},
 };
 use lettre::{transport::smtp::authentication::Credentials, SmtpTransport};
+use llm::{builder::AgentBuilder, providers::Providers, tools::ToolWrapper, Agent};
+use rig::tool::Tool;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use tarpc::{client, serde_transport::tcp, tokio_serde::formats::Json};
@@ -42,6 +44,9 @@ pub struct Config {
     pub imap_port: u16,
     pub sqlite_db: String,
     pub accounts: Vec<String>,
+    pub provider: String,
+    pub default_model: String,
+    pub api_key: String,
 }
 
 impl Config {
@@ -77,7 +82,26 @@ pub struct InitializedState {
     pub sqlite_pool: SqlitePool,
     pub apple_keychain_manager: AppleKeychainManager,
     pub smtp_transport_client: SmtpTransport,
+    pub llm_agent: Agent<Email>,
     pub accounts: Vec<Account>,
+}
+
+pub fn init_llm_agent<T: Tool>(
+    provider: Providers,
+    model: &str,
+    api_key: &str,
+    temperature: Option<f64>,
+    max_tokens: Option<u64>,
+    tools: Vec<ToolWrapper<T>>,
+) -> Result<Agent<Email>, Error> {
+    let agent = AgentBuilder::new(provider, "You're a helpful assistant", model) // TODO: work on the system message
+        .api_key(api_key)
+        .temperature(temperature.unwrap_or(0.0))
+        .max_tokens(max_tokens.unwrap_or(3000))
+        .tools(tools)
+        .build_with_schema::<Email>()?;
+
+    Ok(agent)
 }
 
 pub async fn init_rpc(rpc_server: &str) -> Result<AgentWorkerClient, Error> {

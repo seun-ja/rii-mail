@@ -1,22 +1,8 @@
-use crate::llm::{EmailRequest, Label, SpamRating, _Providers};
-
-#[test]
-fn providers_display_and_parse_roundtrip() {
-    assert_eq!(_Providers::from("ollama").to_string(), "ollama");
-    assert_eq!(_Providers::from("OpenAI").to_string(), "openai");
-    assert_eq!(_Providers::from("sagemaker").to_string(), "sagemaker");
-    assert_eq!(_Providers::from("LOCAL").to_string(), "local");
-}
-
-#[test]
-fn providers_from_panics_on_unknown_value() {
-    let result = std::panic::catch_unwind(|| _Providers::from("unknown-provider"));
-    assert!(result.is_err());
-}
+use crate::rpc_llm::{Email, Label, SpamRating};
 
 #[test]
 fn email_request_display_formats_fields() {
-    let req = EmailRequest {
+    let req = Email {
         from: "alice@example.com".to_string(),
         subject: "Subject".to_string(),
         body: "Body".to_string(),

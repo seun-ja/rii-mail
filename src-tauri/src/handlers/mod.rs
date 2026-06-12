@@ -1,9 +1,9 @@
 pub(crate) mod configuration;
 pub(crate) mod email;
 mod events;
+mod llm;
 mod login;
 mod menu;
-mod rater;
 
 pub use configuration::{check_app_status, config_setup, open_main_window};
 pub use email::{fetch_emails, refresh_emails_handler, send_email};
@@ -12,9 +12,9 @@ pub use events::{
     sent_intial_email_populated,
 };
 use lettre::Address;
+pub use llm::{email_generator, rater};
 pub use login::login;
 pub use menu::logout_with_state;
-pub use rater::rater;
 
 use crate::{
     config::Account,

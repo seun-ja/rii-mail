@@ -32,14 +32,14 @@ fn extract_date_from_raw_message(raw: &[u8]) -> Option<DateTime<FixedOffset>> {
 }
 
 #[derive(FromRow, Clone)]
-pub struct Email {
+pub struct StandardEmail {
     pub uid: Option<u32>,
     pub date: Option<DateTime<FixedOffset>>,
     pub body: Option<Vec<u8>>,
     pub labels: Option<Vec<String>>,
 }
 
-impl From<Fetch> for Email {
+impl From<Fetch> for StandardEmail {
     fn from(fetch: Fetch) -> Self {
         let date = fetch
             .internal_date()
@@ -60,8 +60,8 @@ impl From<Fetch> for Email {
     }
 }
 
-impl From<Email> for CompleteEmail {
-    fn from(value: Email) -> Self {
+impl From<StandardEmail> for CompleteEmail {
+    fn from(value: StandardEmail) -> Self {
         let parsed_message = value
             .body
             .as_deref()

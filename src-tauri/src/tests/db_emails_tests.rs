@@ -3,7 +3,7 @@ use crate::{
         check_email_db_empty, cleanup, get_emails, get_last_uid, init_db, populate_storage,
         set_last_uid, Provider,
     },
-    email_cache::Email,
+    email_cache::StandardEmail,
 };
 use chrono::{DateTime, FixedOffset};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -30,19 +30,19 @@ async fn populate_storage_and_get_emails_work_with_pagination() {
     let table = "gmail_INBOX";
 
     let emails = vec![
-        Email {
+        StandardEmail {
             uid: Some(1),
             date: Some(parse_date("2026-01-01T09:00:00+00:00")),
             body: Some(b"Subject: Older\r\nFrom: old@example.com\r\n\r\nBody".to_vec()),
             labels: Some(vec!["\\Inbox".to_string()]),
         },
-        Email {
+        StandardEmail {
             uid: Some(3),
             date: Some(parse_date("2026-01-03T09:00:00+00:00")),
             body: Some(b"Subject: Newest\r\nFrom: newest@example.com\r\n\r\nBody".to_vec()),
             labels: Some(vec!["\\Inbox".to_string()]),
         },
-        Email {
+        StandardEmail {
             uid: Some(2),
             date: Some(parse_date("2026-01-02T09:00:00+00:00")),
             body: Some(b"Subject: Middle\r\nFrom: middle@example.com\r\n\r\nBody".to_vec()),
@@ -111,14 +111,14 @@ async fn populate_storage_ignores_duplicate_uids() {
 
     let table = "gmail_INBOX";
 
-    let first_insert = vec![Email {
+    let first_insert = vec![StandardEmail {
         uid: Some(10),
         date: Some(parse_date("2026-01-10T09:00:00+00:00")),
         body: Some(b"Subject: First\r\nFrom: first@example.com\r\n\r\nBody".to_vec()),
         labels: Some(vec!["\\Inbox".to_string()]),
     }];
 
-    let duplicate_insert = vec![Email {
+    let duplicate_insert = vec![StandardEmail {
         uid: Some(10),
         date: Some(parse_date("2026-01-11T09:00:00+00:00")),
         body: Some(b"Subject: Duplicate\r\nFrom: dup@example.com\r\n\r\nBody".to_vec()),
@@ -153,13 +153,13 @@ async fn populate_storage_keeps_all_unique_uids_when_replayed() {
     let table = "yahoo_INBOX";
 
     let initial = vec![
-        Email {
+        StandardEmail {
             uid: Some(1),
             date: Some(parse_date("2026-02-01T09:00:00+00:00")),
             body: Some(b"Subject: One\r\nFrom: one@example.com\r\n\r\nBody".to_vec()),
             labels: None,
         },
-        Email {
+        StandardEmail {
             uid: Some(2),
             date: Some(parse_date("2026-02-02T09:00:00+00:00")),
             body: Some(b"Subject: Two\r\nFrom: two@example.com\r\n\r\nBody".to_vec()),
@@ -168,19 +168,19 @@ async fn populate_storage_keeps_all_unique_uids_when_replayed() {
     ];
 
     let replay_plus_new = vec![
-        Email {
+        StandardEmail {
             uid: Some(1),
             date: Some(parse_date("2026-02-01T09:00:00+00:00")),
             body: Some(b"Subject: One\r\nFrom: one@example.com\r\n\r\nBody".to_vec()),
             labels: None,
         },
-        Email {
+        StandardEmail {
             uid: Some(2),
             date: Some(parse_date("2026-02-02T09:00:00+00:00")),
             body: Some(b"Subject: Two\r\nFrom: two@example.com\r\n\r\nBody".to_vec()),
             labels: None,
         },
-        Email {
+        StandardEmail {
             uid: Some(3),
             date: Some(parse_date("2026-02-03T09:00:00+00:00")),
             body: Some(b"Subject: Three\r\nFrom: three@example.com\r\n\r\nBody".to_vec()),
@@ -219,7 +219,7 @@ async fn check_email_db_empty_reflects_table_state() {
 
     populate_storage(
         &pool,
-        vec![Email {
+        vec![StandardEmail {
             uid: Some(1),
             date: Some(parse_date("2026-01-01T09:00:00+00:00")),
             body: Some(b"Subject: One\r\nFrom: one@example.com\r\n\r\nBody".to_vec()),

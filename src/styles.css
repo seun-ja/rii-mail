@@ -567,6 +567,7 @@ body.home-page {
     position: fixed;
     bottom: 1rem;
     right: 1rem;
+    z-index: 2000;
     min-width: 240px;
     max-width: 360px;
     padding: 0.65rem 0.8rem;
@@ -1424,9 +1425,9 @@ button.provider-item {
 
     margin: 0 auto;
 
-    padding: 32px;
+    padding: 15px;
 
-    border-radius: 18px;
+    border-radius: 10px;
 
     background: white;
 
@@ -1502,6 +1503,7 @@ button.provider-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 12px;
 
     padding: 0 24px;
 
@@ -1578,27 +1580,189 @@ button.provider-item {
     min-height: 0;
 }
 
-.composer-editor {
-    width: 100%;
-    height: 100%;
+/* =====================================================
+   COMPOSER LAYOUT
+   ===================================================== */
 
-    border: none;
+.composer-main {
+    flex: 1;
 
-    resize: none;
+    display: flex;
 
-    padding: 24px;
+    min-height: 0;
 
-    box-shadow: none;
-
-    font-size: 15px;
-
-    line-height: 1.7;
+    overflow: hidden;
 }
 
-.composer-editor:focus {
-    border: none;
+.composer-editor-wrapper {
+    flex: 1;
+
+    min-width: 0;
+
+    display: flex;
+
+    min-height: 0;
+}
+
+.composer-editor {
+    flex: 1;
+
+    width: 100%;
+
+    height: 100%;
+}
+
+/* =====================================================
+   AI ASSISTANT
+   ===================================================== */
+
+.ai-toggle-btn {
+    border: 1px solid #dbe4ef;
+
+    background: white;
 
     box-shadow: none;
+
+    border-radius: 12px;
+
+    padding: 8px 14px;
+
+    font-weight: 600;
+
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.ai-toggle-btn:hover {
+    background: #f8fafc;
+}
+
+.ai-assistant-panel {
+    width: 380px;
+
+    flex-shrink: 0;
+
+    border-left: 1px solid #edf2f7;
+
+    background: #fafcff;
+
+    display: flex;
+    flex-direction: column;
+
+    gap: 14px;
+
+    padding: 18px;
+
+    animation: slideInRight 0.2s ease;
+}
+
+.ai-assistant-panel.hidden {
+    display: none;
+}
+
+.ai-panel-header {
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+}
+
+.ai-panel-header h3 {
+    margin: 0;
+
+    font-size: 16px;
+
+    font-weight: 700;
+}
+
+.ai-close-btn {
+    border: none;
+
+    background: transparent;
+
+    box-shadow: none;
+
+    padding: 6px 10px;
+}
+
+.ai-helper-text {
+    margin: 0;
+
+    color: var(--mail-subtext);
+
+    font-size: 13px;
+
+    line-height: 1.5;
+}
+
+.ai-prompt {
+    min-height: 170px;
+
+    resize: vertical;
+
+    border: 1px solid #dbe4ef;
+
+    border-radius: 12px;
+
+    padding: 12px;
+
+    box-shadow: none;
+}
+
+.ai-prompt:focus {
+    border-color: var(--mail-accent);
+}
+
+.ai-status {
+    min-height: 18px;
+
+    font-size: 13px;
+
+    color: var(--mail-subtext);
+}
+
+.ai-draft-preview {
+    flex: 1;
+
+    min-height: 120px;
+
+    overflow: auto;
+
+    border: 1px solid #edf2f7;
+
+    border-radius: 12px;
+
+    background: white;
+
+    padding: 12px;
+}
+
+.ai-placeholder {
+    color: #94a3b8;
+
+    font-size: 14px;
+}
+
+.ai-actions {
+    display: flex;
+}
+
+.ai-actions button {
+    width: 100%;
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(24px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
 }
 
 .composer-footer {
@@ -1650,7 +1814,170 @@ button.provider-item {
         height: 92vh;
     }
 
+    .composer-main {
+        flex-direction: column;
+    }
+
+    .ai-assistant-panel {
+        width: 100%;
+
+        height: 320px;
+
+        border-left: none;
+
+        border-top: 1px solid #edf2f7;
+    }
+
     .topbar-center {
         display: none;
     }
+}
+
+.ai-composer-panel {
+    padding: 20px 24px;
+
+    background: #f8fafc;
+
+    border-bottom: 1px solid #edf2f7;
+}
+
+.ai-composer-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    margin-bottom: 12px;
+}
+
+.ai-composer-icon {
+    font-size: 18px;
+}
+
+.ai-composer-title {
+    font-weight: 700;
+    color: var(--mail-text);
+}
+
+.ai-composer-prompt {
+    width: 100%;
+
+    resize: vertical;
+
+    min-height: 90px;
+
+    border: 1px solid #dbe4ef;
+
+    border-radius: 12px;
+
+    padding: 12px 14px;
+
+    background: white;
+
+    box-shadow: none;
+
+    font-size: 14px;
+
+    line-height: 1.5;
+}
+
+.ai-composer-actions {
+    margin-top: 12px;
+
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.ai-composer-status {
+    font-size: 13px;
+    color: var(--mail-subtext);
+}
+
+.composer-main {
+    flex: 1;
+
+    display: flex;
+
+    min-height: 0;
+}
+
+.composer-editor-wrapper {
+    flex: 1;
+
+    min-width: 0;
+}
+
+.ai-assistant-panel {
+    width: 340px;
+
+    border-left: 1px solid #edf2f7;
+
+    background: #fafcff;
+
+    display: flex;
+    flex-direction: column;
+
+    padding: 16px;
+
+    gap: 12px;
+
+    animation: slideInRight 0.2s ease;
+}
+
+.ai-assistant-panel.hidden {
+    display: none;
+}
+
+.ai-toggle-btn {
+    border: none;
+
+    background: #f1f5f9;
+
+    box-shadow: none;
+
+    padding: 8px 12px;
+
+    border-radius: 10px;
+
+    font-weight: 600;
+}
+
+.ai-panel-header {
+    display: flex;
+
+    justify-content: space-between;
+
+    align-items: center;
+}
+
+.ai-prompt {
+    min-height: 140px;
+
+    resize: vertical;
+
+    box-shadow: none;
+}
+
+.ai-draft-preview {
+    flex: 1;
+
+    overflow: auto;
+
+    border: 1px solid #edf2f7;
+
+    border-radius: 12px;
+
+    background: white;
+
+    padding: 12px;
+
+    font-size: 14px;
+}
+
+.ai-close-btn {
+    border: none;
+
+    background: transparent;
+
+    box-shadow: none;
 }

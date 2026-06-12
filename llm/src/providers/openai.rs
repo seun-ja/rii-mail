@@ -7,29 +7,26 @@ use rig::{
 };
 use schemars::JsonSchema;
 
-use crate::{
-    error::Error,
-    llm::{_CompletionProvider, tools::_ToolWrapper},
-};
+use crate::{error::Error, providers::CompletionProvider, tools::ToolWrapper};
 
-struct _OpenAIProvider {
+struct OpenAIProvider {
     api_key: String,
     model: String,
 }
 
-impl _OpenAIProvider {
-    fn _new(api_key: String, model: String) -> Self {
+impl OpenAIProvider {
+    fn new(api_key: String, model: String) -> Self {
         Self { api_key, model }
     }
 
-    fn _build<T: Tool + 'static>(
+    fn build<T: Tool + 'static>(
         &self,
         system_message: Option<&str>,
         temperature: Option<f64>,
         max_tokens: Option<u64>,
-        tool: Option<_ToolWrapper<T>>,
-    ) -> Result<_OpenAI, Error> {
-        let builder = _builder(
+        tools: Vec<ToolWrapper<T>>,
+    ) -> Result<OpenAI, Error> {
+        let builder = builder(
             &self.api_key,
             &self.model,
             system_message,
@@ -37,23 +34,23 @@ impl _OpenAIProvider {
             max_tokens,
         )?;
 
-        let agent = if let Some(tool) = tool {
-            _builder_with_tools(builder, tool)?.build()
+        let agent = if !tools.is_empty() {
+            builder_with_tools(builder, tools)?.build()
         } else {
             builder.build()
         };
 
-        Ok(_OpenAI { agent })
+        Ok(OpenAI { agent })
     }
 
-    fn _build_with_schema<J: JsonSchema, T: Tool + 'static>(
+    fn build_with_schema<J: JsonSchema, T: Tool + 'static>(
         &self,
         system_message: Option<&str>,
         temperature: Option<f64>,
         max_tokens: Option<u64>,
-        tool: Option<_ToolWrapper<T>>,
-    ) -> Result<_OpenAI, Error> {
-        let builder = _builder(
+        tools: Vec<ToolWrapper<T>>,
+    ) -> Result<OpenAI, Error> {
+        let builder = builder(
             &self.api_key,
             &self.model,
             system_message,
@@ -62,59 +59,72 @@ impl _OpenAIProvider {
         )?
         .output_schema::<J>();
 
-        let agent = if let Some(tool) = tool {
-            _builder_with_tools(builder, tool)?.build()
+        let agent = if !tools.is_empty() {
+            builder_with_tools(builder, tools)?.build()
         } else {
             builder.build()
         };
 
-        Ok(_OpenAI { agent })
+        Ok(OpenAI { agent })
     }
 }
 
 #[derive(Clone)]
-pub struct _OpenAI {
+pub struct OpenAI {
     agent: Agent<ResponsesCompletionModel>,
 }
 
-impl _OpenAI {
-    pub fn _new<T: Tool + 'static>(
+impl OpenAI {
+    pub fn new<T: Tool + 'static>(
         api_key: &str,
         model: &str,
         system_message: Option<&str>,
         temperature: Option<f64>,
         max_tokens: Option<u64>,
-        tool: Option<_ToolWrapper<T>>,
+        tools: Vec<ToolWrapper<T>>,
     ) -> Result<Self, Error> {
-        let provider = _OpenAIProvider::_new(api_key.to_string(), model.to_string());
+        let provider = OpenAIProvider::new(api_key.to_string(), model.to_string());
 
-        provider._build(system_message, temperature, max_tokens, tool)
+        provider.build(system_message, temperature, max_tokens, tools)
     }
 
-    pub fn _new_with_schema<J: JsonSchema, T: Tool + 'static>(
+    pub fn new_with_schema<J: JsonSchema, T: Tool + 'static>(
         api_key: &str,
         model: &str,
         system_message: Option<&str>,
         temperature: Option<f64>,
         max_tokens: Option<u64>,
-        tool: Option<_ToolWrapper<T>>,
+        tools: Vec<ToolWrapper<T>>,
     ) -> Result<Self, Error> {
-        let provider = _OpenAIProvider::_new(api_key.to_string(), model.to_string());
+        let provider = OpenAIProvider::new(api_key.to_string(), model.to_string());
 
-        provider._build_with_schema::<J, T>(system_message, temperature, max_tokens, tool)
+        provider.build_with_schema::<J, T>(system_message, temperature, max_tokens, tools)
     }
 }
 
 #[async_trait::async_trait]
-impl _CompletionProvider for _OpenAI {
-    #[tracing::instrument(name = "openai.chat", skip(self, prompt))]
+impl<J: JsonSchema + serde::de::DeserializeOwned> CompletionProvider<J> for OpenAI {
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(name = "openai.chat", skip(self, prompt))
+    )]
     async fn chat(&self, prompt: &str) -> Result<String, Error> {
         let response = self.agent.prompt(prompt).await?;
         Ok(response)
     }
+
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(name = "openai.schema_chat", skip(self, prompt))
+    )]
+    async fn schema_chat(&self, prompt: &str) -> Result<J, Error> {
+        let response = self.agent.prompt(prompt).await?;
+        let res = serde_json::from_str(&response)?;
+        Ok(res)
+    }
 }
 
-fn _builder(
+fn builder(
     api_key: &str,
     model: &str,
     system_message: Option<&str>,
@@ -132,11 +142,19 @@ fn _builder(
     Ok(builder)
 }
 
-fn _builder_with_tools<T: Tool + 'static>(
+fn builder_with_tools<T: Tool + 'static>(
     builder: AgentBuilder<ResponsesCompletionModel>,
-    tool: _ToolWrapper<T>,
+    tools: Vec<ToolWrapper<T>>,
 ) -> Result<AgentBuilder<ResponsesCompletionModel, (), WithBuilderTools>, Error> {
-    let builder = builder.tool(*tool._tool());
+    let mut tools = tools.into_iter();
+
+    let Some(first) = tools.next() else {
+        return Err(Error::Other("Empty list".to_string()));
+    };
+
+    let builder = tools.fold(builder.tool(*first.tool()), |builder, tool| {
+        builder.tool(*tool.tool())
+    });
 
     Ok(builder)
 }

@@ -1,6 +1,5 @@
 use std::{error::Error as StdError, io::ErrorKind};
 
-use aws_sdk_sagemakerruntime::{error::SdkError, operation::invoke_endpoint::InvokeEndpointError};
 use lettre::address::AddressError;
 use pyo3::PyErr;
 use serde::{Deserialize, Serialize};
@@ -43,17 +42,8 @@ pub enum Error {
     /// Authentication error: the provider returned an authentication error.
     #[error("authentication error: {0}")]
     Authentication(String),
-    /// Client error: the HTTP client returned an error.
-    #[error("client error: {0}")]
-    Http(#[from] rig::http_client::Error),
-    /// Prompt error: the prompt returned an error.
-    #[error("prompt error: {0}")]
-    Prompt(#[from] rig::completion::PromptError),
     #[error("local inference error: {0}")]
     LocalInference(#[from] PyErr),
-    /// Invoke error: an AWS error occurred during the invoke endpoint operation.
-    #[error("invoke error: an AWS error occurred during the invoke endpoint operation: {0:?}")]
-    Invoke(#[from] Box<SdkError<InvokeEndpointError>>),
     /// Keychain error: an error occurred while accessing the Apple keychain.
     #[error("keychain error: {0}")]
     #[cfg(target_os = "macos")]
@@ -75,6 +65,8 @@ pub enum Error {
     SendEmail(#[from] lettre::error::Error),
     #[error("Error parsing Email Address")]
     AddressParse(#[from] AddressError),
+    #[error("LLM Error")]
+    Llm(#[from] llm::error::Error),
 }
 
 impl Serialize for Error {
@@ -99,10 +91,7 @@ impl Serialize for Error {
             }
             Error::ImapCommandChannelSend(e) => ("ImapCommandChannelSend", e.to_string()),
             Error::Authentication(e) => ("Authentication", e.to_string()),
-            Error::Http(e) => ("Http", e.to_string()),
-            Error::Prompt(e) => ("Prompt", e.to_string()),
             Error::LocalInference(e) => ("LocalInference", e.to_string()),
-            Error::Invoke(e) => ("Invoke", e.to_string()),
             Error::Keychain(e) => ("Keychain", e.to_string()),
             Error::ByteConversion(e) => ("ByteConversion", e.to_string()),
             Error::OneShotRecv(e) => ("OneShotRecv", e.to_string()),
@@ -110,6 +99,7 @@ impl Serialize for Error {
             Error::SmtpTransportRelay(e) => ("SmtpTransportRelay", e.to_string()),
             Error::SendEmail(e) => ("SendEmail", e.to_string()),
             Error::AddressParse(e) => ("AddressParse", e.to_string()),
+            Error::Llm(e) => ("LLM", e.to_string()),
         };
 
         use serde::ser::SerializeStruct;
@@ -138,20 +128,18 @@ impl Error {
             | Error::ImapCommandChannelSend(_)
             | Error::Sqlx(_)
             | Error::Tls(_)
-            | Error::Http(_)
-            | Error::Prompt(_)
             | Error::LocalInference(_)
-            | Error::Invoke(_)
             | Error::Keychain(_)
             | Error::OneShotRecv(_)
             | Error::ByteConversion(_)
             | Error::SmtpTransportRelay(_)
             | Error::SendEmail(_)
             | Error::AddressParse(_)
-            | Error::ThreadCancel => {
+            | Error::ThreadCancel
+            | Error::Authentication(_) => {
                 error!(error = ?self, "Error occurred: {}", self);
             }
-            Error::NotFound | Error::Other(_) | Error::Authentication(_) => {
+            Error::NotFound | Error::Other(_) | Error::Llm(_) => {
                 warn!(error = ?self, "Error occurred: {}", self);
             }
         }

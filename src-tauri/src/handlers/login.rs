@@ -2,6 +2,7 @@ use std::{path::PathBuf, sync::Arc};
 
 use arc_swap::ArcSwap;
 use lettre::transport::smtp::authentication::Credentials;
+use llm::tools::{SearchEmailsTool, ToolWrapper};
 use tauri::Manager as _;
 use tokio::{
     fs,
@@ -11,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     auth::AppleKeychainManager,
-    config::{self, Account, AppState, Config, ImapClientConfig, InitializedState},
+    config::{self, init_llm_agent, Account, AppState, Config, ImapClientConfig, InitializedState},
     db::{self, MailBox, Provider},
     error::Error,
     handlers::provider_from_imap_server,
@@ -100,6 +101,14 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
             email: username,
             provider: provider_from_imap_server(&config.imap_server_url),
         }],
+        llm_agent: init_llm_agent(
+            llm::providers::Providers::Ollama,
+            &config.default_model,
+            &config.api_key,
+            None,
+            None,
+            vec![ToolWrapper::new(SearchEmailsTool)],
+        )?,
     };
 
     let app_state = app.state::<ArcSwap<AppState>>();
@@ -142,6 +151,14 @@ async fn handle_initialization(
             email: username,
             provider: provider_from_imap_server(&config.imap_server_url),
         }],
+        llm_agent: init_llm_agent(
+            llm::providers::Providers::Ollama,
+            &config.default_model,
+            &config.api_key,
+            None,
+            None,
+            vec![ToolWrapper::new(SearchEmailsTool)],
+        )?,
     };
 
     Ok((initialized_state, provider))

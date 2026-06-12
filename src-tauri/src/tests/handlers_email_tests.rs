@@ -1,6 +1,6 @@
 use crate::{
     db::{init_db, populate_storage, MailBox, Provider},
-    email_cache::Email,
+    email_cache::StandardEmail,
     handlers::email::get_emails_as_front_end_from_pool,
 };
 use chrono::{DateTime, FixedOffset};
@@ -27,7 +27,7 @@ async fn get_emails_as_front_end_from_pool_maps_rows_to_frontend_shape() {
 
     populate_storage(
         &pool,
-        vec![Email {
+        vec![StandardEmail {
             uid: Some(100),
             date: Some(parse_date("2026-01-03T09:00:00+00:00")),
             body: Some(

@@ -203,7 +203,6 @@ export function initializeMailApp({
   });
 
   dom.composeBtnEl.addEventListener("click", () => {
-    ui.showMessage("Opening compose flow...");
     dom.composeModalEl.classList.remove("hidden");
   });
 
@@ -286,6 +285,60 @@ export function initializeMailApp({
     } catch (error) {
       const message = error?.message || error?.msg || String(error);
       ui.showMessage(`Failed to refresh mailbox: ${message}`, true);
+    }
+  });
+
+  const aiPanel = document.getElementById("ai-assistant-panel");
+
+  document
+    .getElementById("open-ai-assistant-btn")
+    ?.addEventListener("click", () => {
+      aiPanel.classList.remove("hidden");
+    });
+
+  document
+    .getElementById("close-ai-assistant-btn")
+    ?.addEventListener("click", () => {
+      aiPanel.classList.add("hidden");
+    });
+
+  const generateBtn = document.getElementById("generate-email-btn");
+
+  generateBtn?.addEventListener("click", async () => {
+    const prompt = document.getElementById("ai-email-prompt").value;
+
+    if (!prompt.trim()) return;
+
+    const status = document.getElementById("generate-email-status");
+
+    try {
+      status.textContent = "Generating draft...";
+
+      const email = await invoke("email_generator", {
+        thoughts: prompt,
+        context: null,
+      });
+
+      if (email.to) {
+        document.getElementById("compose-to").value = email.to;
+      }
+
+      if (email.cc) {
+        document.getElementById("compose-cc").value = email.cc;
+      }
+
+      if (email.bcc) {
+        document.getElementById("compose-bcc").value = email.bcc;
+      }
+
+      document.getElementById("compose-subject").value = email.subject ?? "";
+
+      document.getElementById("compose-body").value = email.body ?? "";
+
+      status.textContent = "Draft inserted into composer";
+    } catch (err) {
+      status.textContent = "Failed to generate draft";
+      console.error(err);
     }
   });
 

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use arc_swap::ArcSwap;
 use lettre::transport::smtp::authentication::Credentials;
+use llm::tools::{SearchEmailsTool, ToolWrapper};
 use tauri::{LogicalSize, Manager as _, Size};
 use tokio::{
     fs::{self, create_dir_all},
@@ -11,7 +12,8 @@ use tokio::{
 use crate::{
     auth::AppleKeychainManager,
     config::{
-        self, smtp_transport_client, Account, AppState, Config, ImapClientConfig, InitStatus,
+        self, init_llm_agent, smtp_transport_client, Account, AppState, Config, ImapClientConfig,
+        InitStatus,
     },
     db,
     error::Error,
@@ -30,6 +32,9 @@ pub async fn config_setup(
     let sqlite_db = std::env::var("SQLITE_DB").unwrap_or("emails.db".to_string());
     let smtp_relay_url =
         std::env::var("SMTP_RELAY_URL").unwrap_or("smtp.mail.yahoo.com".to_string());
+    let default_model = std::env::var("MODEL").unwrap_or("gemma4:e4b".to_string());
+    let api_key = std::env::var("LLM_API_KEY").unwrap_or("ollama".to_string());
+    let provider = std::env::var("ollama").unwrap_or("ollama".to_string());
 
     let config = Config {
         rpc_server_url,
@@ -38,6 +43,9 @@ pub async fn config_setup(
         imap_port,
         sqlite_db,
         accounts: vec![],
+        provider,
+        default_model,
+        api_key,
     };
 
     let config_dir = app.path().app_config_dir()?;
@@ -139,6 +147,14 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
                 email: username,
                 provider: provider_from_imap_server(&config.imap_server_url),
             }],
+            llm_agent: init_llm_agent(
+                llm::providers::Providers::Ollama,
+                &config.default_model,
+                &config.api_key,
+                None,
+                None,
+                vec![ToolWrapper::new(SearchEmailsTool)],
+            )?,
         };
 
         let app_state = app.state::<ArcSwap<AppState>>();

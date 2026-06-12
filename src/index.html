@@ -194,8 +194,19 @@
         ></div>
         <div id="compose-modal" class="modal hidden">
             <div class="modal-content composer-modal">
+                <!-- Header -->
                 <div class="modal-header">
-                    <h2 class="modal-title">New Message</h2>
+                    <div style="display: flex; align-items: center; gap: 12px">
+                        <h2 class="modal-title">New Message</h2>
+
+                        <button
+                            id="open-ai-assistant-btn"
+                            class="ai-toggle-btn"
+                            type="button"
+                        >
+                            ✨ AI
+                        </button>
+                    </div>
 
                     <button
                         id="close-compose-btn"
@@ -206,6 +217,7 @@
                     </button>
                 </div>
 
+                <!-- Fields -->
                 <div class="composer-fields">
                     <div class="composer-row">
                         <span class="composer-label">To</span>
@@ -253,19 +265,62 @@
                             id="compose-subject"
                             class="composer-input"
                             type="text"
-                            placeholder="What's on your mind?"
+                            placeholder="Subject"
                         />
                     </div>
                 </div>
 
-                <div class="composer-editor-wrapper">
-                    <textarea
-                        id="compose-body"
-                        class="composer-editor"
-                        placeholder="Write your message..."
-                    ></textarea>
+                <!-- Main Content -->
+                <div class="composer-main">
+                    <!-- Email Editor -->
+                    <div class="composer-editor-wrapper">
+                        <textarea
+                            id="compose-body"
+                            class="composer-editor"
+                            placeholder="Write your message..."
+                        ></textarea>
+                    </div>
+
+                    <!-- AI Assistant -->
+                    <aside
+                        id="ai-assistant-panel"
+                        class="ai-assistant-panel hidden"
+                    >
+                        <div class="ai-panel-header">
+                            <h3>AI Assistant</h3>
+
+                            <button
+                                id="close-ai-assistant-btn"
+                                class="ai-close-btn"
+                                type="button"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <p class="ai-helper-text">
+                            Describe the email you'd like to create.
+                        </p>
+
+                        <textarea
+                            id="ai-email-prompt"
+                            class="ai-prompt"
+                            placeholder="let's create magic"
+                        ></textarea>
+
+                        <button
+                            id="generate-email-btn"
+                            class="action-btn primary"
+                            type="button"
+                        >
+                            Generate Draft
+                        </button>
+
+                        <div id="generate-email-status" class="ai-status"></div>
+                    </aside>
                 </div>
 
+                <!-- Footer -->
                 <div class="composer-footer">
                     <div class="composer-footer-left">
                         <button
