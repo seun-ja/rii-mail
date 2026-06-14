@@ -5,7 +5,7 @@ use security_framework::passwords::{
 
 use crate::error::Error;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AppleKeychainManager(String);
 
 impl AppleKeychainManager {

@@ -3,7 +3,7 @@ use async_native_tls::TlsStream;
 use tokio::net::TcpStream;
 use tokio_util::sync::CancellationToken;
 
-use crate::{db, error::Error};
+use crate::{auth::AppleKeychainManager, db, error::Error};
 
 #[derive(Debug, Clone, Copy)]
 pub struct RefreshSummary {
@@ -19,6 +19,8 @@ pub enum ImapCommand {
         mail_box: db::MailBox,
         provider: db::Provider,
         response_channel: tokio::sync::oneshot::Sender<Result<RefreshSummary, String>>,
+        username: String,
+        keychain_manager: AppleKeychainManager,
     },
 }
 

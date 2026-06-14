@@ -78,6 +78,8 @@ pub async fn refresh_emails_handler(
         mail_box: mailbox.clone(),
         provider: provider.clone(),
         response_channel: fetch_update_tx,
+        username: initialized.accounts[0].email.clone(),
+        keychain_manager: initialized.apple_keychain_manager.clone(),
     })?;
 
     match fetch_update_rx.await? {

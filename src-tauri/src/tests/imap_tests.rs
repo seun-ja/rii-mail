@@ -1,3 +1,4 @@
+use crate::auth::AppleKeychainManager;
 use crate::db::{MailBox, Provider};
 use crate::imap::{ImapCommand, RefreshSummary};
 use tokio::sync::oneshot;
@@ -24,6 +25,8 @@ fn imap_command_refresh_emails_variant_preserves_values() {
         mail_box: MailBox::Sent,
         provider: Provider::Yahoo,
         response_channel: tx,
+        username: "Hello".to_string(),
+        keychain_manager: AppleKeychainManager::new("test"),
     };
 
     match cmd {

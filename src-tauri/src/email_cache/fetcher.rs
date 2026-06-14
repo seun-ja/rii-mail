@@ -401,8 +401,8 @@ pub(crate) fn uid_vec_to_set(uids: &HashSet<u32>) -> String {
 pub async fn fetch_latest(
     session: SharedImapSession,
     pool: &SqlitePool,
-    mailbox: MailBox,
-    provider: Provider,
+    mailbox: &MailBox,
+    provider: &Provider,
     cancel_token: CancellationToken,
 ) -> Result<FetchResult, Error> {
     let table_name = format!("{}_{}", provider.as_ref(), mailbox.as_ref());

@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
+use async_imap::Client;
 use async_native_tls::TlsStream;
 use sqlx::SqlitePool;
 use tokio::sync::mpsc::UnboundedSender;
@@ -35,6 +36,8 @@ pub async fn worker(
         let mut providers: HashSet<Provider> = HashSet::new();
         let mut initial_fetch_completed: HashSet<(Provider, MailBox)> = HashSet::new();
         let mut database_initialized = false;
+
+        let mut imap_client_initialized: Option<Client<TlsStream<TcpStream>>> = None;
 
         let logged_in_finalised = {
             let logged_in = LOGGED_IN.lock().await;
@@ -87,6 +90,9 @@ pub async fn worker(
 
                     match init_imap_client(&background_config.imap_server_url, background_config.imap_port).await {
                         Ok(imap_client) => {
+                            let bg_server_url = background_config.imap_server_url.clone();
+                            let bg_server_port = background_config.imap_port;
+
                             login(
                                 background_config,
                                 &mut initialized_session_background,
@@ -94,6 +100,15 @@ pub async fn worker(
                                 &mut pool,
                             )
                             .await;
+
+                            match init_imap_client(&bg_server_url, bg_server_port).await {
+                                Ok(store_client) => {
+                                    imap_client_initialized = Some(store_client);
+                                }
+                                Err(err) => {
+                                    tracing::error!(error = ?err, "Failed to initialize stored background IMAP client");
+                                }
+                            }
                         }
                         Err(err) => {
                             tracing::error!(error = ?err, "Failed to initialize background IMAP client");
@@ -237,7 +252,7 @@ pub async fn worker(
                             *LOGGED_IN.lock().await = false;
                             let _ = logout_result_tx.send(());
                         }
-                        ImapCommand::RefreshEmails{mail_box, provider, response_channel: login_result_tx} => {
+                        ImapCommand::RefreshEmails{mail_box, provider, response_channel: login_result_tx, username, keychain_manager} => {
                             let Some(session) = initialized_session.as_ref() else {
                                 tracing::warn!("FetchEmails ignored: IMAP session is not initialized");
                                 continue;
@@ -252,19 +267,45 @@ pub async fn worker(
                                 FETCH_MANAGER.refresh_token.lock().await.child_token()
                             };
 
-                            if let Ok(fetched_count) = crate::email_cache::fetch_latest(
+                            match crate::email_cache::fetch_latest(
                                 session.clone(),
                                 pool_ref,
-                                mail_box,
-                                provider,
+                                &mail_box,
+                                &provider,
                                 refresh_token,
                             )
                             .await
                             {
-                                let _ = login_result_tx.send(Ok(RefreshSummary {
-                                    new_emails_count: fetched_count.count(),
-                                    total_emails: fetched_count.total_emails(),
-                                }));
+                                Ok(fetched_count ) =>{
+                                    if let Err(e) = login_result_tx.send(Ok(RefreshSummary {
+                                        new_emails_count: fetched_count.count(),
+                                        total_emails: fetched_count.total_emails(),
+                                    })) {
+                                        tracing::error!("failed sending refresh summary: {e:?}")
+                                    }
+                                },
+                                // TODO: Better handling
+                                Err(e) if e.to_string().contains("connection closed gracefully") => {
+                                    tracing::warn!("unable to fetch latest email restarting session");
+                                    if let Ok(password) = keychain_manager.retrieve_password(&username) {
+                                        if let Ok(new_session) = auth::login(&username, &password, imap_client_initialized.take().unwrap()).await {
+                                            // Generate a fresh refresh token for retry
+                                            let retry_refresh_token = FETCH_MANAGER.refresh_token.lock().await.child_token();
+
+                                            _ = crate::email_cache::fetch_latest(
+                                                Arc::new(Mutex::new(new_session)),
+                                                pool_ref,
+                                                &mail_box,
+                                                &provider,
+                                                retry_refresh_token,
+                                            )
+                                            .await;
+                                        };
+                                    };
+                                }
+                                Err(e) => {
+                                    tracing::warn!("unable to fetch latest email: {e}")
+                                }
                             }
                         }
                     }
@@ -297,15 +338,15 @@ pub async fn worker(
                             crate::email_cache::fetch_latest(
                                 session.clone(),
                                 pool_ref,
-                                MailBox::Inbox,
-                                provider_for_inbox,
+                                &MailBox::Inbox,
+                                &provider_for_inbox,
                                 refresh_token.clone()
                             ),
                             crate::email_cache::fetch_latest(
                                 session_background.clone(),
                                 pool_ref,
-                                MailBox::Sent,
-                                provider_for_sent,
+                                &MailBox::Sent,
+                                &provider_for_sent,
                                 refresh_token.clone()
                             )
                         );
