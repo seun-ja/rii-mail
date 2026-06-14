@@ -249,6 +249,15 @@ export function initializeMailApp({
       .split(/[,;]/)
       .map((e) => e.trim())
       .filter(Boolean);
+    const ccEmails = dom.composeCcInput.value
+      .split(/[,;]/)
+      .map((e) => e.trim())
+      .filter(Boolean);
+    const bccEmails = dom.composeBccInput.value
+      .split(/[,;]/)
+      .map((e) => e.trim())
+      .filter(Boolean);
+
     const subject = dom.composeSubjectInput.value.trim();
     const body = dom.composeBodyInput.value.trim();
 
@@ -267,8 +276,8 @@ export function initializeMailApp({
 
       await invoke("send_email", {
         to: toEmails.map((email) => ["", email]),
-        cc: [],
-        bcc: [],
+        cc: ccEmails.map((ccEmail) => ["", ccEmail]),
+        bcc: bccEmails.map((bccEmail) => ["", bccEmail]),
         subject,
         body,
         contentType: "text/plain",
@@ -282,7 +291,7 @@ export function initializeMailApp({
       dom.composeSubjectInput.value = "";
       dom.composeBodyInput.value = "";
 
-      state.activeFolder = "Sent";
+      state.activeFolder = "INBOX";
       renderer.renderList();
     } catch (err) {
       console.error(err);

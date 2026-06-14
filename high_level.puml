@@ -1,0 +1,62 @@
+┌───────────────────────────────────────────────┐
+│                 Frontend (Tauri UI)           │
+│                                               │
+│ login.js                                      │
+│ setup.js                                      │
+│ mail-app/*                                    │
+└───────────────────┬───────────────────────────┘
+                    │ Tauri Commands
+                    ▼
+┌───────────────────────────────────────────────┐
+│             Rust/Tauri Backend                │
+│                                               │
+│ AppState (ArcSwap)                            │
+│ Config Manager                               │
+│ Fetch Manager                                │
+│ Command Handlers                             │
+└───────┬───────────┬───────────────┬───────────┘
+        │           │               │
+        ▼           ▼               ▼
+
+┌─────────────┐ ┌─────────────┐ ┌──────────────┐
+│ IMAP Worker │ │ SMTP Client │ │ LLM Service  │
+│ Tokio Task  │ │ (Lettre)    │ │ Draft Agent  │
+└──────┬──────┘ └─────────────┘ └──────┬───────┘
+       │                               │
+       │                               ▼
+       │                      Ollama/OpenAI API
+       │                      (via init_llm_agent)
+       │
+       ▼
+┌───────────────────────┐
+│ Dual IMAP Sessions    │
+│                       │
+│ Primary Session       │
+│ Background Session    │
+└───────────┬───────────┘
+            │
+            ▼
+┌───────────────────────┐
+│ SQLite Cache          │
+│                       │
+│ gmail_INBOX           │
+│ gmail_Sent            │
+│ mailbox_sync_state    │
+│ total_emails          │
+└───────────────────────┘
+
+            │
+            ▼
+
+┌───────────────────────┐
+│ RPC Spam Service      │
+│ (tarpc)               │
+└───────────────────────┘
+
+            │
+            ▼
+
+┌───────────────────────┐
+│ Apple Keychain        │
+│ Credential Storage    │
+└───────────────────────┘
