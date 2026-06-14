@@ -19,7 +19,10 @@ async fn config_init_reads_valid_config() {
         "imap_port":993,
         "sqlite_db":"emails.db",
         "accounts":["alice@example.com"],
-        "otlp_collector_endpoint":"http://127.0.0.1:4317"
+        "otlp_collector_endpoint":"http://127.0.0.1:4317",
+        "provider": "ollama",
+        "default_model": "model",
+        "api_key": "api_key"
     }"#;
 
     tokio::fs::write(&path, body)
@@ -45,7 +48,10 @@ async fn config_init_rejects_missing_imap_values() {
         "imap_port":0,
         "sqlite_db":"emails.db",
         "accounts":[],
-        "otlp_collector_endpoint":null
+        "otlp_collector_endpoint":null,
+        "provider": "ollama",
+        "default_model": "model",
+        "api_key": "api_key"
     }"#;
 
     tokio::fs::write(&path, body)
