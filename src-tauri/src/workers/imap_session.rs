@@ -34,10 +34,10 @@ pub async fn worker(
         let mut imap_client_channel_open = true;
         let mut imap_cmd_channel_open = true;
         let mut providers: HashSet<Provider> = HashSet::new();
-        let mut initial_fetch_completed: HashSet<(Provider, MailBox)> = HashSet::new();
+        let mut initial_fetch_completed: HashSet<Provider> = HashSet::new();
         let mut database_initialized = false;
 
-        let mut imap_client_initialized: Option<Client<TlsStream<TcpStream>>> = None;
+        let mut initialized_client: Option<Client<TlsStream<TcpStream>>> = None;
 
         let logged_in_finalised = {
             let logged_in = LOGGED_IN.lock().await;
@@ -103,7 +103,7 @@ pub async fn worker(
 
                             match init_imap_client(&bg_server_url, bg_server_port).await {
                                 Ok(store_client) => {
-                                    imap_client_initialized = Some(store_client);
+                                    initialized_client = Some(store_client);
                                 }
                                 Err(err) => {
                                     tracing::error!(error = ?err, "Failed to initialize stored background IMAP client");
@@ -171,12 +171,9 @@ pub async fn worker(
                     };
 
                     match cmd {
-                        ImapCommand::FetchEmails(mail_box, provider, cancel_token) => {
-                            let fetch_key = (provider.clone(), mail_box.clone());
-
-                            if initial_fetch_completed.contains(&fetch_key) {
+                        ImapCommand::FetchEmails(provider, cancel_token) => {
+                            if initial_fetch_completed.contains(&provider) {
                                 tracing::info!(
-                                    mailbox = mail_box.as_ref(),
                                     provider = provider.as_ref(),
                                     "Skipping duplicate initial mailbox fetch command"
                                 );
@@ -205,7 +202,6 @@ pub async fn worker(
                                 session.clone(),
                                 Some(session_background.clone()),
                                 pool_ref,
-                                mail_box,
                                 provider.clone(),
                                 cancel_token,
                                 inbox_tx,
@@ -288,7 +284,7 @@ pub async fn worker(
                                 Err(e) if e.to_string().contains("connection closed gracefully") => {
                                     tracing::warn!("unable to fetch latest email restarting session");
                                     if let Ok(password) = keychain_manager.retrieve_password(&username) {
-                                        if let Ok(new_session) = auth::login(&username, &password, imap_client_initialized.take().unwrap()).await {
+                                        if let Ok(new_session) = auth::login(&username, &password, initialized_client.take().unwrap()).await {
                                             // Generate a fresh refresh token for retry
                                             let retry_refresh_token = FETCH_MANAGER.refresh_token.lock().await.child_token();
 

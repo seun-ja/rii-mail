@@ -15,6 +15,7 @@ import {
   resetFolderPagination,
 } from "./helpers.js";
 import { getProviderLiteral } from "./provider.js";
+import { createMailboxCountClient } from "./mailbox-counts.js";
 
 export function createSyncController(
   state,
@@ -24,26 +25,17 @@ export function createSyncController(
   storage = window.localStorage,
 ) {
   let syncGeneration = 0;
+  const { fetchMailboxEmailCount } = createMailboxCountClient({ storage });
 
-  function normalizeFetchPayload(fetched, folder = null) {
-    // TODO: #4 return dynamic figures from backend instead of hardcoding defaults here. Backend should always return totalEmails for correct pagination, but we need to handle cases where it doesn't (e.g. due to older backend versions or errors) - in those cases we can use these conservative defaults to avoid breaking pagination entirely.
-    const normalizedFolder =
-      typeof folder === "string" ? folder.toLowerCase() : "";
-    const defaultTotalEmails = normalizedFolder === "sent" ? 86 : 6200;
-
+  function normalizeFetchPayload(fetched) {
     if (fetched && typeof fetched === "object" && !Array.isArray(fetched)) {
       return {
         emails: Array.isArray(fetched.emails) ? fetched.emails : [],
-        totalEmails:
-          typeof fetched.totalEmails === "number"
-            ? fetched.totalEmails
-            : defaultTotalEmails,
       };
     }
 
     return {
       emails: Array.isArray(fetched) ? fetched : [],
-      totalEmails: defaultTotalEmails,
     };
   }
 
@@ -152,18 +144,22 @@ export function createSyncController(
       const mailbox = getActiveMailboxLiteral(state);
       const provider = getProviderLiteral(storage);
 
-      const fetched = await invoke("fetch_emails", {
-        minRange,
-        maxRange,
-        mailbox,
-        provider,
-      });
+      const [fetched, totalEmails] = await Promise.all([
+        // Backend reads from database and returns a parsed email page (no IMAP sync).
+        invoke("fetch_emails", {
+          minRange,
+          maxRange,
+          mailbox,
+          provider,
+        }),
+        fetchMailboxEmailCount(mailbox, provider),
+      ]);
 
-      const payload = normalizeFetchPayload(fetched, folderKey);
+      const payload = normalizeFetchPayload(fetched);
       const page = payload.emails;
 
-      if (typeof payload.totalEmails === "number") {
-        state.totalEmailsByFolder[folderKey] = payload.totalEmails;
+      if (typeof totalEmails === "number") {
+        state.totalEmailsByFolder[folderKey] = totalEmails;
       }
 
       if (page.length > 0) {
@@ -233,17 +229,21 @@ export function createSyncController(
         }
 
         try {
-          const fetched = await invoke("fetch_emails", {
-            minRange: 0,
-            maxRange: INITIAL_BATCH_SIZE,
-            mailbox: folder,
-            provider,
-          });
-          const payload = normalizeFetchPayload(fetched, folder);
+          const [fetched, totalEmails] = await Promise.all([
+            // Backend reads from database and returns a parsed email page (no IMAP sync).
+            invoke("fetch_emails", {
+              minRange: 0,
+              maxRange: INITIAL_BATCH_SIZE,
+              mailbox: folder,
+              provider,
+            }),
+            fetchMailboxEmailCount(folder, provider),
+          ]);
+          const payload = normalizeFetchPayload(fetched);
           page = payload.emails;
 
-          if (typeof payload.totalEmails === "number") {
-            state.totalEmailsByFolder[folder] = payload.totalEmails;
+          if (typeof totalEmails === "number") {
+            state.totalEmailsByFolder[folder] = totalEmails;
           }
         } catch (_error) {
           page = [];
@@ -272,8 +272,12 @@ export function createSyncController(
 
             page = Array.isArray(latest?.emails) ? latest.emails : [];
 
-            if (typeof latest?.totalEmails === "number") {
-              state.totalEmailsByFolder.Sent = latest.totalEmails;
+            const sentTotalEmails = await fetchMailboxEmailCount(
+              "Sent",
+              provider,
+            );
+            if (typeof sentTotalEmails === "number") {
+              state.totalEmailsByFolder.Sent = sentTotalEmails;
             }
           } catch (_error) {
             // Ignore fallback refresh failures and continue regular retry flow.
@@ -380,8 +384,7 @@ export function createSyncController(
             };
 
       const latest = Array.isArray(payload.emails) ? payload.emails : [];
-      const totalEmails =
-        typeof payload.totalEmails === "number" ? payload.totalEmails : null;
+      const totalEmails = await fetchMailboxEmailCount(mailbox, provider);
 
       if (typeof totalEmails === "number") {
         state.totalEmailsByFolder[folderKey] = totalEmails;

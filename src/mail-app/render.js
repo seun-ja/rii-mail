@@ -27,33 +27,29 @@ export function createRenderer(state, dom) {
 
   function updateCounts() {
     const allEmails = getEmails(state);
-    const inboxFallback = allEmails.filter(
-      (mail) => String(mail.folder || "").toLowerCase() === "inbox",
-    ).length;
-    const sentFallback = allEmails.filter(
-      (mail) => String(mail.folder || "").toLowerCase() === "sent",
-    ).length;
     const counts = {
       inbox:
         typeof state.totalEmailsByFolder?.INBOX === "number"
           ? state.totalEmailsByFolder.INBOX
-          : inboxFallback,
+          : null,
       starred: allEmails.filter((mail) => mail.starred).length,
       sent:
         typeof state.totalEmailsByFolder?.Sent === "number"
           ? state.totalEmailsByFolder.Sent
-          : sentFallback,
+          : null,
       archive: allEmails.filter((mail) => {
         const folder = String(mail.folder || "").toLowerCase();
         return folder === "trash" || folder === "archive";
       }).length,
     };
 
-    document.querySelector("#count-inbox").textContent = String(counts.inbox);
+    document.querySelector("#count-inbox").textContent =
+      typeof counts.inbox === "number" ? String(counts.inbox) : "";
     document.querySelector("#count-starred").textContent = String(
       counts.starred,
     );
-    document.querySelector("#count-sent").textContent = String(counts.sent);
+    document.querySelector("#count-sent").textContent =
+      typeof counts.sent === "number" ? String(counts.sent) : "";
     document.querySelector("#count-archive").textContent = String(
       counts.archive,
     );

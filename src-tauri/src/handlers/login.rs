@@ -13,7 +13,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     auth::AppleKeychainManager,
     config::{self, init_llm_agent, Account, AppState, Config, ImapClientConfig, InitializedState},
-    db::{self, MailBox, Provider},
+    db::{self, Provider},
     error::Error,
     handlers::provider_from_imap_server,
     imap::ImapCommand,
@@ -85,11 +85,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
         parent.child_token()
     };
 
-    imap_cmd_channel_tx.send(ImapCommand::FetchEmails(
-        MailBox::Inbox,
-        provider.clone(),
-        fetch_token,
-    ))?;
+    imap_cmd_channel_tx.send(ImapCommand::FetchEmails(provider.clone(), fetch_token))?;
 
     let initialized_state = config::InitializedState {
         rpc_llm_client: initialized_state.rpc_llm_client,

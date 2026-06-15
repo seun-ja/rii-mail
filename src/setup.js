@@ -1,4 +1,5 @@
 import { getErrorMessage } from "./shared/errors.js";
+import { setAppSqliteDbPath } from "./shared/sqlite.js";
 import { tauriInvoke as invoke } from "./shared/tauri.js";
 
 function setLoadingState(
@@ -144,6 +145,7 @@ window.addEventListener("DOMContentLoaded", () => {
       const normalizedProvider = providerInput?.value?.trim() || "yahoo";
       window.localStorage.setItem("riimail.provider", normalizedProvider);
       window.localStorage.setItem("riimail.imapServer", imapServer);
+      setAppSqliteDbPath(window.localStorage);
 
       setupLoadingSpinnerEl?.classList.add("hidden");
       setupLoadingTextEl.textContent =

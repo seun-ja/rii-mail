@@ -107,6 +107,7 @@ pub async fn get_emails(
     Ok(complete_emails)
 }
 
+#[tracing::instrument(name = "db.populate_inbox_folder_count", skip(pool))]
 pub async fn populate_inbox_folder_count(
     pool: &SqlitePool,
     provider: &str,
@@ -114,10 +115,10 @@ pub async fn populate_inbox_folder_count(
 ) -> Result<(), Error> {
     sqlx::query(
         r#"
-        INSERT INTO total_emails (provider, inbox)
+        INSERT INTO total_emails (provider, INBOX)
         VALUES (?, ?)
         ON CONFLICT(provider)
-        DO UPDATE SET inbox = excluded.inbox
+        DO UPDATE SET INBOX = excluded.INBOX
         "#,
     )
     .bind(provider)
@@ -128,6 +129,7 @@ pub async fn populate_inbox_folder_count(
     Ok(())
 }
 
+#[tracing::instrument(name = "db.populate_sent_folder_count", skip(pool))]
 pub async fn populate_sent_folder_count(
     pool: &SqlitePool,
     provider: &str,
@@ -135,10 +137,10 @@ pub async fn populate_sent_folder_count(
 ) -> Result<(), Error> {
     sqlx::query(
         r#"
-        INSERT INTO total_emails (provider, sent)
+        INSERT INTO total_emails (provider, Sent)
         VALUES (?, ?)
         ON CONFLICT(provider)
-        DO UPDATE SET sent = excluded.sent
+        DO UPDATE SET Sent = excluded.Sent
         "#,
     )
     .bind(provider)
@@ -147,23 +149,6 @@ pub async fn populate_sent_folder_count(
     .await?;
 
     Ok(())
-}
-
-#[tracing::instrument(name = "db.get.email_count", skip(pool))]
-pub async fn get_email_count(
-    pool: &SqlitePool,
-    provider: &str,
-    mailbox: &str,
-) -> Result<u32, Error> {
-    let result: Option<(i64,)> = sqlx::query_as(&format!(
-        "SELECT {} FROM total_emails WHERE provider = ?",
-        mailbox
-    ))
-    .bind(provider)
-    .fetch_optional(pool)
-    .await?;
-
-    Ok(result.map(|(count,)| count.max(0) as u32).unwrap_or(0))
 }
 
 #[tracing::instrument(name = "db.cleanup", skip(db_path))]

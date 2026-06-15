@@ -832,6 +832,7 @@ Important current behavior:
 - it is a DB read API
 - it does not itself trigger an IMAP refresh
 - the frontend uses it for pagination and bootstrap reads
+- **returns `totalEmails` count**: queries the actual row count from the mailbox table using `get_table_row_count()` and includes it in the response, eliminating the need for hardcoded email counts in the frontend
 
 ### `refresh_emails_handler`
 

@@ -10,14 +10,17 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::config::ImapClientConfig;
 use crate::handlers::{
-    email_generator, fetch_emails, inbox_email_populated, inbox_intial_email_populated,
-    refresh_emails_handler, send_email, sent_email_populated, sent_intial_email_populated,
+    email_generator, inbox_email_populated, inbox_intial_email_populated, refresh_emails_handler,
+    send_email, sent_email_populated, sent_intial_email_populated,
 };
 use crate::imap::ImapCommand;
 use crate::workers::{worker, FetchManager};
 use crate::{
     config::AppState,
-    handlers::{check_app_status, config_setup, login, logout_with_state, open_main_window, rater},
+    handlers::{
+        check_app_status, config_setup, fetch_emails, login, logout_with_state, open_main_window,
+        rater,
+    },
 };
 
 pub mod auth;
@@ -110,6 +113,7 @@ pub async fn run() {
         .manage(SENT_POPULATE_UPDATE.clone())
         .manage(InitialDbPopulation::new(inbox_intial_email_populated_rx, sent_intial_email_populated_rx))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_sql::Builder::default().build())
         .setup(|app| {
             let app_about = PredefinedMenuItem::about(app, None, None)?;
             let app_quit = PredefinedMenuItem::quit(app, None)?;

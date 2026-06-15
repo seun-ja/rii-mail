@@ -14,7 +14,7 @@ pub struct RefreshSummary {
 #[derive(Debug)]
 pub enum ImapCommand {
     Logout,
-    FetchEmails(db::MailBox, db::Provider, CancellationToken),
+    FetchEmails(db::Provider, CancellationToken),
     RefreshEmails {
         mail_box: db::MailBox,
         provider: db::Provider,
