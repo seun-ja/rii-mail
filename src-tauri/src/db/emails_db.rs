@@ -166,6 +166,16 @@ pub async fn get_email_count(
     Ok(result.map(|(count,)| count.max(0) as u32).unwrap_or(0))
 }
 
+/// Get the actual count of emails in a mailbox table by counting rows
+#[tracing::instrument(name = "db.get_table_row_count", skip(pool))]
+pub async fn get_table_row_count(pool: &SqlitePool, table_name: &str) -> Result<u32, Error> {
+    let result: (i64,) = sqlx::query_as(&format!("SELECT COUNT(*) FROM {}", table_name))
+        .fetch_one(pool)
+        .await?;
+
+    Ok(result.0.max(0) as u32)
+}
+
 #[tracing::instrument(name = "db.cleanup", skip(db_path))]
 pub async fn cleanup(db_path: PathBuf) -> Result<(), Error> {
     let metadata = match fs::metadata(&db_path).await {

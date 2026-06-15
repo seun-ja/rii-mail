@@ -9,7 +9,7 @@ use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use crate::{
     config::AppState,
-    db::{get_emails, MailBox, Provider},
+    db::{get_emails, get_table_row_count, MailBox, Provider},
     email_cache::{CompleteEmail, FrontendEmail},
     error::Error,
     imap::{ImapCommand, RefreshSummary},
@@ -19,6 +19,7 @@ use crate::{
 #[serde(rename_all = "camelCase")]
 pub struct FetchEmailsResponse {
     pub emails: Vec<FrontendEmail>,
+    pub total_emails: u32,
 }
 
 #[derive(serde::Serialize)]
@@ -45,7 +46,7 @@ pub async fn fetch_emails(
     let provider = Provider::from(provider);
     let mailbox = MailBox::from(mailbox);
 
-    let emails = get_emails_as_front_end_from_pool(
+    let (emails, total_emails) = get_emails_as_front_end_from_pool(
         provider,
         mailbox,
         min_range as u16,
@@ -54,7 +55,10 @@ pub async fn fetch_emails(
     )
     .await?;
 
-    Ok(FetchEmailsResponse { emails })
+    Ok(FetchEmailsResponse {
+        emails,
+        total_emails,
+    })
 }
 
 #[tauri::command]
@@ -90,7 +94,7 @@ pub async fn refresh_emails_handler(
                 "Fetched latest mailbox state"
             );
 
-            let emails = get_emails_as_front_end_from_pool(
+            let (emails, _) = get_emails_as_front_end_from_pool(
                 provider,
                 mailbox,
                 0,
@@ -118,11 +122,13 @@ pub(crate) async fn get_emails_as_front_end_from_pool(
     min_range: u16,
     max_range: u16,
     sqlite_pool: &SqlitePool,
-) -> Result<Vec<FrontendEmail>, Error> {
+) -> Result<(Vec<FrontendEmail>, u32), Error> {
     let table_name = format!("{}_{}", provider.as_ref(), mailbox.as_ref());
 
     let emails: Vec<CompleteEmail> =
         get_emails(sqlite_pool, &table_name, min_range, max_range).await?;
+
+    let total_count = get_table_row_count(sqlite_pool, &table_name).await?;
 
     let frontend_folder = mailbox.as_ref().to_string();
 
@@ -140,7 +146,7 @@ pub(crate) async fn get_emails_as_front_end_from_pool(
         })
         .collect();
 
-    Ok(frontend)
+    Ok((frontend, total_count))
 }
 
 #[tauri::command]

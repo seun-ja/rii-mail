@@ -26,10 +26,11 @@ export function createSyncController(
   let syncGeneration = 0;
 
   function normalizeFetchPayload(fetched, folder = null) {
-    // TODO: #4 return dynamic figures from backend instead of hardcoding defaults here. Backend should always return totalEmails for correct pagination, but we need to handle cases where it doesn't (e.g. due to older backend versions or errors) - in those cases we can use these conservative defaults to avoid breaking pagination entirely.
+    // Backend returns totalEmails from SELECT COUNT(*) query.
+    // Fallback to 0 only if backend response is malformed.
     const normalizedFolder =
       typeof folder === "string" ? folder.toLowerCase() : "";
-    const defaultTotalEmails = normalizedFolder === "sent" ? 86 : 6200;
+    const defaultTotalEmails = 0;
 
     if (fetched && typeof fetched === "object" && !Array.isArray(fetched)) {
       return {
@@ -152,6 +153,7 @@ export function createSyncController(
       const mailbox = getActiveMailboxLiteral(state);
       const provider = getProviderLiteral(storage);
 
+      // Backend reads from database, parses MIME, and returns emails (no IMAP sync)
       const fetched = await invoke("fetch_emails", {
         minRange,
         maxRange,
@@ -233,6 +235,7 @@ export function createSyncController(
         }
 
         try {
+          // Backend reads from database, parses MIME, and returns emails (no IMAP sync)
           const fetched = await invoke("fetch_emails", {
             minRange: 0,
             maxRange: INITIAL_BATCH_SIZE,
