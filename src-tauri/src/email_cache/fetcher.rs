@@ -45,6 +45,7 @@ impl FetchResult {
 }
 
 const INITIAL_BATCH_SIZE: u32 = 100;
+const FETCH_MESSAGE_ATTRIBUTES: &str = "(UID FLAGS BODY.PEEK[])";
 
 #[tracing::instrument(
     name = "emails.fetch",
@@ -223,7 +224,7 @@ async fn handle_email_population(
     let mut messages_stream = tokio::select! {
         result = session.uid_fetch(
             "1:*",
-            "(UID FLAGS ENVELOPE INTERNALDATE BODY.PEEK[])"
+            FETCH_MESSAGE_ATTRIBUTES
         ) => result?,
 
         _ = cancel_token.cancelled() => {
@@ -276,7 +277,19 @@ async fn handle_email_population(
                 .store(percentage, std::sync::atomic::Ordering::Release);
         }
 
-        let message = message?;
+        let message = match message {
+            Ok(message) => message,
+            Err(err) => {
+                tracing::error!(
+                    error = %err,
+                    mailbox = ?mailbox,
+                    message_index = email_count,
+                    total_emails = mailbox_info.exists,
+                    "Failed to decode IMAP message during initial mailbox sync"
+                );
+                return Err(err.into());
+            }
+        };
 
         if let Some(uid) = message.uid {
             highest_uid = highest_uid.max(uid);
@@ -414,7 +427,7 @@ pub async fn fetch_latest(
     let mut stream = tokio::select! {
         result = session.uid_fetch(
             uid_set,
-            "(UID FLAGS ENVELOPE INTERNALDATE BODY.PEEK[])"
+            FETCH_MESSAGE_ATTRIBUTES
         ) => result?,
 
         _ = cancel_token.cancelled() => {
@@ -426,6 +439,7 @@ pub async fn fetch_latest(
 
     let mut highest_uid = last_uid;
     let mut inserted_count = 0usize;
+    let mut message_count = 0usize;
 
     while let Some(message) = tokio::select! {
         msg = stream.next() => msg,
@@ -439,7 +453,21 @@ pub async fn fetch_latest(
             return Err(Error::ThreadCancel);
         }
     } {
-        let message = message?;
+        message_count += 1;
+
+        let message = match message {
+            Ok(message) => message,
+            Err(err) => {
+                tracing::error!(
+                    error = %err,
+                    mailbox = ?mailbox,
+                    message_index = message_count,
+                    requested_uid_count = new_uids.len(),
+                    "Failed to decode IMAP message during incremental mailbox sync"
+                );
+                return Err(err.into());
+            }
+        };
 
         if let Some(uid) = message.uid {
             highest_uid = highest_uid.max(uid);
