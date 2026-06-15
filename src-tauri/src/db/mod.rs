@@ -3,8 +3,8 @@ mod emails_db;
 use std::{fs, path::PathBuf};
 
 pub use emails_db::{
-    check_email_db_empty, cleanup, get_email_count, get_emails, get_last_uid, get_table_row_count,
-    populate_inbox_folder_count, populate_sent_folder_count, populate_storage, set_last_uid,
+    check_email_db_empty, cleanup, get_emails, get_last_uid, populate_inbox_folder_count,
+    populate_sent_folder_count, populate_storage, set_last_uid,
 };
 
 use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};

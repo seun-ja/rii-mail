@@ -19,6 +19,7 @@ import {
 import {
   getActiveBackendFolderKey,
   getFolderPaginationState,
+  isMailListNearBottom,
   resetFolderPagination,
 } from "./helpers.js";
 import { INITIAL_BATCH_SIZE, NEXT_BATCH_SIZE } from "./constants.js";
@@ -98,6 +99,7 @@ export function initializeMailApp({
       await sync.loadMoreEmails(INITIAL_BATCH_SIZE, {
         reset: true,
       });
+      await loadMoreEmailsIfListEndVisible();
 
       ui.setSyncUiState(false);
     }, listen);
@@ -124,6 +126,41 @@ export function initializeMailApp({
     resetFolderPagination(state, "Sent");
     resetFolderPagination(state, "Trash");
   };
+
+  async function loadMoreEmailsIfListEndVisible(batchSize = NEXT_BATCH_SIZE) {
+    if (state.activeFolder === "starred") {
+      return;
+    }
+
+    const requestedFolderKey = getActiveBackendFolderKey(state);
+    const maxAutoLoads = 10;
+
+    for (let attempt = 0; attempt < maxAutoLoads; attempt += 1) {
+      if (getActiveBackendFolderKey(state) !== requestedFolderKey) {
+        return;
+      }
+
+      const pagination = getFolderPaginationState(state, requestedFolderKey);
+      if (
+        state.isLoadingEmails ||
+        !pagination?.hasMoreEmails ||
+        !isMailListNearBottom(dom.mailListEl)
+      ) {
+        return;
+      }
+
+      const previousOffset = pagination.nextOffset;
+      await sync.loadMoreEmails(batchSize);
+
+      if (
+        getActiveBackendFolderKey(state) !== requestedFolderKey ||
+        getFolderPaginationState(state, requestedFolderKey)?.nextOffset ===
+          previousOffset
+      ) {
+        return;
+      }
+    }
+  }
 
   if (listen) {
     listen("app://logged-out", () => {
@@ -157,12 +194,19 @@ export function initializeMailApp({
       button.classList.add("active");
       renderer.renderList();
 
-      if (state.activeFolder === "INBOX" || state.activeFolder === "Sent") {
-        const folderKey = getActiveBackendFolderKey(state);
-        if (state.cachedByFolder[folderKey].length === 0) {
-          sync.loadMoreEmails(INITIAL_BATCH_SIZE, { reset: true });
-        }
+      if (state.activeFolder !== "INBOX" && state.activeFolder !== "Sent") {
+        return;
       }
+
+      const folderKey = getActiveBackendFolderKey(state);
+      if (state.cachedByFolder[folderKey].length === 0) {
+        void sync
+          .loadMoreEmails(INITIAL_BATCH_SIZE, { reset: true })
+          .then(() => loadMoreEmailsIfListEndVisible());
+        return;
+      }
+
+      void loadMoreEmailsIfListEndVisible();
     });
   });
 
@@ -192,13 +236,8 @@ export function initializeMailApp({
       return;
     }
 
-    const threshold = 40;
-    const reachedBottom =
-      dom.mailListEl.scrollTop + dom.mailListEl.clientHeight >=
-      dom.mailListEl.scrollHeight - threshold;
-
-    if (reachedBottom) {
-      sync.loadMoreEmails(NEXT_BATCH_SIZE);
+    if (isMailListNearBottom(dom.mailListEl)) {
+      void loadMoreEmailsIfListEndVisible();
     }
   });
 

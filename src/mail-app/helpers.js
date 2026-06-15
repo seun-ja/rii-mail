@@ -38,3 +38,14 @@ export function resetFolderPagination(state, folderKey) {
   pagination.lastFetchSignature = null;
   pagination.lastFetchAt = 0;
 }
+
+export function isMailListNearBottom(mailListEl, threshold = 40) {
+  if (!mailListEl) {
+    return false;
+  }
+
+  return (
+    mailListEl.scrollTop + mailListEl.clientHeight >=
+    mailListEl.scrollHeight - threshold
+  );
+}

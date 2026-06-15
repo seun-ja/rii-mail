@@ -5,6 +5,7 @@ import {
   getActiveBackendFolderKey,
   getActiveMailboxLiteral,
   getFolderPaginationState,
+  isMailListNearBottom,
   resetFolderPagination,
 } from "./helpers.js";
 
@@ -54,4 +55,26 @@ test("resetFolderPagination is a no-op for unknown folder", () => {
   const state = { paginationByFolder: {} };
   resetFolderPagination(state, "Unknown");
   assert.deepEqual(state, { paginationByFolder: {} });
+});
+
+test("isMailListNearBottom detects when the scroll threshold is reached", () => {
+  assert.equal(
+    isMailListNearBottom({
+      scrollTop: 560,
+      clientHeight: 400,
+      scrollHeight: 1000,
+    }),
+    true,
+  );
+
+  assert.equal(
+    isMailListNearBottom({
+      scrollTop: 500,
+      clientHeight: 400,
+      scrollHeight: 1000,
+    }),
+    false,
+  );
+
+  assert.equal(isMailListNearBottom(null), false);
 });

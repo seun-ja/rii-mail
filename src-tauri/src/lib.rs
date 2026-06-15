@@ -113,6 +113,7 @@ pub async fn run() {
         .manage(SENT_POPULATE_UPDATE.clone())
         .manage(InitialDbPopulation::new(inbox_intial_email_populated_rx, sent_intial_email_populated_rx))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_sql::Builder::default().build())
         .setup(|app| {
             let app_about = PredefinedMenuItem::about(app, None, None)?;
             let app_quit = PredefinedMenuItem::quit(app, None)?;

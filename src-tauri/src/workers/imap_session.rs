@@ -34,7 +34,7 @@ pub async fn worker(
         let mut imap_client_channel_open = true;
         let mut imap_cmd_channel_open = true;
         let mut providers: HashSet<Provider> = HashSet::new();
-        let mut initial_fetch_completed: HashSet<(Provider, MailBox)> = HashSet::new();
+        let mut initial_fetch_completed: HashSet<Provider> = HashSet::new();
         let mut database_initialized = false;
 
         let mut initialized_client: Option<Client<TlsStream<TcpStream>>> = None;
@@ -171,12 +171,9 @@ pub async fn worker(
                     };
 
                     match cmd {
-                        ImapCommand::FetchEmails(mail_box, provider, cancel_token) => {
-                            let fetch_key = (provider.clone(), mail_box.clone());
-
-                            if initial_fetch_completed.contains(&fetch_key) {
+                        ImapCommand::FetchEmails(provider, cancel_token) => {
+                            if initial_fetch_completed.contains(&provider) {
                                 tracing::info!(
-                                    mailbox = mail_box.as_ref(),
                                     provider = provider.as_ref(),
                                     "Skipping duplicate initial mailbox fetch command"
                                 );
@@ -205,7 +202,6 @@ pub async fn worker(
                                 session.clone(),
                                 Some(session_background.clone()),
                                 pool_ref,
-                                mail_box,
                                 provider.clone(),
                                 cancel_token,
                                 inbox_tx,

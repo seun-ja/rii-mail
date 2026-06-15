@@ -7,11 +7,10 @@ use tokio_util::sync::CancellationToken;
 #[test]
 fn imap_command_fetch_emails_variant_preserves_values() {
     let cancel_token = CancellationToken::new();
-    let cmd = ImapCommand::FetchEmails(MailBox::Inbox, Provider::Gmail, cancel_token);
+    let cmd = ImapCommand::FetchEmails(Provider::Gmail, cancel_token);
 
     match cmd {
-        ImapCommand::FetchEmails(mailbox, provider, _cancel_token) => {
-            assert_eq!(mailbox.as_ref(), "INBOX");
+        ImapCommand::FetchEmails(provider, _cancel_token) => {
             assert_eq!(provider.as_ref(), "gmail");
         }
         _ => panic!("expected fetch emails variant"),

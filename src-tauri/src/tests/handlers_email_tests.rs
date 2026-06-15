@@ -40,13 +40,11 @@ async fn get_emails_as_front_end_from_pool_maps_rows_to_frontend_shape() {
     .await
     .expect("storage should be populated");
 
-    let (rows, total_count) =
-        get_emails_as_front_end_from_pool(Provider::Gmail, MailBox::Inbox, 0, 10, &pool)
-            .await
-            .expect("handler conversion should succeed");
+    let rows = get_emails_as_front_end_from_pool(Provider::Gmail, MailBox::Inbox, 0, 10, &pool)
+        .await
+        .expect("handler conversion should succeed");
 
     assert_eq!(rows.len(), 1);
-    assert_eq!(total_count, 1);
     assert_eq!(rows[0].id, "db-INBOX-0");
     assert_eq!(rows[0].folder, "INBOX");
     assert_eq!(rows[0].subject, "Welcome");

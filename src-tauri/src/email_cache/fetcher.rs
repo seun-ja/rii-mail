@@ -62,7 +62,6 @@ pub async fn fetch_emails(
     session: SharedImapSession,
     background_session: Option<SharedImapSession>,
     pool: &SqlitePool,
-    mailbox: MailBox,
     provider: Provider,
     cancel_token: CancellationToken,
     inbox_intial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
@@ -72,7 +71,7 @@ pub async fn fetch_emails(
         return Err(Error::ThreadCancel);
     }
 
-    let table_name = format!("{}_{}", provider.as_ref(), mailbox.as_ref());
+    let table_name = format!("{}_{}", provider.as_ref(), MailBox::Inbox.as_ref());
 
     if crate::db::check_email_db_empty(pool, &table_name).await? {
         tracing::info!("Emails already fetched");
@@ -82,83 +81,53 @@ pub async fn fetch_emails(
     let inbox_tx = inbox_intial_email_populated_tx.clone();
     let sent_tx = sent_intial_email_populated_tx.clone();
 
-    let background_task = match (&mailbox, background_session) {
-        (MailBox::Inbox, Some(background_session)) => {
-            let pool = pool.clone();
-            let provider = provider.clone();
-            let token = cancel_token.child_token();
+    let background_task = if let Some(background_session) = background_session {
+        let pool = pool.clone();
+        let provider = provider.clone();
+        let token = cancel_token.child_token();
 
-            Some(tokio::spawn(async move {
-                let table_name = format!("{}_{}", provider.as_ref(), MailBox::Sent.as_ref());
+        Some(tokio::spawn(async move {
+            let table_name = format!("{}_{}", provider.as_ref(), MailBox::Sent.as_ref());
 
-                let result = handle_email_population_locked(
-                    background_session,
-                    &pool,
-                    &MailBox::Sent,
-                    table_name,
-                    token,
-                    inbox_intial_email_populated_tx,
-                    sent_intial_email_populated_tx,
-                )
+            let mailbox_info = background_session
+                .lock()
+                .await
+                .select(&MailBox::Sent)
                 .await?;
 
-                populate_sent_folder_count(&pool, provider.as_ref(), result.count() as u32).await?;
+            populate_sent_folder_count(&pool, provider.as_ref(), mailbox_info.exists).await?;
 
-                Ok::<_, Error>(())
-            }))
-        }
+            _ = handle_email_population_locked(
+                background_session,
+                &pool,
+                &MailBox::Sent,
+                table_name,
+                token,
+                inbox_intial_email_populated_tx,
+                sent_intial_email_populated_tx,
+            )
+            .await?;
 
-        (MailBox::Sent, Some(background_session)) => {
-            let pool = pool.clone();
-            let provider = provider.clone();
-            let token = cancel_token.child_token();
-
-            Some(tokio::spawn(async move {
-                let table_name = format!("{}_{}", provider.as_ref(), MailBox::Inbox.as_ref());
-
-                let result = handle_email_population_locked(
-                    background_session,
-                    &pool,
-                    &MailBox::Inbox,
-                    table_name,
-                    token,
-                    inbox_intial_email_populated_tx,
-                    sent_intial_email_populated_tx,
-                )
-                .await?;
-
-                populate_inbox_folder_count(&pool, provider.as_ref(), result.count() as u32)
-                    .await?;
-
-                Ok::<_, Error>(())
-            }))
-        }
-
-        _ => None,
+            Ok::<_, Error>(())
+        }))
+    } else {
+        None
     };
+
+    let mailbox_info = session.lock().await.select(&MailBox::Inbox).await?;
+
+    populate_inbox_folder_count(pool, provider.as_ref(), mailbox_info.exists).await?;
 
     let result = handle_email_population_locked(
         session,
         pool,
-        &mailbox,
+        &MailBox::Inbox,
         table_name,
         cancel_token.clone(),
         inbox_tx,
         sent_tx,
     )
     .await?;
-
-    match mailbox {
-        MailBox::Inbox => {
-            populate_inbox_folder_count(pool, provider.as_ref(), result.count() as u32).await?;
-        }
-
-        MailBox::Sent => {
-            populate_sent_folder_count(pool, provider.as_ref(), result.count() as u32).await?;
-        }
-
-        _ => {}
-    }
 
     if let Some(task) = background_task {
         match task.await {
