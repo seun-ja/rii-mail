@@ -13,13 +13,9 @@ impl AppleKeychainManager {
         AppleKeychainManager(service_name.to_string())
     }
 
-    fn service_name(&self) -> &str {
-        &self.0
-    }
-
     #[cfg(target_os = "macos")]
     pub fn store_password(&self, account: &str, password: &str) -> Result<(), Error> {
-        set_generic_password(self.service_name(), account, password.as_bytes())?;
+        set_generic_password(&self.0, account, password.as_bytes())?;
 
         Ok(())
     }
@@ -33,7 +29,7 @@ impl AppleKeychainManager {
 
     #[cfg(target_os = "macos")]
     pub fn retrieve_password(&self, account: &str) -> Result<String, Error> {
-        let password_bytes = get_generic_password(self.service_name(), account)?;
+        let password_bytes = get_generic_password(&self.0, account)?;
 
         let password = String::from_utf8(password_bytes)?;
 
@@ -49,7 +45,7 @@ impl AppleKeychainManager {
 
     #[cfg(target_os = "macos")]
     pub fn delete_password(&self, account: &str) -> Result<(), Error> {
-        delete_generic_password(self.service_name(), account)?;
+        delete_generic_password(&self.0, account)?;
 
         Ok(())
     }
