@@ -2,6 +2,14 @@
 
 RiiMail is a Tauri 2 desktop app for triaging email with IMAP sync and AI-assisted phishing/spam checks.
 
+## Quick Start
+
+To get started, you will need to configure your local environment:
+
+1. Clone this repository.
+2. Create a `.env` file in the root (see [Environment Variables](#environment-variables) below).
+3. Run the application using `cargo tauri dev`.
+
 ## What It Does
 
 - Connects to an IMAP account (for example Gmail or Yahoo)
@@ -117,15 +125,15 @@ What is covered now:
 ## First-Run Flow
 
 1. `check_app_status` decides where to route the user:
-    - `setup`: no config yet
-    - `login`: config exists, user not authenticated
-    - `signed_in`: user already authenticated
+   - `setup`: no config yet
+   - `login`: config exists, user not authenticated
+   - `signed_in`: user already authenticated
 2. Setup page collects:
-    - IMAP server hostname
-    - IMAP port
+   - IMAP server hostname
+   - IMAP port
 3. Login page collects:
-    - Username (email)
-    - Password
+   - Username (email)
+   - Password
 4. After successful login, app opens the main mailbox window and starts background sync.
 
 ## Startup Routing UX
@@ -160,15 +168,15 @@ What is covered now:
 ## Troubleshooting
 
 - Stuck on setup/login:
-   - Delete app config directory and relaunch to reset onboarding state.
+  - Delete app config directory and relaunch to reset onboarding state.
 - Login fails with auth errors:
-   - Re-check username/password and provider IMAP access settings.
-   - For Gmail/Yahoo, app-specific passwords may be required.
+  - Re-check username/password and provider IMAP access settings.
+  - For Gmail/Yahoo, app-specific passwords may be required.
 - RPC rating fails:
-   - Confirm your RPC service is running and reachable at `RPC_SERVER`.
+  - Confirm your RPC service is running and reachable at `RPC_SERVER`.
 - Inbox appears capped on first visible load:
-   - The frontend intentionally loads paged results first; scroll to load more.
-   - If local mailbox data is partially populated and you need a clean re-bootstrap, clear app data and re-login.
+  - The frontend intentionally loads paged results first; scroll to load more.
+  - If local mailbox data is partially populated and you need a clean re-bootstrap, clear app data and re-login.
 
 ## Development Notes
 
@@ -176,6 +184,10 @@ What is covered now:
 - The app starts in a compact auth window and expands after successful login.
 - Logout clears local state and returns the UI to setup/login flow.
 
+## Contributing & Security
+
+Interested in contributing? Check out our [Contributing Guide](CONTRIBUTING.md) for details on how to get started. For reporting security vulnerabilities, please refer to our [Security Policy](SECURITY.md).
+
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE.md) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
