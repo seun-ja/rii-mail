@@ -20,22 +20,29 @@ pub fn init_subscriber(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let env_filter = EnvFilter::new(log_level);
 
-    let tracer = init_tracer(otlp_collector_endpoint)?;
-
     let fmt_layer = fmt::layer()
         .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
         .pretty();
 
-    let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+    let telemetry_opt_in = std::env::var("TELEMETRY_OPT_IN")
+        .ok()
+        .and_then(|value| value.parse::<bool>().ok())
+        .unwrap_or(false);
 
-    let subscriber = Registry::default()
-        .with(env_filter)
-        .with(fmt_layer)
-        .with(telemetry_layer);
+    let telemetry_layer = telemetry_opt_in
+        .then(|| init_tracer(otlp_collector_endpoint))
+        .transpose()?
+        .map(|tracer| tracing_opentelemetry::layer().with_tracer(tracer));
+
+    let subscriber = Registry::default().with(env_filter).with(fmt_layer);
 
     // If subscriber is already set, this will fail - that's OK, we just ignore it
     // This allows init_subscriber to be called multiple times safely
-    let _ = set_global_default(subscriber);
+    if let Some(telemetry_layer) = telemetry_layer {
+        set_global_default(subscriber.with(telemetry_layer))?;
+    } else {
+        set_global_default(subscriber)?;
+    }
 
     Ok(())
 }

@@ -65,11 +65,18 @@ On macOS, ensure Xcode Command Line Tools are installed.
 
 ## Environment Variables
 
-Create a `.env` file in the repository root:
+Copy the example environment file in the repository root:
+
+```bash
+cp .env.example .env
+```
+
+The example contains:
 
 ```bash
 RPC_SERVER=0.0.0.0:5500
 RUST_LOG=info
+TELEMETRY_OPT_IN=false
 OTLP_COLLECTOR_ENDPOINT=http://0.0.0.0:4317
 ```
 
@@ -77,6 +84,8 @@ Notes:
 
 - `RPC_SERVER` must point to your running RPC agent service.
 - `RUST_LOG` can be raised to `debug` during local troubleshooting.
+- `TELEMETRY_OPT_IN` defaults to `false`. Set it to `true` to export traces to the configured OTLP collector.
+- `OTLP_COLLECTOR_ENDPOINT` is only used when `TELEMETRY_OPT_IN=true`.
 
 ## Run Locally
 
