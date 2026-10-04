@@ -31,6 +31,7 @@ impl AppleKeychainManager {
 
     #[cfg(not(target_os = "macos"))]
     pub fn store_password(&self, _account: &str, _password: &str) -> Result<(), Error> {
+        let _account = Self::canonical_account(_account);
         Err(Error::Keychain(format!(
             "Apple Keychain service '{}' is only supported on macOS",
             self.service_name()
@@ -51,6 +52,7 @@ impl AppleKeychainManager {
 
     #[cfg(not(target_os = "macos"))]
     pub fn retrieve_password(&self, _account: &str) -> Result<String, Error> {
+        let _account = Self::canonical_account(_account);
         Err(Error::Keychain(format!(
             "Apple Keychain service '{}' is only supported on macOS",
             self.service_name()
