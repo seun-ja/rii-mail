@@ -13,7 +13,7 @@ use crate::{
     auth::AppleKeychainManager,
     config::{
         self, init_llm_agent, smtp_transport_client, Account, AppState, Config, ImapClientConfig,
-        InitStatus,
+        InitStatus, StartupStatusCache,
     },
     db,
     error::Error,
@@ -77,6 +77,18 @@ pub async fn config_setup(
 #[tauri::command]
 #[tracing::instrument(name = "command.config.check_status", skip(app))]
 pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error> {
+    // Multiple webview lifecycle events can invoke this command during startup.
+    // Keep the guard for the full initialization so only the first request reads
+    // the Keychain and the others reuse its successful result.
+    let startup_status_cache = app.state::<StartupStatusCache>();
+    let mut startup_status = startup_status_cache.0.lock().await;
+    if let Some(status) = startup_status.as_ref() {
+        tracing::debug!("Returning cached startup status without reading Apple Keychain");
+        return Ok(status.clone());
+    }
+
+    tracing::debug!("Checking startup status and stored Apple Keychain credentials");
+
     let config_dir = app.path().app_config_dir()?;
     let config_path = config_dir.join("config.json");
 
@@ -88,22 +100,19 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
     let app_service_name = app.config().identifier.clone();
     let apple_keychain_manager = AppleKeychainManager::new(&app_service_name);
 
-    let (login_result_tx, login_result_rx) = oneshot::channel::<Result<(), String>>();
+    if config.accounts.is_empty() {
+        ::tracing::warn!("Config accounts field is empty, cannot attempt returning user login");
+        ensure_compact_startup_window(&app)?;
+        return Ok(InitStatus::Login(None));
+    }
 
-    if let Ok(password) = apple_keychain_manager
-        .retrieve_password(&config.accounts.first().cloned().unwrap_or_default())
-    {
+    let (login_result_tx, login_result_rx) = oneshot::channel::<Result<(), String>>();
+    let username = config.accounts.first().cloned().unwrap_or_default();
+
+    if let Ok(password) = apple_keychain_manager.retrieve_password(&username) {
         let imap_client_channel_tx = app.state::<ReturningUserImapClientChannelTx>();
 
         let sqlite_pool = db::db_pool(&config_dir, &config.sqlite_db).await?;
-
-        if config.accounts.is_empty() {
-            ::tracing::warn!("Config accounts field is empty, cannot attempt returning user login");
-            ensure_compact_startup_window(&app)?;
-            return Ok(InitStatus::Login(None));
-        }
-
-        let username = config.accounts.first().cloned().unwrap_or_default();
 
         let credential = Credentials::new(username.clone(), password.clone());
         let smtp_transport_client = smtp_transport_client(&config.smtp_relay_url, credential)?;
@@ -160,8 +169,10 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
         let app_state = app.state::<ArcSwap<AppState>>();
         app_state.store(Arc::new(AppState::Initialized(Arc::new(initialized_state))));
 
-        // Update app state to reflect already authenticated user
-        Ok(InitStatus::SignedIn)
+        // Update app state to reflect already authenticated user.
+        let status = InitStatus::SignedIn;
+        *startup_status = Some(status.clone());
+        Ok(status)
     } else {
         ::tracing::info!("No stored credentials found, user needs to login");
         ensure_compact_startup_window(&app)?;

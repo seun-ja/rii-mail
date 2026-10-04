@@ -16,7 +16,7 @@ use crate::handlers::{
 use crate::imap::ImapCommand;
 use crate::workers::{worker, FetchManager};
 use crate::{
-    config::AppState,
+    config::{AppState, StartupStatusCache},
     handlers::{
         check_app_status, config_setup, fetch_emails, login, logout_with_state, open_main_window,
         rater,
@@ -102,6 +102,7 @@ pub async fn run() {
 
     tauri::Builder::default()
         .manage(ArcSwap::from_pointee(AppState::Fresh))
+        .manage(StartupStatusCache(Mutex::new(None)))
         .manage(ImapClientChannelTx(imap_client_channel_tx))
         .manage(ReturningUserImapClientChannelTx(
             imap_client_returning_user_channel_tx,
