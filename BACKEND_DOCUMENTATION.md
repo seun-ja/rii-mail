@@ -1043,6 +1043,9 @@ These are important if you want the docs to reflect reality rather than intent.
 
 - Apple Keychain integration is the active secure-storage mechanism
 - the code explicitly documents non-macOS support as not implemented in the same way
+- Keychain item access is authorized by macOS. The prompt choice matters: **Allow** grants the current request, while **Always Allow** records approval for the current app identity.
+- Unsigned development builds may prompt more often than a packaged, signed app because macOS can treat their executable/signing identity differently. Validate this behavior on the final signed build; do not assume it will be identical to development.
+- The generic-password account identifier is canonicalized to ASCII lowercase before reads, writes, and deletes. This prevents casing-only duplicates such as `USER@example.com` and `user@example.com`; stale existing entries should be removed manually in Keychain Access.
 
 ---
 

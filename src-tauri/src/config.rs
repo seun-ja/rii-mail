@@ -126,6 +126,10 @@ pub enum AppState {
     Fresh,
 }
 
+/// Coordinates startup status requests so the Keychain is read at most once
+/// while the app is determining whether a returning user is signed in.
+pub struct StartupStatusCache(pub tokio::sync::Mutex<Option<InitStatus>>);
+
 impl AppState {
     pub fn state(&self) -> &InitializedState {
         match self {

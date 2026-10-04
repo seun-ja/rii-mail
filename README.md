@@ -186,6 +186,11 @@ What is covered now:
 - Inbox appears capped on first visible load:
   - The frontend intentionally loads paged results first; scroll to load more.
   - If local mailbox data is partially populated and you need a clean re-bootstrap, clear app data and re-login.
+- macOS asks for Keychain access when restarting:
+  - RiiMail stores the email password as a generic Apple Keychain item. macOS controls authorization to read that item; see [Apple’s Keychain item documentation](https://developer.apple.com/documentation/security/keychain-items.md).
+  - Choose **Always Allow** if you want macOS to remember access for the current app identity. Choosing **Allow** authorizes only the current access attempt, so a later restart can prompt again.
+  - Development builds can be more likely to prompt because their executable/signing identity may differ from a packaged, signed release. This is an observed macOS behavior, not a guarantee that release builds will never prompt; verify the packaged build separately.
+  - The Keychain account identifier is normalized to lowercase. If entries already exist for the same email with different casing, quit RiiMail and delete the stale casing variant in Keychain Access, then sign in again.
 
 ## Development Notes
 

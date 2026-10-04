@@ -1,6 +1,11 @@
 use std::sync::Arc;
 
-use crate::{config::AppState, db, imap::ImapCommand, workers::SharedFetchManager};
+use crate::{
+    config::{AppState, StartupStatusCache},
+    db,
+    imap::ImapCommand,
+    workers::SharedFetchManager,
+};
 use arc_swap::ArcSwap;
 use tauri::Manager as _;
 use tokio::{
@@ -10,6 +15,9 @@ use tokio::{
 
 #[tracing::instrument(name = "command.logout.menu", skip(app))]
 pub async fn logout_with_state(app: tauri::AppHandle) {
+    // A later visit to the login page must not reuse the prior signed-in result.
+    *app.state::<StartupStatusCache>().0.lock().await = None;
+
     let imap_cmd_channel_tx = app.state::<UnboundedSender<ImapCommand>>();
     let _ = imap_cmd_channel_tx
         .send(ImapCommand::Logout)
