@@ -4,8 +4,6 @@ use crate::error::Error;
 
 mod call;
 
-pub use call::caller;
-
 #[tarpc::service]
 pub trait AgentWorker {
     async fn message(user_message: Message) -> Result<String, ApiError>;

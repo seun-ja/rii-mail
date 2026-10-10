@@ -12,12 +12,13 @@ use tokio::{
 use crate::{
     auth::AppleKeychainManager,
     config::{
-        self, init_llm_agent, smtp_transport_client, Account, AppState, Config, ImapClientConfig,
-        InitStatus, StartupStatusCache,
+        self, smtp_transport_client, Account, AppState, Config, ImapClientConfig, InitStatus,
+        StartupStatusCache,
     },
     db,
     error::Error,
     handlers::provider_from_imap_server,
+    llm::{init_llm_agent, initialize_local_inference},
     ReturningUserImapClientChannelTx,
 };
 
@@ -127,6 +128,7 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
         };
 
         imap_client_channel_tx
+            .inner()
             .0
             .send(imap_client_config)
             .map_err(|e| Error::ReturningUserImapConfigChannelSend(e.to_string()))?;
@@ -147,7 +149,7 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
         }
 
         let initialized_state = config::InitializedState {
-            rpc_llm_client: config::init_rpc(&config.rpc_server_url).await?,
+            local_inference: initialize_local_inference().await?,
             sqlite_pool,
             apple_keychain_manager,
             smtp_transport_client,

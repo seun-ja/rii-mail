@@ -1,4 +1,4 @@
-use crate::rpc_llm::{Email, Label, SpamRating};
+use crate::llm::{Email, Label, SpamRating};
 
 #[test]
 fn email_request_display_formats_fields() {

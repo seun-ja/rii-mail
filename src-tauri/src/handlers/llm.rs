@@ -4,7 +4,7 @@ use tauri::Manager as _;
 use crate::{
     config::AppState,
     error::Error,
-    rpc_llm::{caller, Email, SpamRating},
+    llm::{Email, SpamRating},
 };
 
 #[tauri::command]
@@ -25,9 +25,10 @@ pub async fn rater(
         body,
     };
 
-    let rating = caller(&initialized.rpc_llm_client.clone(), email).await?;
+    let message = serde_json::to_string(&email).map_err(|e| Error::Other(e.to_string()))?;
 
-    Ok(rating)
+    let rating = initialized.local_inference.agent().chat(&message).await?;
+    return rating.try_into();
 }
 
 #[tauri::command]
