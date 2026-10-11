@@ -25,8 +25,12 @@ use crate::{
 pub(crate) fn provider_from_imap_server(imap_server: &str) -> Provider {
     if imap_server.to_ascii_lowercase().contains("yahoo") {
         db::Provider::Yahoo
-    } else {
+    } else if imap_server.to_ascii_lowercase().contains("gmail") {
         db::Provider::Gmail
+    } else if imap_server.to_ascii_lowercase().contains("outlook") {
+        db::Provider::Outlook
+    } else {
+        db::Provider::CustomImapServer
     }
 }
 

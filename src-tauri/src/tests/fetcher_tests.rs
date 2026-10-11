@@ -1,4 +1,5 @@
-use crate::email_cache::{uid_vec_to_set, FetchResult};
+use crate::db::MailBox;
+use crate::email_cache::{mailbox_name_matches, uid_vec_to_set, FetchResult};
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -48,6 +49,34 @@ fn uid_vec_to_set_contains_all_values() {
 fn uid_vec_to_set_empty_hash_set_renders_empty_string() {
     let uids = HashSet::new();
     assert_eq!(uid_vec_to_set(&uids), "");
+}
+
+#[test]
+fn mailbox_name_matches_namespace_qualified_sent_folder() {
+    assert!(mailbox_name_matches(
+        &MailBox::Sent,
+        "INBOX.Sent",
+        Some(".")
+    ));
+    assert!(mailbox_name_matches(
+        &MailBox::Sent,
+        "INBOX/SENT",
+        Some("/")
+    ));
+}
+
+#[test]
+fn mailbox_name_does_not_match_unrelated_namespace_folder() {
+    assert!(!mailbox_name_matches(
+        &MailBox::Sent,
+        "INBOX.Sent Items",
+        Some(".")
+    ));
+    assert!(!mailbox_name_matches(
+        &MailBox::Sent,
+        "INBOX.Drafts",
+        Some(".")
+    ));
 }
 
 /// PROOF OF PARALLEL EXECUTION: This test demonstrates that inbox and sent
@@ -139,8 +168,6 @@ async fn inbox_and_sent_populate_concurrently_when_fetching_inbox() {
 fn background_task_not_spawned_when_fetching_sent_directly() {
     // This is logic from fetch_emails line 66:
     // let background_task = if !matches!(mailbox, MailBox::Sent) { ... }
-
-    use crate::db::MailBox;
 
     let is_inbox = !matches!(MailBox::Inbox, MailBox::Sent);
     let is_sent = !matches!(MailBox::Sent, MailBox::Sent);

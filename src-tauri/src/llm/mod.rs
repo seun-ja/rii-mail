@@ -95,6 +95,7 @@ pub(crate) fn resolve_local_inference_paths(
     Ok((model_path, script_path))
 }
 
+#[tracing::instrument(name = "llm.local.initialize", skip_all, err)]
 pub async fn initialize_local_inference() -> Result<Agent<Email>, Error> {
     let project_root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -119,6 +120,7 @@ pub async fn initialize_local_inference() -> Result<Agent<Email>, Error> {
     Ok(agent)
 }
 
+#[tracing::instrument(name = "llm.agent.initialize", skip_all, err)]
 pub fn init_llm_agent<T: Tool>(
     provider: Providers,
     model: &str,

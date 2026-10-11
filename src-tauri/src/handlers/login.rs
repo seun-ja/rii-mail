@@ -25,7 +25,7 @@ use crate::{
 /// Login command - used when config exists but user needs to authenticate
 /// Only requires username and password
 #[tauri::command]
-#[tracing::instrument(name = "command.user.login", skip(app, password))]
+#[tracing::instrument(name = "command.user.login", skip_all, err)]
 pub async fn login(app: tauri::AppHandle, username: String, password: String) -> Result<(), Error> {
     *LOGGING_IN.lock().await = true;
 
@@ -119,6 +119,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
     Ok(())
 }
 
+#[tracing::instrument(name = "app.initialize", skip_all, err)]
 async fn handle_initialization(
     config: Config,
     config_dir: PathBuf,

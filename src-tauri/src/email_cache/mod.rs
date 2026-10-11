@@ -12,7 +12,7 @@ mod fetcher;
 
 pub use fetcher::{fetch_emails, fetch_latest};
 #[cfg(test)]
-pub(crate) use fetcher::{uid_vec_to_set, FetchResult};
+pub(crate) use fetcher::{mailbox_name_matches, uid_vec_to_set, FetchResult};
 use sqlx::prelude::FromRow;
 
 pub type SharedImapSession = Arc<Mutex<Session<TlsStream<TcpStream>>>>;

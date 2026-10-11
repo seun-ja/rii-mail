@@ -22,6 +22,7 @@ impl AppleKeychainManager {
     }
 
     #[cfg(target_os = "macos")]
+    #[tracing::instrument(name = "keychain.store", skip_all, err)]
     pub fn store_password(&self, account: &str, password: &str) -> Result<(), Error> {
         let account = Self::canonical_account(account);
         set_generic_password(self.service_name(), &account, password.as_bytes())?;
@@ -30,6 +31,7 @@ impl AppleKeychainManager {
     }
 
     #[cfg(not(target_os = "macos"))]
+    #[tracing::instrument(name = "keychain.store", skip_all, err)]
     pub fn store_password(&self, _account: &str, _password: &str) -> Result<(), Error> {
         let _account = Self::canonical_account(_account);
         Err(Error::Keychain(format!(
@@ -39,6 +41,7 @@ impl AppleKeychainManager {
     }
 
     #[cfg(target_os = "macos")]
+    #[tracing::instrument(name = "keychain.retrieve", skip_all, err)]
     pub fn retrieve_password(&self, account: &str) -> Result<String, Error> {
         let account = Self::canonical_account(account);
         tracing::debug!("Requesting stored password from Apple Keychain");
@@ -51,6 +54,7 @@ impl AppleKeychainManager {
     }
 
     #[cfg(not(target_os = "macos"))]
+    #[tracing::instrument(name = "keychain.retrieve", skip_all, err)]
     pub fn retrieve_password(&self, _account: &str) -> Result<String, Error> {
         let _account = Self::canonical_account(_account);
         Err(Error::Keychain(format!(
@@ -60,6 +64,7 @@ impl AppleKeychainManager {
     }
 
     #[cfg(target_os = "macos")]
+    #[tracing::instrument(name = "keychain.delete", skip_all, err)]
     pub fn delete_password(&self, account: &str) -> Result<(), Error> {
         let account = Self::canonical_account(account);
         delete_generic_password(self.service_name(), &account)?;
@@ -68,6 +73,7 @@ impl AppleKeychainManager {
     }
 
     #[cfg(not(target_os = "macos"))]
+    #[tracing::instrument(name = "keychain.delete", skip_all, err)]
     pub fn delete_password(&self, _account: &str) -> Result<(), Error> {
         Err(Error::Keychain(format!(
             "Apple Keychain service '{}' is only supported on macOS",

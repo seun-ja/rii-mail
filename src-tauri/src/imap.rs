@@ -24,6 +24,12 @@ pub enum ImapCommand {
     },
 }
 
+#[tracing::instrument(
+    name = "imap.connect",
+    skip_all,
+    fields(imap.host = imap_server_url, imap.port = imap_port),
+    err
+)]
 pub async fn init_imap_client(
     imap_server_url: &str,
     imap_port: u16,

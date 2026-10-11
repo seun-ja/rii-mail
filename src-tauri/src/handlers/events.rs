@@ -5,6 +5,7 @@ use crate::error::Error;
 use crate::{InboxPopulateUpdateState, InitialDbPopulation, SentPopulateUpdateState};
 
 #[tauri::command]
+#[tracing::instrument(name = "command.email.inbox_population", skip_all, err)]
 pub async fn inbox_email_populated(
     app: AppHandle,
     inbox_progress_state: tauri::State<'_, InboxPopulateUpdateState>,
@@ -31,6 +32,7 @@ pub async fn inbox_email_populated(
 }
 
 #[tauri::command]
+#[tracing::instrument(name = "command.email.sent_population", skip_all, err)]
 pub async fn sent_email_populated(
     app: AppHandle,
     sent_progress_state: tauri::State<'_, SentPopulateUpdateState>,
@@ -57,6 +59,7 @@ pub async fn sent_email_populated(
 }
 
 #[tauri::command]
+#[tracing::instrument(name = "command.email.inbox_initial_population", skip_all, err)]
 pub async fn inbox_intial_email_populated(
     app: AppHandle,
     state: State<'_, InitialDbPopulation>,
@@ -76,6 +79,7 @@ pub async fn inbox_intial_email_populated(
 }
 
 #[tauri::command]
+#[tracing::instrument(name = "command.email.sent_initial_population", skip_all, err)]
 pub async fn sent_intial_email_populated(
     app: AppHandle,
     state: State<'_, InitialDbPopulation>,

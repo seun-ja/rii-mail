@@ -2,7 +2,6 @@ use lettre::address::AddressError;
 use pyo3::PyErr;
 use serde::Serialize;
 use tokio::sync::{mpsc::error::SendError, oneshot::error::RecvError};
-use tracing::{error, warn};
 
 use crate::{
     config::{ImapClientConfig, InitializedState},
@@ -99,44 +98,10 @@ impl Serialize for Error {
 
         use serde::ser::SerializeStruct;
 
-        self.log_error();
-
         let mut state = serializer.serialize_struct("Error", 2)?;
         state.serialize_field("kind", kind)?;
         state.serialize_field("message", &message)?;
         state.end()
-    }
-}
-
-impl Error {
-    /// Log the error using tracing at error level, including its source chain.
-    pub fn log_error(&self) {
-        match self {
-            Error::Serialization(_)
-            | Error::Io(_)
-            | Error::Imap(_)
-            | Error::Tauri(_)
-            | Error::StateChannelSend(_)
-            | Error::ImapConfigChannelSend(_)
-            | Error::ReturningUserImapConfigChannelSend(_)
-            | Error::ImapCommandChannelSend(_)
-            | Error::Sqlx(_)
-            | Error::Tls(_)
-            | Error::LocalInference(_)
-            | Error::Keychain(_)
-            | Error::OneShotRecv(_)
-            | Error::ByteConversion(_)
-            | Error::SmtpTransportRelay(_)
-            | Error::SendEmail(_)
-            | Error::AddressParse(_)
-            | Error::ThreadCancel
-            | Error::Authentication(_) => {
-                error!(error = ?self, "Error occurred: {}", self);
-            }
-            Error::NotFound | Error::Other(_) | Error::Llm(_) => {
-                warn!(error = ?self, "Error occurred: {}", self);
-            }
-        }
     }
 }
 
