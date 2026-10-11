@@ -12,9 +12,14 @@
       {
         "title": "RiiMail",
         "url": "login.html",
-        "width": 500,
-        "height": 700,
+        "width": 600,
+        "height": 640,
+        "minWidth": 600,
+        "minHeight": 640,
+        "maxWidth": 600,
+        "maxHeight": 640,
         "resizable": false,
+        "maximizable": false,
         "decorations": true,
         "alwaysOnTop": false
       }

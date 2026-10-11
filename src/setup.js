@@ -35,11 +35,15 @@ window.addEventListener("DOMContentLoaded", () => {
   const imapServerInput = document.querySelector("#selected-imap-server-input");
   const imapPortInput = document.querySelector("#selected-imap-port-input");
   const setupButton = document.querySelector(".setup-button");
+  const setupButtonLabel = setupButton?.querySelector("span");
+  const customFieldsEl = document.querySelector("#custom-imap-fields");
+  const customServerInput = document.querySelector("#custom-imap-server");
+  const customPortInput = document.querySelector("#custom-imap-port");
   const setupContentEl = document.querySelector("#setup-content");
   const setupLoadingEl = document.querySelector("#setup-loading");
   const setupLoadingTextEl = document.querySelector("#setup-loading-text");
   const providerOptions = Array.from(
-    document.querySelectorAll(".provider-item"),
+    document.querySelectorAll("button.provider-item"),
   );
   const setupLoadingSpinnerEl = document.querySelector(
     "#setup-loading-spinner",
@@ -52,6 +56,10 @@ window.addEventListener("DOMContentLoaded", () => {
     !imapServerInput ||
     !imapPortInput ||
     !setupButton ||
+    !setupButtonLabel ||
+    !customFieldsEl ||
+    !customServerInput ||
+    !customPortInput ||
     !setupContentEl ||
     !setupLoadingEl ||
     !setupLoadingTextEl ||
@@ -80,20 +88,41 @@ window.addEventListener("DOMContentLoaded", () => {
       const isSelected = option === providerOption;
       option.classList.toggle("active", isSelected);
       option.setAttribute("aria-checked", isSelected ? "true" : "false");
+
+      if (option.dataset.provider === "custom") {
+        option.setAttribute(
+          "aria-expanded",
+          isSelected ? "true" : "false",
+        );
+      }
     });
 
-    const nameElement = providerOption.querySelector(".custom-server-text");
+    const nameElement = providerOption.querySelector(".provider-name");
     const providerName =
       providerOption.dataset.providerName ||
       (nameElement ? nameElement.textContent.trim() : "Email");
+    const provider = providerOption.dataset.provider || "";
+    const isCustomProvider = provider === "custom";
 
-    // Update hidden inputs for backend submission
-    providerInput.value = providerOption.dataset.provider || "";
-    imapServerInput.value = providerOption.dataset.imapServer || "";
-    imapPortInput.value = providerOption.dataset.imapPort || "";
+    customFieldsEl.classList.toggle("hidden", !isCustomProvider);
+    customFieldsEl.setAttribute(
+      "aria-hidden",
+      isCustomProvider ? "false" : "true",
+    );
+    customServerInput.required = isCustomProvider;
+    customPortInput.required = isCustomProvider;
 
-    // Update button text dynamically based on the extracted name
-    setupButton.textContent = `Continue with ${providerName}`;
+    // Update hidden inputs for backend submission.
+    providerInput.value = provider;
+    imapServerInput.value = isCustomProvider
+      ? customServerInput.value.trim()
+      : providerOption.dataset.imapServer || "";
+    imapPortInput.value = isCustomProvider
+      ? customPortInput.value.trim()
+      : providerOption.dataset.imapPort || "";
+
+    setupMsgEl.textContent = "";
+    setupButtonLabel.textContent = `Continue with ${providerName}`;
   };
 
   // Attach click listeners to all options
@@ -102,6 +131,19 @@ window.addEventListener("DOMContentLoaded", () => {
       setSelectedProvider(providerOption);
     });
   });
+
+  const syncCustomFields = () => {
+    if (providerInput.value !== "custom") {
+      return;
+    }
+
+    imapServerInput.value = customServerInput.value.trim();
+    imapPortInput.value = customPortInput.value.trim();
+    setupMsgEl.textContent = "";
+  };
+
+  customServerInput.addEventListener("input", syncCustomFields);
+  customPortInput.addEventListener("input", syncCustomFields);
 
   // Set default active option on page load
   const defaultOption =
@@ -123,8 +165,13 @@ window.addEventListener("DOMContentLoaded", () => {
 
     const imapPort = Number.parseInt(imapPortValue, 10);
 
-    if (Number.isNaN(imapPort)) {
-      setupMsgEl.textContent = "IMAP port must be a valid number.";
+    if (!imapServer) {
+      setupMsgEl.textContent = "Enter the IMAP server address.";
+      return;
+    }
+
+    if (Number.isNaN(imapPort) || imapPort < 1 || imapPort > 65535) {
+      setupMsgEl.textContent = "IMAP port must be between 1 and 65535.";
       return;
     }
 

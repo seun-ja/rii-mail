@@ -99,6 +99,8 @@ test("initLoginPage reveals login when status is login and validates empty crede
   const loginMsgEl = createElement();
   const usernameInput = createElement();
   const passwordInput = createElement();
+  passwordInput.type = "password";
+  const passwordToggle = createElement();
   const loginContentEl = createElement();
   const initLoadingEl = createElement();
   const initLoadingTextEl = createElement();
@@ -108,6 +110,7 @@ test("initLoginPage reveals login when status is login and validates empty crede
     "#login-msg": loginMsgEl,
     "#username-input": usernameInput,
     "#password-input": passwordInput,
+    "#password-toggle": passwordToggle,
     "#login-content": loginContentEl,
     "#init-loading": initLoadingEl,
     "#init-loading-text": initLoadingTextEl,
@@ -130,6 +133,16 @@ test("initLoginPage reveals login when status is login and validates empty crede
   assert.deepEqual(initResult, { ready: true, redirected: false });
   assert.equal(loginContentEl.classList.contains("hidden"), false);
   assert.equal(initLoadingEl.classList.contains("hidden"), true);
+
+  await passwordToggle.trigger("click");
+  assert.equal(passwordInput.type, "text");
+  assert.equal(passwordToggle["attr_aria-pressed"], "true");
+  assert.equal(passwordToggle["attr_aria-label"], "Hide password");
+
+  await passwordToggle.trigger("click");
+  assert.equal(passwordInput.type, "password");
+  assert.equal(passwordToggle["attr_aria-pressed"], "false");
+  assert.equal(passwordToggle["attr_aria-label"], "Show password");
 
   await loginForm.trigger("submit", {
     preventDefault() {},
