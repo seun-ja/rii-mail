@@ -186,6 +186,7 @@ fn ensure_expanded_startup_window(app: &tauri::AppHandle) -> Result<(), Error> {
         let expanded_min_size = Size::Logical(LogicalSize::new(900.0, 620.0));
 
         window.set_resizable(true)?;
+        window.set_maximizable(true)?;
         window.set_max_size::<Size>(None)?;
         window.set_min_size(Some(expanded_min_size))?;
         window.set_size(expanded_size)?;
@@ -197,9 +198,10 @@ fn ensure_expanded_startup_window(app: &tauri::AppHandle) -> Result<(), Error> {
 
 fn ensure_compact_startup_window(app: &tauri::AppHandle) -> Result<(), Error> {
     if let Some(window) = app.get_webview_window("main") {
-        let compact_size = Size::Logical(LogicalSize::new(500.0, 700.0));
+        let compact_size = Size::Logical(LogicalSize::new(600.0, 640.0));
 
         window.set_resizable(false)?;
+        window.set_maximizable(false)?;
         window.set_max_size::<Size>(Some(compact_size))?;
         window.set_min_size(Some(compact_size))?;
         window.set_size(compact_size)?;
@@ -219,6 +221,7 @@ pub async fn open_main_window(current_window: tauri::WebviewWindow) -> Result<()
 
     // Reuse the current auth window for post-login to avoid close/create race conditions.
     current_window.set_resizable(true)?;
+    current_window.set_maximizable(true)?;
     current_window.set_max_size::<Size>(None)?;
     current_window.set_min_size(Some(expanded_min_size))?;
     current_window.set_size(expanded_size)?;

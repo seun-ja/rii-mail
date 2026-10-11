@@ -51,13 +51,60 @@
 
                         <div class="form-group">
                             <label for="password-input">Password</label>
-                            <input
-                                id="password-input"
-                                name="password"
-                                type="password"
-                                placeholder="Enter your password"
-                                required
-                            />
+                            <div class="password-input-wrap">
+                                <input
+                                    id="password-input"
+                                    name="password"
+                                    type="password"
+                                    autocomplete="current-password"
+                                    placeholder="Enter your password"
+                                    required
+                                />
+                                <button
+                                    id="password-toggle"
+                                    class="password-toggle"
+                                    type="button"
+                                    aria-label="Show password"
+                                    aria-pressed="false"
+                                    title="Show password"
+                                >
+                                    <svg
+                                        class="password-show-icon"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        aria-hidden="true"
+                                    >
+                                        <path
+                                            d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"
+                                            stroke="currentColor"
+                                            stroke-width="1.8"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                        />
+                                        <circle
+                                            cx="12"
+                                            cy="12"
+                                            r="2.5"
+                                            stroke="currentColor"
+                                            stroke-width="1.8"
+                                        />
+                                    </svg>
+                                    <svg
+                                        class="password-hide-icon"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        aria-hidden="true"
+                                    >
+                                        <path
+                                            d="M4 4 20 20M10.6 6.15A8.3 8.3 0 0 1 12 6c6 0 9.5 6 9.5 6a15.7 15.7 0 0 1-2.15 2.8M7.1 7.1C4.15 8.75 2.5 12 2.5 12s3.5 6 9.5 6a8.5 8.5 0 0 0 3.05-.55M9.9 9.9a3 3 0 0 0 4.2 4.2"
+                                            stroke="currentColor"
+                                            stroke-width="1.8"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                        />
+                                    </svg>
+                                </button>
+                            </div>
                             <small class="form-hint"
                                 >Your account password</small
                             >

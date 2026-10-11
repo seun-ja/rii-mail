@@ -166,6 +166,8 @@ pub async fn run() {
                     let expanded_min_size = Size::Logical(LogicalSize::new(900.0, 620.0));
 
                     window.set_resizable(true)?;
+                    window.set_maximizable(true)?;
+                    window.set_max_size::<Size>(None)?;
                     window.set_min_size(Some(expanded_min_size))?;
                     window.set_size(expanded_size)?;
                 }
@@ -190,14 +192,14 @@ pub async fn run() {
                     .or_else(|| app_handle.get_webview_window("main"));
 
                 if let Some(window) = target_window {
-                    let compact_size = Size::Logical(LogicalSize::new(500.0, 700.0));
-
-                    if let Err(err) = window.set_max_size::<Size>(None) {
-                        ::tracing::warn!(error = ?err, "Failed to reset compact window max size");
-                    }
+                    let compact_size = Size::Logical(LogicalSize::new(600.0, 640.0));
 
                     if let Err(err) = window.set_min_size(Some(compact_size)) {
                         ::tracing::warn!(error = ?err, "Failed to set compact window min size");
+                    }
+
+                    if let Err(err) = window.set_max_size(Some(compact_size)) {
+                        ::tracing::warn!(error = ?err, "Failed to set compact window max size");
                     }
 
                     if let Err(err) = window.set_size(compact_size) {
@@ -206,6 +208,10 @@ pub async fn run() {
 
                     if let Err(err) = window.set_resizable(false) {
                         ::tracing::warn!(error = ?err, "Failed to set compact window resizable state");
+                    }
+
+                    if let Err(err) = window.set_maximizable(false) {
+                        ::tracing::warn!(error = ?err, "Failed to set compact window maximizable state");
                     }
 
                     if let Err(err) = window.eval("window.location.replace('/setup.html')") {

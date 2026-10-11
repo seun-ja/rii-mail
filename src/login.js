@@ -61,6 +61,7 @@ export async function initLoginPage({
   const loginMsgEl = doc.querySelector("#login-msg");
   const usernameInput = doc.querySelector("#username-input");
   const passwordInput = doc.querySelector("#password-input");
+  const passwordToggle = doc.querySelector("#password-toggle");
   const loginContentEl = doc.querySelector("#login-content");
   const initLoadingEl = doc.querySelector("#init-loading");
   const initLoadingTextEl = doc.querySelector("#init-loading-text");
@@ -76,6 +77,19 @@ export async function initLoginPage({
   ) {
     return { ready: false, redirected: false };
   }
+
+  passwordToggle?.addEventListener("click", () => {
+    const willShowPassword = passwordInput.type === "password";
+    const actionLabel = willShowPassword ? "Hide password" : "Show password";
+
+    passwordInput.type = willShowPassword ? "text" : "password";
+    passwordToggle.setAttribute(
+      "aria-pressed",
+      willShowPassword ? "true" : "false",
+    );
+    passwordToggle.setAttribute("aria-label", actionLabel);
+    passwordToggle.setAttribute("title", actionLabel);
+  });
 
   if (!invokeFn) {
     setLoadingState(false, loginContentEl, initLoadingEl, initLoadingTextEl);

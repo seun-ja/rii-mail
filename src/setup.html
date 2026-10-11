@@ -34,92 +34,188 @@
                     aria-hidden="false"
                 >
                     <div class="setup-header">
-                        <img
-                            class="setup-brand-img"
-                            src="/assets/riiemail-logo.png"
-                            alt="RiiEmail"
-                        />
+                        <div class="setup-brand">
+                            <img
+                                class="setup-brand-img"
+                                src="/assets/mail.png"
+                                alt="RiiEmail"
+                            />
+                        </div>
 
+                        <p class="setup-step">Account setup · Step 1 of 2</p>
                         <h1>Connect your inbox</h1>
 
                         <p class="setup-subtitle">
-                            Choose an email provider to get started.
+                            Choose your email provider. You’ll sign in securely
+                            next.
                         </p>
                     </div>
 
                     <form id="setup-form" class="setup-form">
-                        <div class="provider-list">
-                            <button
-                                type="button"
-                                class="provider-item active"
-                                data-provider="yahoo"
-                                data-provider-name="Yahoo"
-                                data-imap-server="imap.mail.yahoo.com"
-                                data-imap-port="993"
-                            >
-                                <div class="provider-left">
-                                    <img
-                                        class="provider-logo"
-                                        src="/assets/yahoo.png"
-                                        alt="Yahoo Mail"
-                                    />
-                                    <span class="custom-server-text">
-                                        Yahoo Mail
+                        <fieldset class="provider-fieldset">
+                            <legend>Select your email provider</legend>
+
+                            <div class="provider-list" role="radiogroup">
+                                <button
+                                    type="button"
+                                    class="provider-item active"
+                                    role="radio"
+                                    aria-checked="true"
+                                    data-provider="yahoo"
+                                    data-provider-name="Yahoo"
+                                    data-imap-server="imap.mail.yahoo.com"
+                                    data-imap-port="993"
+                                >
+                                    <span class="provider-left">
+                                        <span class="provider-icon">
+                                            <img
+                                                class="provider-logo"
+                                                src="/assets/yahoo.png"
+                                                alt=""
+                                            />
+                                        </span>
+                                        <span class="provider-copy">
+                                            <span class="provider-name">
+                                                Yahoo Mail
+                                            </span>
+                                            <span class="provider-description">
+                                                Connect your Yahoo inbox
+                                            </span>
+                                        </span>
                                     </span>
-                                </div>
 
-                                <div class="provider-right">
-                                    <div class="selected-dot"></div>
-                                </div>
-                            </button>
-
-                            <button
-                                type="button"
-                                class="provider-item"
-                                data-provider="custom"
-                            >
-                                <div class="provider-left">
-                                    <span class="custom-server-text">
-                                        Custom IMAP Server
-                                    </span>
-                                </div>
-                            </button>
-
-                            <div class="provider-item disabled">
-                                <div class="provider-left">
-                                    <img
-                                        class="provider-logo"
-                                        src="/assets/outlook_small_64.png"
-                                        alt="Outlook"
-                                    />
                                     <span
-                                        class="custom-server-text"
-                                        style="color: inherit"
-                                    >
-                                        Outlook
+                                        class="selected-dot"
+                                        aria-hidden="true"
+                                    ></span>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    class="provider-item"
+                                    role="radio"
+                                    aria-checked="false"
+                                    aria-controls="custom-imap-fields"
+                                    aria-expanded="false"
+                                    data-provider="custom"
+                                >
+                                    <span class="provider-left">
+                                        <span
+                                            class="provider-icon provider-icon-custom"
+                                            aria-hidden="true"
+                                        >
+                                            <svg
+                                                viewBox="0 0 24 24"
+                                                fill="none"
+                                            >
+                                                <path
+                                                    d="M4 7.5 12 13l8-5.5M5.5 18h13A1.5 1.5 0 0 0 20 16.5v-9A1.5 1.5 0 0 0 18.5 6h-13A1.5 1.5 0 0 0 4 7.5v9A1.5 1.5 0 0 0 5.5 18Z"
+                                                    stroke="currentColor"
+                                                    stroke-width="1.7"
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                />
+                                            </svg>
+                                        </span>
+                                        <span class="provider-copy">
+                                            <span class="provider-name">
+                                                Custom IMAP server
+                                            </span>
+                                            <span class="provider-description">
+                                                Use another email provider
+                                            </span>
+                                        </span>
                                     </span>
+
+                                    <span
+                                        class="selected-dot"
+                                        aria-hidden="true"
+                                    ></span>
+                                </button>
+
+                                <div
+                                    class="provider-item disabled"
+                                    aria-disabled="true"
+                                >
+                                    <span class="provider-left">
+                                        <span class="provider-icon">
+                                            <img
+                                                class="provider-logo"
+                                                src="/assets/outlook_small_64.png"
+                                                alt=""
+                                            />
+                                        </span>
+                                        <span class="provider-copy">
+                                            <span class="provider-name">
+                                                Outlook
+                                            </span>
+                                            <span class="provider-description">
+                                                Microsoft email accounts
+                                            </span>
+                                        </span>
+                                    </span>
+
+                                    <span class="coming-soon">Soon</span>
                                 </div>
 
-                                <span class="coming-soon">Coming Soon</span>
+                                <div
+                                    class="provider-item disabled"
+                                    aria-disabled="true"
+                                >
+                                    <span class="provider-left">
+                                        <span class="provider-icon">
+                                            <img
+                                                class="provider-logo"
+                                                src="/assets/gmail_64px.png"
+                                                alt=""
+                                            />
+                                        </span>
+                                        <span class="provider-copy">
+                                            <span class="provider-name">
+                                                Gmail
+                                            </span>
+                                            <span class="provider-description">
+                                                Google email accounts
+                                            </span>
+                                        </span>
+                                    </span>
+
+                                    <span class="coming-soon">Soon</span>
+                                </div>
+                            </div>
+                        </fieldset>
+
+                        <div
+                            id="custom-imap-fields"
+                            class="custom-imap-fields hidden"
+                            aria-hidden="true"
+                        >
+                            <div class="custom-field custom-field-server">
+                                <label for="custom-imap-server">
+                                    IMAP server
+                                </label>
+                                <input
+                                    id="custom-imap-server"
+                                    type="text"
+                                    inputmode="url"
+                                    autocomplete="off"
+                                    spellcheck="false"
+                                    placeholder="imap.example.com"
+                                />
                             </div>
 
-                            <div class="provider-item disabled">
-                                <div class="provider-left">
-                                    <img
-                                        class="provider-logo"
-                                        src="/assets/gmail_64px.png"
-                                        alt="Gmail"
-                                    />
-                                    <span
-                                        class="custom-server-text"
-                                        style="color: inherit"
-                                    >
-                                        Gmail
-                                    </span>
-                                </div>
-
-                                <span class="coming-soon">Coming Soon</span>
+                            <div class="custom-field custom-field-port">
+                                <label for="custom-imap-port">Port</label>
+                                <input
+                                    id="custom-imap-port"
+                                    type="number"
+                                    inputmode="numeric"
+                                    min="1"
+                                    max="65535"
+                                    value="993"
+                                />
                             </div>
+
                         </div>
 
                         <input
@@ -144,11 +240,41 @@
                         />
 
                         <button type="submit" class="setup-button">
-                            Continue
+                            <span>Continue</span>
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                aria-hidden="true"
+                            >
+                                <path
+                                    d="m9 18 6-6-6-6"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                />
+                            </svg>
                         </button>
                     </form>
 
-                    <div id="setup-msg" class="setup-message"></div>
+                    <div
+                        id="setup-msg"
+                        class="setup-message"
+                        role="status"
+                        aria-live="polite"
+                    ></div>
+
+                    <p class="setup-privacy">
+                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path
+                                d="M7 10V8a5 5 0 0 1 10 0v2m-11 0h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1Z"
+                                stroke="currentColor"
+                                stroke-width="1.8"
+                                stroke-linecap="round"
+                            />
+                        </svg>
+                        Your connection details stay on this device.
+                    </p>
                 </div>
             </div>
         </div>
