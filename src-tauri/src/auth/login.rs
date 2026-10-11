@@ -7,9 +7,15 @@ use crate::error::Error;
 pub async fn login(
     login: &str,
     password: &str,
-    client: Client<TlsStream<TcpStream>>,
+    client: Option<Client<TlsStream<TcpStream>>>,
 ) -> Result<Session<TlsStream<TcpStream>>, Error> {
-    let imap_session = client.login(login, password).await.map_err(|e| e.0)?;
+    let imap_session = client
+        .ok_or(Error::Other(
+            "Failed to Initiate TlsStream Client".to_string(),
+        ))?
+        .login(login, password)
+        .await
+        .map_err(|e| e.0)?;
 
     Ok(imap_session)
 }

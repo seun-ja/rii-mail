@@ -108,10 +108,10 @@ impl Providers {
                 Box::new(client)
             }
             Providers::LocalInference => {
-                let client = local_inference::LocalInferenceAI::setup(
-                    script_name.unwrap_or("inference".to_owned()),
-                    function_handler.unwrap_or("predict".to_owned()), // Function name
-                );
+                let script_path = script_name.unwrap_or("inference.py".to_owned());
+                let function = function_handler.unwrap_or("predict".to_owned());
+                let client =
+                    local_inference::LocalInferenceAI::setup(&script_path, &function, model)?;
 
                 Box::new(client)
             }

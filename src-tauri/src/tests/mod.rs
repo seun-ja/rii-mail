@@ -1,3 +1,4 @@
+mod auth_login_tests;
 mod config_tests;
 mod db_emails_tests;
 mod db_tests;

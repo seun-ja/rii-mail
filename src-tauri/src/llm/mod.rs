@@ -1,4 +1,7 @@
-use std::fmt::Display;
+use std::{
+    fmt::Display,
+    path::{Path, PathBuf},
+};
 
 use llm::{
     builder::AgentBuilder,
@@ -47,7 +50,10 @@ impl TryFrom<String> for SpamRating {
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         let res = if let Ok(response) = serde_json::from_str::<Vec<Self>>(&value) {
-            response[0].clone()
+            response
+                .into_iter()
+                .next()
+                .ok_or_else(|| Error::Other("spam rating array cannot be empty".to_string()))?
         } else {
             serde_json::from_str::<Self>(&value)?
         };
@@ -80,13 +86,33 @@ impl Serialize for Label {
     }
 }
 
+pub(crate) fn resolve_local_inference_paths(
+    project_root: &Path,
+) -> Result<(PathBuf, PathBuf), Error> {
+    let model_path = project_root.join("local-model").canonicalize()?;
+    let script_path = project_root.join("llm/local_inference.py").canonicalize()?;
+
+    Ok((model_path, script_path))
+}
+
 pub async fn initialize_local_inference() -> Result<Agent<Email>, Error> {
+    let project_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .ok_or_else(|| Error::Other("failed to resolve the project root".to_string()))?;
+    let (model_path, script_path) = resolve_local_inference_paths(project_root)?;
+    let model_path = model_path
+        .to_str()
+        .ok_or_else(|| Error::Other("model path is not valid UTF-8".to_string()))?;
+    let script_path = script_path
+        .to_str()
+        .ok_or_else(|| Error::Other("Python script path is not valid UTF-8".to_string()))?;
+
     let agent: Agent<Email> = AgentBuilder::<NoTool>::new(
         Providers::LocalInference,
         SPAM_RATER_SYSTEM_MESSAGE,
-        "./merged-model-new",
+        model_path,
     )
-    .script_name("local_inference".to_string())
+    .script_name(script_path.to_string())
     .build()
     .await?;
 
