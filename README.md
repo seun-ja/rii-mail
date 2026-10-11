@@ -26,7 +26,6 @@ To get started, you will need to configure your local environment:
 - Backend: Rust + Tauri 2
 - Mail: `async-imap` + TLS
 - Storage: SQLite via `sqlx`
-- AI calls: tarpc client (`rpc-agent`)
 
 ## Repository Layout
 
@@ -70,7 +69,7 @@ Spam rating runs locally through PyO3 and requires:
 
 - A Python interpreter compatible with the project's PyO3 version. Python 3.12 is recommended for the current PyO3 0.21 dependency.
 - Working `torch` and `transformers` installations in that interpreter.
-- The classification model files in `merged-model-new/` at the repository root.
+- The classification model files in `local-model/` at the repository root. This directory must contain `config.json`, `model.safetensors`, and the tokenizer files expected by Transformers.
 
 Create and activate a virtual environment before building or running Tauri so PyO3 links against the intended interpreter:
 
@@ -99,7 +98,6 @@ cp .env.example .env
 The example contains:
 
 ```bash
-RPC_SERVER=0.0.0.0:5500
 RUST_LOG=info
 TELEMETRY_OPT_IN=false
 OTLP_COLLECTOR_ENDPOINT=http://0.0.0.0:4317
@@ -107,7 +105,6 @@ OTLP_COLLECTOR_ENDPOINT=http://0.0.0.0:4317
 
 Notes:
 
-- `RPC_SERVER` is retained for legacy RPC configuration; spam rating now uses local inference.
 - `RUST_LOG` can be raised to `debug` during local troubleshooting.
 - `TELEMETRY_OPT_IN` defaults to `false`. Set it to `true` to export traces to the configured OTLP collector.
 - `OTLP_COLLECTOR_ENDPOINT` is only used when `TELEMETRY_OPT_IN=true`.
@@ -214,8 +211,6 @@ What is covered now:
 - Login fails with auth errors:
   - Re-check username/password and provider IMAP access settings.
   - For Gmail/Yahoo, app-specific passwords may be required.
-- RPC rating fails:
-  - Confirm your RPC service is running and reachable at `RPC_SERVER`.
 - Inbox appears capped on first visible load:
   - The frontend intentionally loads paged results first; scroll to load more.
   - If local mailbox data is partially populated and you need a clean re-bootstrap, clear app data and re-login.

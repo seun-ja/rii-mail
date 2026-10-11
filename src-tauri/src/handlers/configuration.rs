@@ -29,7 +29,6 @@ pub async fn config_setup(
     imap_server_url: String,
     imap_port: u16,
 ) -> Result<(), Error> {
-    let rpc_server_url = std::env::var("RPC_SERVER").unwrap_or("0.0.0.0:5500".to_string());
     let sqlite_db = std::env::var("SQLITE_DB").unwrap_or("emails.db".to_string());
     let smtp_relay_url =
         std::env::var("SMTP_RELAY_URL").unwrap_or("smtp.mail.yahoo.com".to_string());
@@ -38,7 +37,6 @@ pub async fn config_setup(
     let provider = std::env::var("ollama").unwrap_or("ollama".to_string());
 
     let config = Config {
-        rpc_server_url,
         imap_server_url,
         smtp_relay_url,
         imap_port,

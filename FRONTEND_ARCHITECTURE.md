@@ -12,7 +12,7 @@
 ## API / IPC Layer
 - Single `api/` module that wraps all Tauri commands (`check_app_status`, `login`, `fetch_emails`, `refresh_emails_handler`, `rater`, `config_setup`, `logout_with_state`).
 - Contract-first: keep TypeScript types aligned with backend models (`Email`, `RefreshSummary`, `AppState`). Generate or hand-maintain types to avoid drift.
-- Centralized retry / timeout / backoff logic and error normalization for RPC/LLM calls.
+- Centralized retry / timeout / backoff logic and error normalization for LLM calls.
 
 ## Data Layer & Sync
 - Use TanStack Query (React Query) for caching, background refetch, pagination, invalidation, and optimistic updates.

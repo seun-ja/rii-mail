@@ -36,7 +36,6 @@ pub struct Account {
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct Config {
-    pub rpc_server_url: String,
     pub imap_server_url: String,
     pub smtp_relay_url: String,
     pub imap_port: u16,

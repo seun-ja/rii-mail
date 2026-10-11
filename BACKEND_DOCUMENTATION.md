@@ -16,13 +16,13 @@ This documentation covers the backend paths that are **currently wired into the 
 - SQLite persistence
 - SMTP send flow
 - AI email draft generation
-- spam/phishing rating via RPC
+- spam/phishing rating through the in-process local inference provider
 - logout and cleanup
 - async/multi-threaded execution model
 
 This document intentionally **does not treat dormant or not-currently-wired code as active backend behavior**. In particular:
 
-- the repo contains Python local inference code under `python/` and local-inference provider code in `llm/`, but the active Tauri backend does **not** call that path today
+- the deleted external RPC spam-rating path is no longer part of the active backend; spam rating now uses the local-inference provider in `llm/`
 - `Drafts` and `Trash` exist in enums, but the active backend mailbox sync flow only uses `INBOX` and `Sent`
 - `InitStatus::ReturningSigned` exists, but the current auto-login path returns `SignedIn`
 
@@ -49,7 +49,7 @@ The active backend is responsible for:
 - securely retrieving/storing passwords through Apple Keychain on macOS
 - sending outbound emails through SMTP
 - generating email drafts through the in-process LLM agent
-- rating emails for spam/phishing through an external RPC service
+- rating emails for spam/phishing using a local llm model
 - cleaning up config and cached mail on logout
 
 ### Current frontend-facing backend surface
@@ -152,7 +152,6 @@ Both paths are resolved from `app.path().app_config_dir()`.
 
 The active config shape is:
 
-- `rpc_server_url`
 - `imap_server_url`
 - `smtp_relay_url`
 - `imap_port`
@@ -166,8 +165,6 @@ The active config shape is:
 
 Actively consumed by the current backend:
 
-- `rpc_server_url`
-  - used by spam/phishing RPC client setup
 - `imap_server_url`
   - used to connect/login to IMAP
 - `smtp_relay_url`
@@ -219,7 +216,6 @@ It:
 
 `config_setup` currently reads:
 
-- `RPC_SERVER` default: `0.0.0.0:5500`
 - `SQLITE_DB` default: `emails.db`
 - `SMTP_RELAY_URL` default: `smtp.mail.yahoo.com`
 - `MODEL` default: `gemma4:e4b`
@@ -286,7 +282,6 @@ This helper creates the initialized service set:
 
 - provider from IMAP host
 - SQLite pool
-- RPC spam-rating client
 - Apple Keychain manager
 - SMTP transport with current credentials
 - LLM email-generation agent
@@ -884,28 +879,33 @@ Current active implementation:
 
 Used by `src/mail-app/init.js`.
 
-Builds an `rpc_llm::Email` payload and sends it to the external RPC worker for spam/phishing classification.
+Serializes the selected email and runs it through the initialized local spam-classification agent. The returned inference JSON is converted into `SpamRating`.
 
 ---
 
-## 10. LLM and RPC behavior that is currently active
+## 10. Active LLM behavior
 
 ## 10.1 Spam/phishing rating
 
 ### Files
 
-- `src-tauri/src/rpc_llm/mod.rs`
-- `src-tauri/src/rpc_llm/rpc/call.rs`
+- `src-tauri/src/handlers/llm.rs`
+- `src-tauri/src/llm/mod.rs`
+- `llm/src/providers/local_inference.rs`
+- `llm/local_inference.py`
+- `local-model/`
 
 ### Current active path
 
-`rater(...)` uses `caller(...)`, which:
+`rater(...)`:
 
-- sends a request over `tarpc`
-- sets a 120-second deadline
-- retries connection-style failures up to 3 times
-- retries some inference crashes such as `MODEL_OOM`
-- parses the returned JSON into `SpamRating`
+1. builds an `Email` from the frontend command arguments
+2. serializes it to JSON
+3. calls `initialized.local_inference.agent().chat(...)`
+4. invokes the Python `predict(...)` function through PyO3
+5. parses the returned JSON into `SpamRating`
+
+The local inference agent is initialized as part of login/returning-user startup. `initialize_local_inference()` currently resolves `local-model/` and `llm/local_inference.py` from the repository root.
 
 `SpamRating` returns:
 
@@ -915,24 +915,22 @@ Builds an `rpc_llm::Email` payload and sends it to the external RPC worker for s
   - `Phishing`
 - `score`
 
+Unlike the removed RPC client, this in-process path does not currently add a network deadline, connection retry loop, or RPC-specific crash handling.
+
 ## 10.2 Draft generation
 
-Draft generation is separate from spam rating.
-
-It does **not** use the RPC path above.
-
-Instead, the active backend builds an LLM agent in-process during initialization and `email_generator(...)` calls:
+Draft generation is separate from spam rating. The active backend builds an Ollama-backed LLM agent in-process during initialization, and `email_generator(...)` calls:
 
 - `initialized.llm_agent.agent().schema_chat(&thoughts).await`
 
-So the current backend has **two distinct AI paths**:
+The current backend therefore has **two distinct in-process AI paths**:
 
-1. **RPC path** for spam/phishing rating
-2. **in-process Ollama-backed agent path** for draft generation
+1. **PyO3/PyTorch/Transformers local inference** for spam/phishing rating
+2. **Ollama-backed agent** for draft generation
 
-## 10.3 What is not active today
+## 10.3 Removed path
 
-Although the repository contains local Python inference support and a local-inference provider in the `llm` crate, the active Tauri backend documented here does **not** invoke that path.
+The external `tarpc`/`rpc-agent` spam-rating client and its `RPC_SERVER` configuration have been removed. OpenTelemetry still uses gRPC transport independently; that telemetry transport is unrelated to the deleted application RPC service.
 
 ---
 
@@ -1034,10 +1032,12 @@ These are important if you want the docs to reflect reality rather than intent.
 - current code does not fully activate that branch
 - frontend manual refresh is the dependable current behavior
 
-### Python local inference is not part of the active Tauri flow
+### Local inference assets are resolved from the project tree
 
-- present in repo
-- not used by the currently wired backend commands
+- spam rating expects the model under `local-model/`
+- the Python entrypoint is `llm/local_inference.py`
+- both paths are resolved relative to the compile-time project root
+- these assets are not currently declared in `src-tauri/tauri.conf.json` as bundle resources, so packaged-build resource handling still needs to be finalized
 
 ### macOS matters for stored credentials
 
@@ -1083,10 +1083,13 @@ These are important if you want the docs to reflect reality rather than intent.
 - `src-tauri/src/handlers/menu.rs`
 - `src-tauri/src/handlers/llm.rs`
 
-### AI/RPC
+### AI and local inference
 
-- `src-tauri/src/rpc_llm/mod.rs`
-- `src-tauri/src/rpc_llm/rpc/call.rs`
+- `src-tauri/src/handlers/llm.rs`
+- `src-tauri/src/llm/mod.rs`
+- `llm/src/providers/local_inference.rs`
+- `llm/local_inference.py`
+- `local-model/`
 
 ---
 
@@ -1099,8 +1102,8 @@ The current RiiMail backend is an **async Tauri/Rust backend** built around:
 - two authenticated IMAP sessions for safe concurrent mailbox work
 - SQLite as the local mail cache
 - SMTP for outbound mail
-- an in-process LLM agent for drafting
-- an external tarpc RPC service for spam/phishing scoring
+- an in-process Ollama-backed LLM agent for drafting
+- an in-process PyO3/PyTorch/Transformers model for spam/phishing scoring
 
 Its concurrency model is not "lots of raw threads"; it is mostly:
 

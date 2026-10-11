@@ -15,7 +15,7 @@ impl<T: Tool + 'static> ToolWrapper<T> {
     ///
     /// example:
     /// ```rust,ignore
-    /// use rpc_agent::tools::ToolWrapper;
+    /// use llm::tools::ToolWrapper;
     /// use rig::tool::Tool;
     ///
     /// struct MyTool;
