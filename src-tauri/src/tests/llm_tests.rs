@@ -264,8 +264,7 @@ fn local_inference_paths_reject_missing_model_directory() {
 #[test]
 fn local_inference_paths_reject_missing_python_script() {
     let root = unique_test_dir("missing-script");
-    std::fs::create_dir_all(root.join("local-model"))
-        .expect("model directory should be created");
+    std::fs::create_dir_all(root.join("local-model")).expect("model directory should be created");
 
     let error = resolve_local_inference_paths(&root)
         .expect_err("a missing Python script should return an error");

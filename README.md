@@ -8,14 +8,15 @@ To get started, you will need to configure your local environment:
 
 1. Clone this repository.
 2. Create a `.env` file in the root (see [Environment Variables](#environment-variables) below).
-3. Run the application using `cargo tauri dev`.
+3. Install the [local inference requirements](#local-inference-requirements).
+4. Run the application using `npm run dev`.
 
 ## What It Does
 
 - Connects to an IMAP account (for example Gmail or Yahoo)
 - Syncs and caches mailbox data locally (Inbox/Sent)
 - Displays a desktop inbox experience
-- Runs a spam/phishing rating workflow through an RPC AI service
+- Runs spam/phishing rating locally through PyO3, PyTorch, and Transformers
 - Persists config and login state between launches
 - Shows a startup loading state on auth pages while initialization status is being resolved
 
@@ -49,7 +50,7 @@ src-tauri/
       handlers/               # Tauri commands (setup, login, rater, email fetch)
       workers/                # Background IMAP worker loop
       db/                     # SQLite initialization and queries
-      llm/                    # LLM provider/rpc integration
+      llm/                    # LLM provider and local-inference integration
 ```
 
 ## Prerequisites
@@ -62,6 +63,30 @@ cargo install tauri-cli
 ```
 
 On macOS, ensure Xcode Command Line Tools are installed.
+
+### Local inference requirements
+
+Spam rating runs locally through PyO3 and requires:
+
+- A Python interpreter compatible with the project's PyO3 version. Python 3.12 is recommended for the current PyO3 0.21 dependency.
+- Working `torch` and `transformers` installations in that interpreter.
+- The classification model files in `merged-model-new/` at the repository root.
+
+Create and activate a virtual environment before building or running Tauri so PyO3 links against the intended interpreter:
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install torch transformers
+```
+
+Verify the environment before starting the application:
+
+```bash
+python -c "import sys, torch, transformers; print(sys.version); print(torch.__version__); print(transformers.__version__)"
+```
+
+At runtime, RiiMail dynamically locates a Python interpreter whose major/minor version matches the interpreter embedded by PyO3 and verifies that `import torch` succeeds. It checks the active virtual environment, project virtual environments, environments under `~/.venvs`, and Python executables available on `PATH`.
 
 ## Environment Variables
 
@@ -82,7 +107,7 @@ OTLP_COLLECTOR_ENDPOINT=http://0.0.0.0:4317
 
 Notes:
 
-- `RPC_SERVER` must point to your running RPC agent service.
+- `RPC_SERVER` is retained for legacy RPC configuration; spam rating now uses local inference.
 - `RUST_LOG` can be raised to `debug` during local troubleshooting.
 - `TELEMETRY_OPT_IN` defaults to `false`. Set it to `true` to export traces to the configured OTLP collector.
 - `OTLP_COLLECTOR_ENDPOINT` is only used when `TELEMETRY_OPT_IN=true`.
@@ -92,9 +117,10 @@ Notes:
 From the project root:
 
 ```bash
-cd src-tauri
-cargo tauri dev
+npm run dev
 ```
+
+This runs `cargo tauri dev --no-watch`, so Rust file watching and automatic application restarts are disabled.
 
 Build a distributable app:
 
@@ -114,8 +140,14 @@ npm run test:all
 Run Rust backend tests:
 
 ```bash
-cd src-tauri
-PYO3_PYTHON=/opt/homebrew/bin/python3.12 cargo test
+PYO3_PYTHON=python3.12 cargo test --manifest-path src-tauri/Cargo.toml
+```
+
+Run local-provider Rust tests and mocked Python inference tests separately:
+
+```bash
+npm run test:llm
+npm run test:python
 ```
 
 Run frontend unit tests:
@@ -127,9 +159,10 @@ npm test
 
 What is covered now:
 
-- Rust unit tests for error handling, email transformation, fetch helper logic, worker login error mapping, and DB enum conversions.
-- Rust async DB integration tests for initialization, storage population, pagination reads, sync-state tracking, and cleanup behavior.
-- Frontend unit tests for shared error parsing, state defaults, mailbox/provider helpers, cache hydration/persistence, and DOM selector wiring.
+- Rust unit tests for error handling, email transformation, spam-rating parsing, Python discovery, local-provider invocation, fetch helper logic, worker login error mapping, and DB enum conversions.
+- Rust async DB integration tests for initialization, label serialization, storage population, pagination reads, sync-state tracking, and cleanup behavior.
+- Mocked Python tests for model caching, device selection, warmup, inference, OOM handling, and cleanup without loading the real model.
+- Frontend unit tests for spam-rating messages, shared error parsing, state defaults, mailbox/provider helpers, cache hydration/persistence, and DOM selector wiring.
 
 ## First-Run Flow
 
