@@ -290,3 +290,207 @@ async fn cleanup_handles_file_and_missing_path() {
         .await
         .expect("cleanup missing path should be ok");
 }
+
+#[tokio::test]
+async fn populate_storage_writes_none_labels_as_sql_null_and_reads_them_back_as_none() {
+    let app_dir = unique_test_dir("emails-null-labels");
+    let pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
+        .await
+        .expect("db should initialize");
+
+    populate_storage(
+        &pool,
+        vec![StandardEmail {
+            uid: Some(101),
+            date: Some(parse_date("2026-03-01T09:00:00+00:00")),
+            body: None,
+            labels: None,
+        }],
+        "gmail_INBOX",
+    )
+    .await
+    .expect("insert should succeed");
+
+    let stored: (Option<String>,) = sqlx::query_as("SELECT labels FROM gmail_INBOX WHERE uid = ?")
+        .bind(101_i64)
+        .fetch_one(&pool)
+        .await
+        .expect("stored labels should be queryable");
+    assert_eq!(stored.0, None);
+
+    let readback = get_emails(&pool, "gmail_INBOX", 0, 1)
+        .await
+        .expect("email should read back");
+    assert_eq!(readback.len(), 1);
+    assert_eq!(readback[0].labels, None);
+
+    pool.close().await;
+    let _ = std::fs::remove_dir_all(app_dir);
+}
+
+#[tokio::test]
+async fn populate_storage_serializes_special_labels_as_json_and_roundtrips_exactly() {
+    let app_dir = unique_test_dir("emails-special-labels");
+    let pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
+        .await
+        .expect("db should initialize");
+
+    let labels = vec![
+        "Project \"Phoenix\"".to_string(),
+        r"Finance\2026".to_string(),
+        "emoji-📬".to_string(),
+        "line\nbreak".to_string(),
+    ];
+
+    populate_storage(
+        &pool,
+        vec![StandardEmail {
+            uid: Some(102),
+            date: Some(parse_date("2026-03-02T09:00:00+00:00")),
+            body: None,
+            labels: Some(labels.clone()),
+        }],
+        "gmail_INBOX",
+    )
+    .await
+    .expect("insert should succeed");
+
+    let stored: (String,) = sqlx::query_as("SELECT labels FROM gmail_INBOX WHERE uid = ?")
+        .bind(102_i64)
+        .fetch_one(&pool)
+        .await
+        .expect("stored labels should be queryable");
+    assert_eq!(
+        stored.0,
+        r#"["Project \"Phoenix\"","Finance\\2026","emoji-📬","line\nbreak"]"#
+    );
+
+    let readback = get_emails(&pool, "gmail_INBOX", 0, 1)
+        .await
+        .expect("email should read back");
+    assert_eq!(readback.len(), 1);
+    assert_eq!(readback[0].labels.as_ref(), Some(&labels));
+
+    pool.close().await;
+    let _ = std::fs::remove_dir_all(app_dir);
+}
+
+#[tokio::test]
+async fn populate_storage_handles_mixed_labelled_and_unlabelled_batch() {
+    let app_dir = unique_test_dir("emails-mixed-labels");
+    let pool = init_db(&app_dir, "emails.db", &Provider::Yahoo)
+        .await
+        .expect("db should initialize");
+
+    let labels = vec!["Important".to_string(), "Team/Alpha".to_string()];
+    populate_storage(
+        &pool,
+        vec![
+            StandardEmail {
+                uid: Some(201),
+                date: Some(parse_date("2026-03-01T09:00:00+00:00")),
+                body: None,
+                labels: Some(labels.clone()),
+            },
+            StandardEmail {
+                uid: Some(202),
+                date: Some(parse_date("2026-03-02T09:00:00+00:00")),
+                body: None,
+                labels: None,
+            },
+        ],
+        "yahoo_INBOX",
+    )
+    .await
+    .expect("mixed batch insert should succeed");
+
+    let stored: Vec<(i64, Option<String>)> =
+        sqlx::query_as("SELECT uid, labels FROM yahoo_INBOX ORDER BY uid")
+            .fetch_all(&pool)
+            .await
+            .expect("stored rows should be queryable");
+    assert_eq!(
+        stored,
+        vec![
+            (201, Some(r#"["Important","Team/Alpha"]"#.to_string())),
+            (202, None),
+        ]
+    );
+
+    let readback = get_emails(&pool, "yahoo_INBOX", 0, 2)
+        .await
+        .expect("emails should read back");
+    assert_eq!(readback.len(), 2);
+    assert_eq!(readback[0].labels, None);
+    assert_eq!(readback[1].labels.as_ref(), Some(&labels));
+
+    pool.close().await;
+    let _ = std::fs::remove_dir_all(app_dir);
+}
+
+#[tokio::test]
+async fn populate_storage_defaults_missing_uid_to_zero() {
+    let app_dir = unique_test_dir("emails-default-uid");
+    let pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
+        .await
+        .expect("db should initialize");
+
+    populate_storage(
+        &pool,
+        vec![StandardEmail {
+            uid: None,
+            date: Some(parse_date("2026-03-03T09:00:00+00:00")),
+            body: None,
+            labels: Some(vec!["No UID".to_string()]),
+        }],
+        "gmail_INBOX",
+    )
+    .await
+    .expect("insert should succeed");
+
+    let stored_uid: (i64,) = sqlx::query_as("SELECT uid FROM gmail_INBOX")
+        .fetch_one(&pool)
+        .await
+        .expect("stored uid should be queryable");
+    assert_eq!(stored_uid.0, 0);
+
+    pool.close().await;
+    let _ = std::fs::remove_dir_all(app_dir);
+}
+
+#[tokio::test]
+async fn get_emails_treats_malformed_stored_label_json_as_none() {
+    let app_dir = unique_test_dir("emails-malformed-labels");
+    let pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
+        .await
+        .expect("db should initialize");
+
+    populate_storage(
+        &pool,
+        vec![StandardEmail {
+            uid: Some(301),
+            date: Some(parse_date("2026-03-04T09:00:00+00:00")),
+            body: None,
+            labels: Some(vec!["Initially valid".to_string()]),
+        }],
+        "gmail_INBOX",
+    )
+    .await
+    .expect("insert should succeed");
+
+    sqlx::query("UPDATE gmail_INBOX SET labels = ? WHERE uid = ?")
+        .bind("{not valid json")
+        .bind(301_i64)
+        .execute(&pool)
+        .await
+        .expect("malformed labels fixture should be stored");
+
+    let readback = get_emails(&pool, "gmail_INBOX", 0, 1)
+        .await
+        .expect("malformed labels should not fail the email query");
+    assert_eq!(readback.len(), 1);
+    assert_eq!(readback[0].labels, None);
+
+    pool.close().await;
+    let _ = std::fs::remove_dir_all(app_dir);
+}

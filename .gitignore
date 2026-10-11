@@ -25,9 +25,11 @@ dist-ssr
 
 .env
 config.json
-merged-model-new
+local-model
 .venv
 .venv312
+__pycache__/
+*.py[cod]
 
 /python
 

@@ -12,11 +12,12 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     auth::AppleKeychainManager,
-    config::{self, init_llm_agent, Account, AppState, Config, ImapClientConfig, InitializedState},
+    config::{self, Account, AppState, Config, ImapClientConfig, InitializedState},
     db::{self, Provider},
     error::Error,
     handlers::provider_from_imap_server,
     imap::ImapCommand,
+    llm::{init_llm_agent, initialize_local_inference},
     workers::SharedFetchManager,
     ImapClientChannelTx, LOGGED_IN, LOGGING_IN,
 };
@@ -57,7 +58,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
         login_result_tx: Some(login_result_tx),
     };
     tracing::info!("Sending IMAP client config to worker for authentication");
-    imap_client_channel_tx.0.send(imap_client_config)?;
+    imap_client_channel_tx.inner().0.send(imap_client_config)?;
 
     match login_result_rx.await? {
         Ok(()) => {
@@ -88,7 +89,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
     imap_cmd_channel_tx.send(ImapCommand::FetchEmails(provider.clone(), fetch_token))?;
 
     let initialized_state = config::InitializedState {
-        rpc_llm_client: initialized_state.rpc_llm_client,
+        local_inference: initialize_local_inference().await?,
         sqlite_pool: initialized_state.sqlite_pool,
         apple_keychain_manager: initialized_state.apple_keychain_manager,
         smtp_transport_client: initialized_state.smtp_transport_client,
@@ -128,8 +129,6 @@ async fn handle_initialization(
 
     let sqlite_pool = db::db_pool(&config_dir, &config.sqlite_db).await?;
 
-    let rpc_llm_client = config::init_rpc(&config.rpc_server_url).await?;
-
     let apple_keychain_manager = AppleKeychainManager::new(app_service_name);
 
     let username = config.accounts.first().cloned().unwrap_or_default();
@@ -138,7 +137,7 @@ async fn handle_initialization(
     let smtp_transport_client = config::smtp_transport_client(&config.smtp_relay_url, credential)?;
 
     let initialized_state = config::InitializedState {
-        rpc_llm_client,
+        local_inference: initialize_local_inference().await?,
         sqlite_pool,
         apple_keychain_manager,
         smtp_transport_client,

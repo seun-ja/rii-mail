@@ -31,7 +31,8 @@ mod email_providers;
 mod error;
 mod handlers;
 mod imap;
-mod rpc_llm;
+mod llm;
+// mod rpc_llm;
 pub mod tracing;
 mod workers;
 

@@ -1,8 +1,8 @@
+mod auth_login_tests;
 mod config_tests;
 mod db_emails_tests;
 mod db_tests;
 mod email_cache_tests;
-mod error_tests;
 mod fetcher_tests;
 mod handlers_configuration_tests;
 mod handlers_email_tests;

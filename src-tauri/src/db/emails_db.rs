@@ -34,6 +34,23 @@ pub async fn populate_storage(
         (None, None) => std::cmp::Ordering::Equal,
     });
 
+    let emails = emails
+        .into_iter()
+        .map(|email| {
+            let labels = email
+                .labels
+                .map(|labels| serde_json::to_string(&labels))
+                .transpose()?;
+
+            Ok((
+                email.uid.unwrap_or_default() as i64,
+                email.date,
+                email.body,
+                labels,
+            ))
+        })
+        .collect::<Result<Vec<_>, serde_json::Error>>()?;
+
     let mut tx = pool.begin().await?;
 
     let mut query_builder: QueryBuilder<'_, sqlx::Sqlite> = QueryBuilder::new(&format!(
@@ -41,13 +58,10 @@ pub async fn populate_storage(
         table_name
     ));
 
-    query_builder.push_values(emails, |mut b, email| {
-        let uid = email.uid.unwrap_or_default() as i64;
-        let labels = email.labels.map(|l| serde_json::to_string(&l).unwrap());
-
+    query_builder.push_values(emails, |mut b, (uid, date, body, labels)| {
         b.push_bind(uid)
-            .push_bind(email.date)
-            .push_bind(email.body)
+            .push_bind(date)
+            .push_bind(body)
             .push_bind(labels);
     });
 

@@ -284,7 +284,7 @@ pub async fn worker(
                                 Err(e) if e.to_string().contains("connection closed gracefully") => {
                                     tracing::warn!("unable to fetch latest email restarting session");
                                     if let Ok(password) = keychain_manager.retrieve_password(&username) {
-                                        if let Ok(new_session) = auth::login(&username, &password, initialized_client.take().unwrap()).await {
+                                        if let Ok(new_session) = auth::login(&username, &password, initialized_client.take()).await {
                                             // Generate a fresh refresh token for retry
                                             let retry_refresh_token = FETCH_MANAGER.refresh_token.lock().await.child_token();
 
@@ -369,7 +369,7 @@ async fn login(
     imap_client: async_imap::Client<TlsStream<TcpStream>>,
     pool: &mut Option<SqlitePool>,
 ) {
-    match auth::login(&config.username, &config.password, imap_client).await {
+    match auth::login(&config.username, &config.password, Some(imap_client)).await {
         Ok(imap_session) => {
             *initialized_session = Some(Arc::new(tokio::sync::Mutex::new(imap_session)));
             *pool = Some(config.sqlite_pool);

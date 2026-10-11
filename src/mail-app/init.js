@@ -23,6 +23,10 @@ import {
   resetFolderPagination,
 } from "./helpers.js";
 import { INITIAL_BATCH_SIZE, NEXT_BATCH_SIZE } from "./constants.js";
+import {
+  formatSpamRatingError,
+  formatSpamRatingResponse,
+} from "./spam-rating.js";
 
 export function initializeMailApp({
   invoke,
@@ -462,29 +466,9 @@ export function initializeMailApp({
         body: selected.body,
       });
 
-      const rawScore = rating?.score;
-      const hasScore = typeof rawScore === "number";
-
-      let label = rating?.label ?? "Unknown";
-      let labelText = label === "Ham" ? "safe" : label.toLowerCase();
-
-      if (hasScore) {
-        const displayScore = rawScore.toFixed(2);
-
-        if (rawScore <= 0.2) {
-          ui.showMessage(
-            `This email is likely ${labelText} (score: ${displayScore})`,
-          );
-        } else if (rawScore >= 0.8) {
-          ui.showMessage(`This email is ${labelText} (score: ${displayScore})`);
-        } else {
-          ui.showMessage(`I think it's ${labelText} (score: ${displayScore})`);
-        }
-      } else {
-        ui.showMessage(`Could not determine email status (score: N/A)`);
-      }
+      ui.showMessage(formatSpamRatingResponse(rating));
     } catch (error) {
-      ui.showMessage(`Failed to check spam rating: ${error}`, true);
+      ui.showMessage(formatSpamRatingError(error), true);
     }
   });
 

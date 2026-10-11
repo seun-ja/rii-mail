@@ -1,9 +1,5 @@
 use crate::{
-    error::{inference_crash_handler, is_connection_error, CrashAction},
-    rpc_llm::{
-        rpc::{AgentWorkerClient, MessageType},
-        SpamRating,
-    },
+    error::{CrashAction, inference_crash_handler, is_connection_error}, llm::SpamRating, rpc_llm::rpc::{AgentWorkerClient, MessageType},
 };
 use serde::Serialize;
 use std::time::{Duration, Instant};
