@@ -32,7 +32,6 @@ mod error;
 mod handlers;
 mod imap;
 mod llm;
-// mod rpc_llm;
 pub mod tracing;
 mod workers;
 

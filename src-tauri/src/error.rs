@@ -17,8 +17,6 @@ pub enum Error {
     Other(String),
     #[error("Not Found")]
     NotFound,
-    #[error("RPC Server Error: {0}")]
-    RPCServer(#[from] rpc_agent::error::ApiError),
     #[error("IO Error: {0}")]
     Io(#[from] std::io::Error),
     #[error("TLS Error: {0}")]
@@ -76,7 +74,6 @@ impl Serialize for Error {
             Error::Serialization(e) => ("Serialization", e.to_string()),
             Error::Other(msg) => ("Other", msg.clone()),
             Error::NotFound => ("NotFound", self.to_string()),
-            Error::RPCServer(e) => ("RPCServer", e.to_string()),
             Error::Io(e) => ("Io", e.to_string()),
             Error::Tls(e) => ("Tls", e.to_string()),
             Error::Imap(e) => ("Imap", e.to_string()),
@@ -116,7 +113,6 @@ impl Error {
     pub fn log_error(&self) {
         match self {
             Error::Serialization(_)
-            | Error::RPCServer(_)
             | Error::Io(_)
             | Error::Imap(_)
             | Error::Tauri(_)

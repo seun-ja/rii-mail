@@ -49,8 +49,9 @@
             ▼
 
 ┌───────────────────────┐
-│ RPC Spam Service      │
-│ (tarpc)               │
+│ Local Spam Classifier │
+│ PyO3 + Transformers   │
+│ local-model/          │
 └───────────────────────┘
 
             │

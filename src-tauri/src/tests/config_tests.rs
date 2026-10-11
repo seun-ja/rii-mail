@@ -13,7 +13,6 @@ fn unique_config_path(prefix: &str) -> std::path::PathBuf {
 async fn config_init_reads_valid_config() {
     let path = unique_config_path("config-valid");
     let body = r#"{
-        "rpc_server_url":"127.0.0.1:5500",
         "imap_server_url":"imap.gmail.com",
         "smtp_relay_url":"smtp.gmail.com",
         "imap_port":993,
@@ -42,7 +41,6 @@ async fn config_init_reads_valid_config() {
 async fn config_init_rejects_missing_imap_values() {
     let path = unique_config_path("config-invalid");
     let body = r#"{
-        "rpc_server_url":"127.0.0.1:5500",
         "imap_server_url":"",
         "smtp_relay_url":"smtp.gmail.com",
         "imap_port":0,
