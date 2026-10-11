@@ -1,6 +1,6 @@
 use std::{collections::HashSet, sync::Arc};
 
-use async_imap::Session;
+use async_imap::{types::NameAttribute, Session};
 use async_native_tls::TlsStream;
 use futures::StreamExt;
 use sqlx::SqlitePool;
@@ -9,6 +9,7 @@ use tokio::{
     sync::{oneshot::Sender, Mutex},
 };
 use tokio_util::sync::CancellationToken;
+use tracing::Instrument as _;
 
 use crate::{
     db::{
@@ -47,16 +48,80 @@ impl FetchResult {
 const INITIAL_BATCH_SIZE: u32 = 100;
 const FETCH_MESSAGE_ATTRIBUTES: &str = "(UID FLAGS BODY.PEEK[])";
 
+pub(crate) fn mailbox_name_matches(mailbox: &MailBox, name: &str, delimiter: Option<&str>) -> bool {
+    let expected = mailbox.as_ref();
+
+    if name.eq_ignore_ascii_case(expected) {
+        return true;
+    }
+
+    delimiter
+        .and_then(|delimiter| name.rsplit_once(delimiter))
+        .is_some_and(|(_, leaf)| leaf.eq_ignore_ascii_case(expected))
+}
+
+fn has_special_use_attribute(attributes: &[NameAttribute<'_>], mailbox: &MailBox) -> bool {
+    attributes.iter().any(|attribute| {
+        matches!(
+            (mailbox, attribute),
+            (MailBox::Sent, NameAttribute::Sent)
+                | (MailBox::Drafts, NameAttribute::Drafts)
+                | (MailBox::Trash, NameAttribute::Trash)
+        )
+    })
+}
+
+async fn resolve_imap_mailbox_name(
+    session: &mut Session<TlsStream<TcpStream>>,
+    mailbox: &MailBox,
+) -> Result<String, Error> {
+    if matches!(mailbox, MailBox::Inbox) {
+        return Ok(mailbox.as_ref().to_string());
+    }
+
+    let mut special_use_match = None;
+    let mut name_match = None;
+    let mut names = session.list(Some(""), Some("*")).await?;
+
+    while let Some(name) = names.next().await {
+        let name = name?;
+
+        if special_use_match.is_none() && has_special_use_attribute(name.attributes(), mailbox) {
+            special_use_match = Some(name.name().to_string());
+        }
+
+        if name_match.is_none() && mailbox_name_matches(mailbox, name.name(), name.delimiter()) {
+            name_match = Some(name.name().to_string());
+        }
+    }
+
+    let resolved = special_use_match
+        .or(name_match)
+        .unwrap_or_else(|| mailbox.as_ref().to_string());
+
+    if resolved != mailbox.as_ref() {
+        tracing::info!(
+            mailbox = mailbox.as_ref(),
+            imap_mailbox = resolved,
+            "Resolved logical mailbox to server mailbox"
+        );
+    }
+
+    Ok(resolved)
+}
+
+async fn select_mailbox(
+    session: &mut Session<TlsStream<TcpStream>>,
+    mailbox: &MailBox,
+) -> Result<async_imap::types::Mailbox, Error> {
+    let imap_mailbox = resolve_imap_mailbox_name(session, mailbox).await?;
+    Ok(session.select(imap_mailbox).await?)
+}
+
 #[tracing::instrument(
-    name = "emails.fetch",
-    skip(
-        session,
-        pool,
-        background_session,
-        cancel_token,
-        inbox_intial_email_populated_tx,
-        sent_intial_email_populated_tx
-    )
+    name = "imap.sync.initial",
+    skip_all,
+    fields(provider = provider.as_ref())
 )]
 #[allow(clippy::too_many_arguments)]
 pub async fn fetch_emails(
@@ -86,36 +151,46 @@ pub async fn fetch_emails(
         let pool = pool.clone();
         let provider = provider.clone();
         let token = cancel_token.child_token();
+        let background_span = tracing::info_span!(
+            "imap.sync.initial.background",
+            provider = provider.as_ref(),
+            mailbox = "Sent"
+        );
 
-        Some(tokio::spawn(async move {
-            let table_name = format!("{}_{}", provider.as_ref(), MailBox::Sent.as_ref());
+        Some(tokio::spawn(
+            async move {
+                let table_name = format!("{}_{}", provider.as_ref(), MailBox::Sent.as_ref());
 
-            let mailbox_info = background_session
-                .lock()
-                .await
-                .select(&MailBox::Sent)
+                let mailbox_info = {
+                    let mut session = background_session.lock().await;
+                    select_mailbox(&mut session, &MailBox::Sent).await?
+                };
+
+                populate_sent_folder_count(&pool, provider.as_ref(), mailbox_info.exists).await?;
+
+                _ = handle_email_population_locked(
+                    background_session,
+                    &pool,
+                    &MailBox::Sent,
+                    table_name,
+                    token,
+                    inbox_intial_email_populated_tx,
+                    sent_intial_email_populated_tx,
+                )
                 .await?;
 
-            populate_sent_folder_count(&pool, provider.as_ref(), mailbox_info.exists).await?;
-
-            _ = handle_email_population_locked(
-                background_session,
-                &pool,
-                &MailBox::Sent,
-                table_name,
-                token,
-                inbox_intial_email_populated_tx,
-                sent_intial_email_populated_tx,
-            )
-            .await?;
-
-            Ok::<_, Error>(())
-        }))
+                Ok::<_, Error>(())
+            }
+            .instrument(background_span),
+        ))
     } else {
         None
     };
 
-    let mailbox_info = session.lock().await.select(&MailBox::Inbox).await?;
+    let mailbox_info = {
+        let mut session = session.lock().await;
+        select_mailbox(&mut session, &MailBox::Inbox).await?
+    };
 
     populate_inbox_folder_count(pool, provider.as_ref(), mailbox_info.exists).await?;
 
@@ -148,16 +223,9 @@ pub async fn fetch_emails(
 }
 
 #[tracing::instrument(
-    name = "handler.populate_emails",
-    skip(
-        session,
-        pool,
-        mailbox,
-        table_name,
-        cancel_token,
-        inbox_intial_email_populated_tx,
-        sent_intial_email_populated_tx
-    )
+    name = "imap.sync.initial.mailbox",
+    skip_all,
+    fields(mailbox = mailbox.as_ref(), table = table_name)
 )]
 async fn handle_email_population_locked(
     session: SharedImapSession,
@@ -206,7 +274,7 @@ async fn handle_email_population(
     }
 
     let mailbox_info = tokio::select! {
-        result = session.select(&mailbox) => result?,
+        result = select_mailbox(session, mailbox) => result?,
 
         _ = cancel_token.cancelled() => {
             return Err(Error::ThreadCancel);
@@ -379,7 +447,11 @@ pub(crate) fn uid_vec_to_set(uids: &HashSet<u32>) -> String {
         .join(",")
 }
 
-#[tracing::instrument(name = "emails.fetch.latest", skip(session, pool))]
+#[tracing::instrument(
+    name = "imap.sync.incremental",
+    skip_all,
+    fields(provider = provider.as_ref(), mailbox = mailbox.as_ref())
+)]
 pub async fn fetch_latest(
     session: SharedImapSession,
     pool: &SqlitePool,
@@ -397,15 +469,15 @@ pub async fn fetch_latest(
         }
     };
 
-    let mailbox = tokio::select! {
-        result = session.select(&mailbox) => result?,
+    let mailbox_info = tokio::select! {
+        result = select_mailbox(&mut session, mailbox) => result?,
 
         _ = cancel_token.cancelled() => {
             return Err(Error::ThreadCancel);
         }
     };
 
-    let total_emails = mailbox.exists;
+    let total_emails = mailbox_info.exists;
 
     let last_uid = get_last_uid(pool, &table_name).await?.unwrap_or(0);
 

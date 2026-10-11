@@ -23,8 +23,12 @@ fn providers_as_ref_and_from_string() {
         Provider::Gmail
     ));
     assert!(matches!(
+        Provider::from("outlook".to_string()),
+        Provider::Outlook
+    ));
+    assert!(matches!(
         Provider::from("unknown".to_string()),
-        Provider::Yahoo
+        Provider::CustomImapServer
     ));
 }
 

@@ -8,7 +8,7 @@ use crate::{
 };
 
 #[tauri::command]
-#[tracing::instrument(name = "command.rater", skip(app, subject, body, email_from))]
+#[tracing::instrument(name = "command.rater", skip(app, subject, body, email_from), err)]
 pub async fn rater(
     app: tauri::AppHandle,
     subject: String,
@@ -32,7 +32,7 @@ pub async fn rater(
 }
 
 #[tauri::command]
-#[tracing::instrument(name = "command.email_generator", skip(app, _context, thoughts))]
+#[tracing::instrument(name = "command.email_generator", skip(app, _context, thoughts), err)]
 pub async fn email_generator(
     app: tauri::AppHandle,
     thoughts: String,

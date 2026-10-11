@@ -14,7 +14,7 @@ fn provider_from_imap_server_maps_yahoo_case_insensitively() {
 }
 
 #[test]
-fn provider_from_imap_server_defaults_to_gmail_for_non_yahoo() {
+fn provider_from_imap_server_defaults_to_custom_imap_server_for_non_yahoo() {
     assert!(matches!(
         provider_from_imap_server("imap.gmail.com"),
         Provider::Gmail
@@ -22,6 +22,6 @@ fn provider_from_imap_server_defaults_to_gmail_for_non_yahoo() {
 
     assert!(matches!(
         provider_from_imap_server("imap.example.com"),
-        Provider::Gmail
+        Provider::CustomImapServer
     ));
 }

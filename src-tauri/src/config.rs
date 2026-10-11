@@ -47,6 +47,7 @@ pub struct Config {
 }
 
 impl Config {
+    #[tracing::instrument(name = "config.load", skip_all, err)]
     pub async fn init(path: &PathBuf) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let config_json = fs::read_to_string(path).await?;
         let config: Self = serde_json::from_str(&config_json)?;
@@ -86,6 +87,12 @@ pub struct InitializedState {
     pub accounts: Vec<Account>,
 }
 
+#[tracing::instrument(
+    name = "smtp.transport.initialize",
+    skip_all,
+    fields(smtp.host = smtp_server_url),
+    err
+)]
 pub fn smtp_transport_client(
     smtp_server_url: &str,
     creds: Credentials,

@@ -11,6 +11,12 @@ use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 
 use crate::error::Error;
 
+#[tracing::instrument(
+    name = "db.connect",
+    skip_all,
+    fields(database = db),
+    err
+)]
 pub async fn db_pool(app_dir: &PathBuf, db: &str) -> Result<SqlitePool, sqlx::Error> {
     fs::create_dir_all(app_dir)?;
 
@@ -26,6 +32,12 @@ pub async fn db_pool(app_dir: &PathBuf, db: &str) -> Result<SqlitePool, sqlx::Er
     SqlitePool::connect_with(options).await
 }
 
+#[tracing::instrument(
+    name = "db.initialize",
+    skip_all,
+    fields(database = db, provider = provider.as_ref()),
+    err
+)]
 pub async fn init_db(
     app_dir: &PathBuf,
     db: &str,
@@ -114,6 +126,8 @@ async fn create_table_for_provider(
 pub enum Provider {
     Yahoo,
     Gmail,
+    Outlook,
+    CustomImapServer,
 }
 
 impl AsRef<str> for Provider {
@@ -121,6 +135,8 @@ impl AsRef<str> for Provider {
         match self {
             Provider::Yahoo => "yahoo",
             Provider::Gmail => "gmail",
+            Provider::Outlook => "outlook",
+            Provider::CustomImapServer => "custom",
         }
     }
 }
@@ -130,7 +146,8 @@ impl From<String> for Provider {
         match s.as_str() {
             "yahoo" => Provider::Yahoo,
             "gmail" => Provider::Gmail,
-            _ => Provider::Yahoo, // Default to Yahoo if unknown
+            "outlook" => Provider::Outlook,
+            _ => Provider::CustomImapServer, // Default to Yahoo if unknown
         }
     }
 }

@@ -20,6 +20,12 @@ impl<'a> Authenticator for GoogleOAuth<'a> {
     }
 }
 
+#[tracing::instrument(
+    name = "imap.authenticate",
+    skip_all,
+    fields(auth.method = "oauth"),
+    err
+)]
 pub async fn google_oauth(
     user: &str,
     access_token: &str,

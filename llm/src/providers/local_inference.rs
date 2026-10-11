@@ -183,11 +183,7 @@ fn discover_python_environment(
         .find_map(|executable| python_environment_from_executable(&executable, major, minor))
 }
 
-fn python_executable_candidates(
-    project_root: Option<&Path>,
-    major: u8,
-    minor: u8,
-) -> Vec<PathBuf> {
+fn python_executable_candidates(project_root: Option<&Path>, major: u8, minor: u8) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
 
     if let Some(virtual_env) = env::var_os("VIRTUAL_ENV") {
@@ -321,7 +317,9 @@ mod tests {
     }
 
     fn lock_environment() -> MutexGuard<'static, ()> {
-        ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     fn unique_test_dir(name: &str) -> PathBuf {
@@ -385,8 +383,12 @@ mod tests {
             .expect("fake torch package should be created");
         fs::write(site_packages.join("torch/__init__.py"), "")
             .expect("fake torch module should be created");
-        fs::create_dir_all(executable.parent().expect("executable should have a parent"))
-            .expect("executable directory should be created");
+        fs::create_dir_all(
+            executable
+                .parent()
+                .expect("executable should have a parent"),
+        )
+        .expect("executable directory should be created");
         fs::write(
             &executable,
             format!(
@@ -402,8 +404,7 @@ mod tests {
             .expect("executable metadata should be available")
             .permissions();
         permissions.set_mode(0o755);
-        fs::set_permissions(&executable, permissions)
-            .expect("fake Python should be executable");
+        fs::set_permissions(&executable, permissions).expect("fake Python should be executable");
 
         PythonEnvironment {
             executable,

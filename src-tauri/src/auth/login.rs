@@ -4,6 +4,12 @@ use tokio::net::TcpStream;
 
 use crate::error::Error;
 
+#[tracing::instrument(
+    name = "imap.authenticate",
+    skip_all,
+    fields(auth.method = "password"),
+    err
+)]
 pub async fn login(
     login: &str,
     password: &str,

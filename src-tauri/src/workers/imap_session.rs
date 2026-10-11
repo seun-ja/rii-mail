@@ -10,6 +10,7 @@ use tokio::sync::oneshot::{self, Sender};
 use tokio::sync::Mutex;
 use tokio::time::{self, MissedTickBehavior};
 use tokio::{net::TcpStream, sync::mpsc::UnboundedReceiver};
+use tracing::Instrument as _;
 
 use crate::config::ImapClientConfig;
 use crate::db::{MailBox, Provider};
@@ -26,7 +27,10 @@ pub async fn worker(
     inbox_intial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
     sent_intial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
 ) {
-    tokio::spawn(async move {
+    let worker_span = tracing::info_span!("worker.imap.run");
+
+    tokio::spawn(
+        async move {
         let mut initialized_session: Option<SharedImapSession> = None;
         let mut initialized_session_background: Option<SharedImapSession> = None;
 
@@ -249,13 +253,17 @@ pub async fn worker(
                             let _ = logout_result_tx.send(());
                         }
                         ImapCommand::RefreshEmails{mail_box, provider, response_channel: login_result_tx, username, keychain_manager} => {
-                            let Some(session) = initialized_session.as_ref() else {
-                                tracing::warn!("FetchEmails ignored: IMAP session is not initialized");
+                            let Some(session) = initialized_session.clone() else {
+                                let message = "RefreshEmails failed: IMAP session is not initialized";
+                                tracing::warn!("{message}");
+                                let _ = login_result_tx.send(Err(message.to_string()));
                                 continue;
                             };
 
                             let Some(pool_ref) = pool.as_ref() else {
-                                tracing::warn!("FetchEmails ignored: sqlite pool is not initialized");
+                                let message = "RefreshEmails failed: sqlite pool is not initialized";
+                                tracing::warn!("{message}");
+                                let _ = login_result_tx.send(Err(message.to_string()));
                                 continue;
                             };
 
@@ -263,45 +271,72 @@ pub async fn worker(
                                 FETCH_MANAGER.refresh_token.lock().await.child_token()
                             };
 
-                            match crate::email_cache::fetch_latest(
-                                session.clone(),
+                            let refresh_result = crate::email_cache::fetch_latest(
+                                session,
                                 pool_ref,
                                 &mail_box,
                                 &provider,
                                 refresh_token,
                             )
-                            .await
-                            {
-                                Ok(fetched_count ) =>{
-                                    if let Err(e) = login_result_tx.send(Ok(RefreshSummary {
-                                        new_emails_count: fetched_count.count(),
-                                        total_emails: fetched_count.total_emails(),
-                                    })) {
-                                        tracing::error!("failed sending refresh summary: {e:?}")
-                                    }
-                                },
-                                // TODO: Better handling
-                                Err(e) if e.to_string().contains("connection closed gracefully") => {
-                                    tracing::warn!("unable to fetch latest email restarting session");
-                                    if let Ok(password) = keychain_manager.retrieve_password(&username) {
-                                        if let Ok(new_session) = auth::login(&username, &password, initialized_client.take()).await {
-                                            // Generate a fresh refresh token for retry
-                                            let retry_refresh_token = FETCH_MANAGER.refresh_token.lock().await.child_token();
+                            .await;
 
-                                            _ = crate::email_cache::fetch_latest(
-                                                Arc::new(Mutex::new(new_session)),
-                                                pool_ref,
-                                                &mail_box,
-                                                &provider,
-                                                retry_refresh_token,
+                            let refresh_result = match refresh_result {
+                                Err(err) if err.to_string().contains("connection closed gracefully") => {
+                                    tracing::warn!("unable to fetch latest email; restarting session");
+
+                                    match keychain_manager.retrieve_password(&username) {
+                                        Ok(password) => {
+                                            match auth::login(
+                                                &username,
+                                                &password,
+                                                initialized_client.take(),
                                             )
-                                            .await;
-                                        };
-                                    };
+                                            .await
+                                            {
+                                                Ok(new_session) => {
+                                                    let new_session = Arc::new(Mutex::new(new_session));
+                                                    let retry_refresh_token = FETCH_MANAGER
+                                                        .refresh_token
+                                                        .lock()
+                                                        .await
+                                                        .child_token();
+
+                                                    let retry_result = crate::email_cache::fetch_latest(
+                                                        new_session.clone(),
+                                                        pool_ref,
+                                                        &mail_box,
+                                                        &provider,
+                                                        retry_refresh_token,
+                                                    )
+                                                    .await;
+
+                                                    if retry_result.is_ok() {
+                                                        initialized_session = Some(new_session);
+                                                    }
+
+                                                    retry_result
+                                                }
+                                                Err(retry_err) => Err(retry_err),
+                                            }
+                                        }
+                                        Err(keychain_err) => Err(keychain_err),
+                                    }
                                 }
-                                Err(e) => {
-                                    tracing::warn!("unable to fetch latest email: {e}")
-                                }
+                                result => result,
+                            };
+
+                            let response = refresh_result
+                                .map(|fetched| RefreshSummary {
+                                    new_emails_count: fetched.count(),
+                                    total_emails: fetched.total_emails(),
+                                })
+                                .map_err(|err| {
+                                    tracing::warn!(error = %err, "Unable to fetch latest email");
+                                    err.to_string()
+                                });
+
+                            if let Err(undelivered) = login_result_tx.send(response) {
+                                tracing::error!(?undelivered, "Failed sending refresh result");
                             }
                         }
                     }
@@ -360,9 +395,16 @@ pub async fn worker(
         }
 
         tracing::info!("IMAP worker task stopped");
-    });
+        }
+        .instrument(worker_span),
+    );
 }
 
+#[tracing::instrument(
+    name = "worker.imap.login",
+    skip_all,
+    fields(imap.host = config.imap_server_url.as_str(), imap.port = config.imap_port)
+)]
 async fn login(
     mut config: ImapClientConfig,
     initialized_session: &mut Option<SharedImapSession>,

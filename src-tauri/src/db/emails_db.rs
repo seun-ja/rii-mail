@@ -16,7 +16,12 @@ struct DbEmail {
     pub labels: Option<String>,
 }
 
-#[tracing::instrument(name = "db.populate_storage", skip(pool, emails))]
+#[tracing::instrument(
+    name = "db.email.batch_insert",
+    skip_all,
+    fields(table = table_name, email_count = emails.len()),
+    err
+)]
 pub async fn populate_storage(
     pool: &SqlitePool,
     emails: Vec<StandardEmail>,
@@ -72,7 +77,12 @@ pub async fn populate_storage(
     Ok(())
 }
 
-#[tracing::instrument(name = "db.get_emails", skip(pool))]
+#[tracing::instrument(
+    name = "db.email.page",
+    skip_all,
+    fields(table = table_name, min_range, max_range),
+    err
+)]
 // could use some streaming?
 pub async fn get_emails(
     pool: &SqlitePool,
@@ -121,7 +131,12 @@ pub async fn get_emails(
     Ok(complete_emails)
 }
 
-#[tracing::instrument(name = "db.populate_inbox_folder_count", skip(pool))]
+#[tracing::instrument(
+    name = "db.folder_count.upsert",
+    skip_all,
+    fields(provider, mailbox = "INBOX", count),
+    err
+)]
 pub async fn populate_inbox_folder_count(
     pool: &SqlitePool,
     provider: &str,
@@ -143,7 +158,12 @@ pub async fn populate_inbox_folder_count(
     Ok(())
 }
 
-#[tracing::instrument(name = "db.populate_sent_folder_count", skip(pool))]
+#[tracing::instrument(
+    name = "db.folder_count.upsert",
+    skip_all,
+    fields(provider, mailbox = "Sent", count),
+    err
+)]
 pub async fn populate_sent_folder_count(
     pool: &SqlitePool,
     provider: &str,
@@ -165,7 +185,7 @@ pub async fn populate_sent_folder_count(
     Ok(())
 }
 
-#[tracing::instrument(name = "db.cleanup", skip(db_path))]
+#[tracing::instrument(name = "db.cleanup", skip_all, err)]
 pub async fn cleanup(db_path: PathBuf) -> Result<(), Error> {
     let metadata = match fs::metadata(&db_path).await {
         Ok(metadata) => metadata,
@@ -198,6 +218,12 @@ pub async fn cleanup(db_path: PathBuf) -> Result<(), Error> {
     Ok(())
 }
 
+#[tracing::instrument(
+    name = "db.email.exists",
+    skip_all,
+    fields(table = table_name),
+    err
+)]
 pub async fn check_email_db_empty(pool: &SqlitePool, table_name: &str) -> Result<bool, Error> {
     let result: (bool,) = sqlx::query_as(&format!("SELECT EXISTS (SELECT 1 FROM {})", table_name))
         .fetch_one(pool)
@@ -206,6 +232,7 @@ pub async fn check_email_db_empty(pool: &SqlitePool, table_name: &str) -> Result
     Ok(result.0)
 }
 
+#[tracing::instrument(name = "db.sync_state.read", skip_all, fields(mailbox), err)]
 pub async fn get_last_uid(pool: &SqlitePool, mailbox: &str) -> Result<Option<u32>, Error> {
     let result: Option<(i64,)> = sqlx::query_as(
         r#"
@@ -221,6 +248,12 @@ pub async fn get_last_uid(pool: &SqlitePool, mailbox: &str) -> Result<Option<u32
     Ok(result.map(|r| r.0 as u32))
 }
 
+#[tracing::instrument(
+    name = "db.sync_state.write",
+    skip_all,
+    fields(mailbox, last_uid = uid),
+    err
+)]
 pub async fn set_last_uid(pool: &SqlitePool, mailbox: &str, uid: u32) -> Result<(), Error> {
     sqlx::query(
         r#"

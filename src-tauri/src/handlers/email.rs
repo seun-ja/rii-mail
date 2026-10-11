@@ -30,7 +30,7 @@ pub struct RefreshEmailsResponse {
 }
 
 #[tauri::command]
-#[tracing::instrument(name = "command.email.fetch", skip(app))]
+#[tracing::instrument(name = "command.email.fetch", skip(app), err)]
 pub async fn fetch_emails(
     app: tauri::AppHandle,
     min_range: u32,
@@ -42,11 +42,10 @@ pub async fn fetch_emails(
     let current_state = state.load();
     let initialized = current_state.state();
 
-    let provider = Provider::from(provider);
     let mailbox = MailBox::from(mailbox);
 
     let emails = get_emails_as_front_end_from_pool(
-        provider,
+        initialized.accounts[0].provider.clone(),
         mailbox,
         min_range as u16,
         max_range as u16,
@@ -58,7 +57,7 @@ pub async fn fetch_emails(
 }
 
 #[tauri::command]
-#[tracing::instrument(name = "command.email.refresh", skip(app))]
+#[tracing::instrument(name = "command.email.refresh", skip(app), err)]
 pub async fn refresh_emails_handler(
     app: tauri::AppHandle,
     mailbox: String,
@@ -144,7 +143,12 @@ pub(crate) async fn get_emails_as_front_end_from_pool(
 }
 
 #[tauri::command]
-#[tracing::instrument(name = "command.email.send", skip(app))]
+#[tracing::instrument(
+    name = "command.email.send",
+    skip_all,
+    fields(to_count = to.len(), cc_count = cc.len(), bcc_count = bcc.len()),
+    err
+)]
 pub async fn send_email(
     app: tauri::AppHandle,
     to: Vec<(Option<String>, String)>,

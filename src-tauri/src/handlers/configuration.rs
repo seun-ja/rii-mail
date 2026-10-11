@@ -23,7 +23,11 @@ use crate::{
 };
 
 #[tauri::command]
-#[tracing::instrument(name = "command.config.setup", skip(app, imap_server_url, imap_port,))]
+#[tracing::instrument(
+    name = "command.config.setup",
+    skip(app, imap_server_url, imap_port),
+    err
+)]
 pub async fn config_setup(
     app: tauri::AppHandle,
     imap_server_url: String,
@@ -74,7 +78,7 @@ pub async fn config_setup(
 /// - Login: if config exists but user not authenticated (show login page)
 /// - SignedIn: if user is already authenticated (show main app)
 #[tauri::command]
-#[tracing::instrument(name = "command.config.check_status", skip(app))]
+#[tracing::instrument(name = "command.config.check_status", skip(app), err)]
 pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error> {
     // Multiple webview lifecycle events can invoke this command during startup.
     // Keep the guard for the full initialization so only the first request reads
@@ -214,7 +218,7 @@ fn ensure_compact_startup_window(app: &tauri::AppHandle) -> Result<(), Error> {
 /// Open a dedicated, larger main app window after successful login
 /// and close the compact auth window.
 #[tauri::command]
-#[tracing::instrument(name = "command.window.open_main", skip_all)]
+#[tracing::instrument(name = "command.window.open_main", skip_all, err)]
 pub async fn open_main_window(current_window: tauri::WebviewWindow) -> Result<(), Error> {
     let expanded_size = Size::Logical(LogicalSize::new(1100.0, 760.0));
     let expanded_min_size = Size::Logical(LogicalSize::new(900.0, 620.0));
