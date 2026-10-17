@@ -51,7 +51,6 @@ tracing-opentelemetry = "0.32"
 
 sqlx = { version = "=0.8.1", features = [ "runtime-tokio", "sqlite", "chrono"] }
 
-pyo3 = { version = "0.21", features = ["auto-initialize"] }
 hex = "0.4.3"
 arc-swap = "1.7.1"
 

@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::atomic::AtomicU8;
 use std::sync::{Arc, LazyLock};
 
@@ -71,6 +72,17 @@ impl InitialDbPopulation {
             sent_rx: Mutex::new(Some(sent_intial_email_populated_rx)),
         }
     }
+}
+
+pub async fn self_test_bundled_inference(resource_root: &Path) -> Result<String, String> {
+    let agent = llm::initialize_local_inference(resource_root)
+        .await
+        .map_err(|error| error.to_string())?;
+    agent
+        .agent()
+        .chat("RiiMail bundled runtime self-test")
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

@@ -1,4 +1,7 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use arc_swap::ArcSwap;
 use lettre::transport::smtp::authentication::Credentials;
@@ -32,6 +35,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
     let app_service_name = app.config().identifier.clone();
     let config_dir = app.path().app_config_dir()?;
     let config_path = config_dir.join("config.json");
+    let resource_root = app.path().resource_dir()?;
 
     let mut config = Config::init(&config_path).await.map_err(|_| {
         Error::Other("Configuration not found. Please run setup first.".to_string())
@@ -42,8 +46,14 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
     fs::write(config_path, serde_json::to_string_pretty(&config)?).await?;
     tracing::info!("Configuration updated with username and saved to disk");
 
-    let (initialized_state, provider) =
-        handle_initialization(config.clone(), config_dir, &app_service_name, &password).await?;
+    let (initialized_state, provider) = handle_initialization(
+        config.clone(),
+        config_dir,
+        &resource_root,
+        &app_service_name,
+        &password,
+    )
+    .await?;
 
     let imap_client_channel_tx = app.state::<ImapClientChannelTx>();
     let imap_cmd_channel_tx = app.state::<UnboundedSender<ImapCommand>>();
@@ -89,7 +99,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
     imap_cmd_channel_tx.send(ImapCommand::FetchEmails(provider.clone(), fetch_token))?;
 
     let initialized_state = config::InitializedState {
-        local_inference: initialize_local_inference().await?,
+        local_inference: initialized_state.local_inference,
         sqlite_pool: initialized_state.sqlite_pool,
         apple_keychain_manager: initialized_state.apple_keychain_manager,
         smtp_transport_client: initialized_state.smtp_transport_client,
@@ -123,6 +133,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
 async fn handle_initialization(
     config: Config,
     config_dir: PathBuf,
+    resource_root: &Path,
     app_service_name: &str,
     password: &str,
 ) -> Result<(InitializedState, Provider), Error> {
@@ -138,7 +149,7 @@ async fn handle_initialization(
     let smtp_transport_client = config::smtp_transport_client(&config.smtp_relay_url, credential)?;
 
     let initialized_state = config::InitializedState {
-        local_inference: initialize_local_inference().await?,
+        local_inference: initialize_local_inference(resource_root).await?,
         sqlite_pool,
         apple_keychain_manager,
         smtp_transport_client,

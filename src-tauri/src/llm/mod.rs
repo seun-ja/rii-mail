@@ -87,20 +87,29 @@ impl Serialize for Label {
 }
 
 pub(crate) fn resolve_local_inference_paths(
-    project_root: &Path,
+    resource_root: &Path,
 ) -> Result<(PathBuf, PathBuf), Error> {
-    let model_path = project_root.join("local-model").canonicalize()?;
-    let script_path = project_root.join("llm/local_inference.py").canonicalize()?;
+    let model_resource = resource_root.join("local-model");
+    let model_path = model_resource.canonicalize().map_err(|error| {
+        Error::Other(format!(
+            "bundled local model is unavailable at {}: {error}",
+            model_resource.display()
+        ))
+    })?;
+    let script_resource = resource_root.join("llm/local_inference.py");
+    let script_path = script_resource.canonicalize().map_err(|error| {
+        Error::Other(format!(
+            "bundled Python inference script is unavailable at {}: {error}",
+            script_resource.display()
+        ))
+    })?;
 
     Ok((model_path, script_path))
 }
 
 #[tracing::instrument(name = "llm.local.initialize", skip_all, err)]
-pub async fn initialize_local_inference() -> Result<Agent<Email>, Error> {
-    let project_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .ok_or_else(|| Error::Other("failed to resolve the project root".to_string()))?;
-    let (model_path, script_path) = resolve_local_inference_paths(project_root)?;
+pub async fn initialize_local_inference(resource_root: &Path) -> Result<Agent<Email>, Error> {
+    let (model_path, script_path) = resolve_local_inference_paths(resource_root)?;
     let model_path = model_path
         .to_str()
         .ok_or_else(|| Error::Other("model path is not valid UTF-8".to_string()))?;

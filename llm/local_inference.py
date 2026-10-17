@@ -1,10 +1,15 @@
+from __future__ import annotations
+
 import gc
 import json
 import logging
+import os
 import sys
+from pathlib import Path
 from typing import ClassVar, Protocol, Self, cast
 
 import torch  # type: ignore
+import transformers  # type: ignore
 from transformers import (  # type: ignore
     AutoModelForSequenceClassification,
     AutoTokenizer,
@@ -15,7 +20,7 @@ logging.basicConfig(
 )
 LOGGER = logging.getLogger(__name__)
 
-MODEL_DIR = "./local-model"
+MODEL_DIR: str | None = None
 LABEL_MAP = {0: "LABEL_0", 1: "LABEL_1", 2: "LABEL_2"}
 
 DEBUG = False
@@ -46,18 +51,54 @@ class _SequenceClassificationModel(Protocol):
     def __call__(self, **inputs: torch.Tensor) -> _ClassificationOutput: ...
 
 
+def _assert_bundled_dependency(module: object, name: str) -> None:
+    resource_root = os.environ.get("RIIMAIL_BUNDLED_PYTHON_ROOT")
+    if resource_root is None:
+        return
+
+    module_file = getattr(module, "__file__", None)
+    if not isinstance(module_file, str):
+        raise TypeError(f"{name} does not report a module origin")
+
+    expected_root = (
+        Path(resource_root) / "python/lib/python3.12/site-packages"
+    ).resolve()
+    origin = Path(module_file).resolve()
+    if not origin.is_relative_to(expected_root):
+        raise RuntimeError(
+            f"refusing external {name} module at {origin}; expected it under {expected_root}"
+        )
+
+
+def _model_directory() -> str:
+    if MODEL_DIR is None:
+        raise RuntimeError("MODEL_DIR must be set to the bundled model directory")
+    model_dir = Path(MODEL_DIR).resolve()
+    if not model_dir.is_dir():
+        raise RuntimeError(f"bundled model directory does not exist: {model_dir}")
+    return str(model_dir)
+
+
 def _load_tokenizer(model_dir: str) -> _Tokenizer:
     return cast(
         _Tokenizer,
-        AutoTokenizer.from_pretrained(model_dir),  # pyright: ignore[reportUnknownMemberType]
+        AutoTokenizer.from_pretrained(  # pyright: ignore[reportUnknownMemberType]
+            model_dir, local_files_only=True
+        ),
     )
 
 
 def _load_model(model_dir: str) -> _SequenceClassificationModel:
     return cast(
         _SequenceClassificationModel,
-        AutoModelForSequenceClassification.from_pretrained(model_dir),  # pyright: ignore[reportUnknownMemberType]
+        AutoModelForSequenceClassification.from_pretrained(  # pyright: ignore[reportUnknownMemberType]
+            model_dir, local_files_only=True
+        ),
     )
+
+
+_assert_bundled_dependency(torch, "torch")
+_assert_bundled_dependency(transformers, "transformers")
 
 
 # Limit threads (important in containers)
@@ -72,11 +113,12 @@ class ModelCache:
         if ModelCache._instance is not None:
             raise RuntimeError("ModelCache is a singleton!")
 
+        model_dir = _model_directory()
         LOGGER.info("Loading tokenizer ...")
-        self.tokenizer: _Tokenizer = _load_tokenizer(MODEL_DIR)
+        self.tokenizer: _Tokenizer = _load_tokenizer(model_dir)
 
         LOGGER.info("Loading model ...")
-        self.model: _SequenceClassificationModel = _load_model(MODEL_DIR)
+        self.model: _SequenceClassificationModel = _load_model(model_dir)
 
         # Device selection: prefer MPS (Apple Silicon), then CUDA, then CPU
         if (
@@ -104,7 +146,8 @@ class ModelCache:
 
         _ = self.model.eval()
 
-        self.max_length: int = min(512, self.tokenizer.model_max_length)
+        configured_max_length = getattr(self.tokenizer, "model_max_length", 512)
+        self.max_length: int = min(512, configured_max_length)
 
         LOGGER.info("Using max_length=%s", self.max_length)
         self._warmup()

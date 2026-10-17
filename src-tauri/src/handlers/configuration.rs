@@ -104,7 +104,7 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
     let apple_keychain_manager = AppleKeychainManager::new(&app_service_name);
 
     if config.accounts.is_empty() {
-        ::tracing::warn!("Config accounts field is empty, cannot attempt returning user login");
+        tracing::warn!("Config accounts field is empty, cannot attempt returning user login");
         ensure_compact_startup_window(&app)?;
         return Ok(InitStatus::Login(None));
     }
@@ -150,8 +150,9 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
             }
         }
 
+        let resource_root = app.path().resource_dir()?;
         let initialized_state = config::InitializedState {
-            local_inference: initialize_local_inference().await?,
+            local_inference: initialize_local_inference(&resource_root).await?,
             sqlite_pool,
             apple_keychain_manager,
             smtp_transport_client,
