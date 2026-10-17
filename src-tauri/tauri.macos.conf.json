@@ -1,0 +1,14 @@
+{
+  "bundle": {
+    "resources": {
+      "../packaging/macos-arm64/build/python/": "python/",
+      "../packaging/macos-arm64/build/runtime-manifest.json": "python/runtime-manifest.json"
+    },
+    "macOS": {
+      "minimumSystemVersion": "14.0",
+      "files": {
+        "Frameworks/libpython3.12.dylib": "../packaging/macos-arm64/build/libpython3.12.dylib"
+      }
+    }
+  }
+}

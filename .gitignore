@@ -38,3 +38,8 @@ __pycache__/
 .github/workflows/ci.yml
 
 llm/target
+
+# Generated self-contained macOS Python runtime and download cache
+packaging/macos-arm64/.cache/
+packaging/macos-arm64/build/
+packaging/macos-arm64/build.new/

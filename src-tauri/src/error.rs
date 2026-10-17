@@ -1,5 +1,5 @@
 use lettre::address::AddressError;
-use pyo3::PyErr;
+
 use serde::Serialize;
 use tokio::sync::{mpsc::error::SendError, oneshot::error::RecvError};
 
@@ -37,8 +37,7 @@ pub enum Error {
     /// Authentication error: the provider returned an authentication error.
     #[error("authentication error: {0}")]
     Authentication(String),
-    #[error("local inference error: {0}")]
-    LocalInference(#[from] PyErr),
+
     /// Keychain error: an error occurred while accessing the Apple keychain.
     #[error("keychain error: {0}")]
     #[cfg(target_os = "macos")]
@@ -85,7 +84,7 @@ impl Serialize for Error {
             }
             Error::ImapCommandChannelSend(e) => ("ImapCommandChannelSend", e.to_string()),
             Error::Authentication(e) => ("Authentication", e.to_string()),
-            Error::LocalInference(e) => ("LocalInference", e.to_string()),
+
             Error::Keychain(e) => ("Keychain", e.to_string()),
             Error::ByteConversion(e) => ("ByteConversion", e.to_string()),
             Error::OneShotRecv(e) => ("OneShotRecv", e.to_string()),

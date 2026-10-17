@@ -181,6 +181,7 @@ class LocalInferenceTests(unittest.TestCase):
         with patch.dict(sys.modules, injected_modules):
             spec.loader.exec_module(module)
 
+        setattr(module, "MODEL_DIR", str(_TARGET.parents[1] / "local-model"))
         self.assertIsNone(module.ModelCache._instance)
         environment.torch.set_num_threads.assert_called_once_with(1)
         environment.torch.set_num_interop_threads.assert_called_once_with(1)
@@ -250,6 +251,12 @@ class LocalInferenceTests(unittest.TestCase):
 
         self.assertIs(first, second)
         self.assertEqual(1, environment.model_from_pretrained.call_count)
+        environment.tokenizer_from_pretrained.assert_called_once_with(
+            target.MODEL_DIR, local_files_only=True
+        )
+        environment.model_from_pretrained.assert_called_once_with(
+            target.MODEL_DIR, local_files_only=True
+        )
         with self.assertRaisesRegex(RuntimeError, "singleton"):
             target.ModelCache()
 
@@ -276,17 +283,25 @@ class LocalInferenceTests(unittest.TestCase):
         target.ModelCache.get()
 
         self.assertEqual(
-            [("warmup", {"return_tensors": "pt", "truncation": True, "max_length": 300})],
+            [
+                (
+                    "warmup",
+                    {"return_tensors": "pt", "truncation": True, "max_length": 300},
+                )
+            ],
             environment.tokenizer.calls,
         )
         for tensor in warmup_tensors.values():
             self.assertEqual(["cuda"], tensor.to_calls)
         self.assertEqual(1, environment.torch.inference_mode.call_count)
-        self.assertEqual((1, 1, 0), (
-            environment.inference_state.enters,
-            environment.inference_state.exits,
-            environment.inference_state.active,
-        ))
+        self.assertEqual(
+            (1, 1, 0),
+            (
+                environment.inference_state.enters,
+                environment.inference_state.exits,
+                environment.inference_state.active,
+            ),
+        )
         self.assertEqual(1, environment.model.calls[0][1])
 
     def test_predict_maps_known_label_and_score(self):
@@ -298,7 +313,9 @@ class LocalInferenceTests(unittest.TestCase):
         result = target.predict("A useful email")
 
         self.assertEqual({"label": "LABEL_2", "score": 0.875}, result)
-        environment.softmax.assert_called_once_with(environment.model.output.logits, dim=-1)
+        environment.softmax.assert_called_once_with(
+            environment.model.output.logits, dim=-1
+        )
         self.assertEqual([-1], environment.probabilities.argmax_calls)
         self.assertEqual([(0, 2)], environment.probabilities.index_calls)
 
@@ -325,21 +342,29 @@ class LocalInferenceTests(unittest.TestCase):
         target.predict("classify me")
 
         self.assertEqual(
-            [("classify me", {
-                "return_tensors": "pt",
-                "truncation": True,
-                "max_length": 256,
-            })],
+            [
+                (
+                    "classify me",
+                    {
+                        "return_tensors": "pt",
+                        "truncation": True,
+                        "max_length": 256,
+                    },
+                )
+            ],
             environment.tokenizer.calls,
         )
         for tensor in prediction_tensors.values():
             self.assertEqual(["cuda"], tensor.to_calls)
         self.assertEqual(1, environment.torch.inference_mode.call_count)
-        self.assertEqual((1, 1, 0), (
-            environment.inference_state.enters,
-            environment.inference_state.exits,
-            environment.inference_state.active,
-        ))
+        self.assertEqual(
+            (1, 1, 0),
+            (
+                environment.inference_state.enters,
+                environment.inference_state.exits,
+                environment.inference_state.active,
+            ),
+        )
         model_kwargs, active_during_call = environment.model.calls[0]
         self.assertEqual(prediction_tensors, model_kwargs)
         self.assertEqual(1, active_during_call)
@@ -348,7 +373,9 @@ class LocalInferenceTests(unittest.TestCase):
         environment = FakeEnvironment(cuda_available=True)
         target = self.load_target(environment)
         target.ModelCache.get()
-        environment.model.side_effect = RuntimeError("CUDA out of memory: allocation failed")
+        environment.model.side_effect = RuntimeError(
+            "CUDA out of memory: allocation failed"
+        )
 
         with self.assertRaises(target.ModelError) as raised:
             target.predict("large input")

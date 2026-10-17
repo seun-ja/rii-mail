@@ -38,6 +38,10 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": {
+      "../packaging/macos-arm64/build/local-model/": "local-model/",
+      "../llm/local_inference.py": "llm/local_inference.py"
+    }
   }
 }

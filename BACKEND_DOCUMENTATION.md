@@ -905,7 +905,7 @@ Serializes the selected email and runs it through the initialized local spam-cla
 4. invokes the Python `predict(...)` function through PyO3
 5. parses the returned JSON into `SpamRating`
 
-The local inference agent is initialized as part of login/returning-user startup. `initialize_local_inference()` currently resolves `local-model/` and `llm/local_inference.py` from the repository root.
+The local inference agent is initialized as part of login/returning-user startup. The macOS arm64 package includes the model, Python entrypoint, standalone Python 3.12 runtime, and all pinned Python dependencies. `initialize_local_inference()` resolves these assets from the app resource directory, sanitizes inherited Python environment variables, explicitly initializes PyO3, restricts `sys.path` to bundled paths, and validates the origins of `torch` and `transformers`.
 
 `SpamRating` returns:
 
@@ -1032,12 +1032,16 @@ These are important if you want the docs to reflect reality rather than intent.
 - current code does not fully activate that branch
 - frontend manual refresh is the dependable current behavior
 
-### Local inference assets are resolved from the project tree
+### macOS arm64 local inference is self-contained
 
-- spam rating expects the model under `local-model/`
-- the Python entrypoint is `llm/local_inference.py`
-- both paths are resolved relative to the compile-time project root
-- these assets are not currently declared in `src-tauri/tauri.conf.json` as bundle resources, so packaged-build resource handling still needs to be finalized
+- the model is not stored in the GitHub repository; builders must download [`seuun/spam-rater-local-model`](https://huggingface.co/seuun/spam-rater-local-model) into the repository-root `local-model/` directory before running or packaging the app
+- use `git clone https://huggingface.co/seuun/spam-rater-local-model local-model` with Git LFS, or `hf download seuun/spam-rater-local-model --local-dir local-model`; verify that `config.json` and `model.safetensors` contain real downloaded data rather than LFS pointers
+- the Python entrypoint is `llm/local_inference.py` and model loading is forced into offline/local-files-only mode
+- `packaging/macos-arm64/runtime.lock.json` pins the standalone Python archive and SHA-256 checksum
+- `packaging/macos-arm64/requirements.txt` pins PyTorch, Transformers, and their complete dependency set
+- `src-tauri/tauri.macos.conf.json` places `libpython3.12.dylib` in `Contents/Frameworks` and the Python home in `Contents/Resources/python`
+- production runtime initialization does not discover Homebrew, virtualenv, home-directory, or `PATH` Python installations
+- macOS 14 is the minimum supported release because of the pinned arm64 PyTorch wheel
 
 ### macOS matters for stored credentials
 
@@ -1090,6 +1094,8 @@ These are important if you want the docs to reflect reality rather than intent.
 - `llm/src/providers/local_inference.rs`
 - `llm/local_inference.py`
 - `local-model/`
+- `packaging/macos-arm64/`
+- `src-tauri/tauri.macos.conf.json`
 
 ---
 

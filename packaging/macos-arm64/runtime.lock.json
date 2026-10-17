@@ -1,0 +1,9 @@
+{
+  "python_version": "3.12.15",
+  "release": "20261013",
+  "archive": "cpython-3.12.15+20261013-aarch64-apple-darwin-install_only_stripped.tar.gz",
+  "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261013/cpython-3.12.15%2B20261013-aarch64-apple-darwin-install_only_stripped.tar.gz",
+  "sha256": "9866e11cf2ae9caa1e671383786f248859a52dd8bfb702fb4c0dc2c65f1d36de",
+  "python_tag": "cp312",
+  "platform_tag": "macosx_14_0_arm64"
+}

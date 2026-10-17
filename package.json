@@ -4,10 +4,11 @@
   "type": "module",
   "scripts": {
     "dev": "cargo tauri dev --no-watch",
+    "build:macos-arm64": "./packaging/macos-arm64/build-dmg.sh",
     "test": "node --test src/**/*.test.js",
     "test:frontend": "node --test src/**/*.test.js",
-    "test:backend": "cd src-tauri && PYO3_PYTHON=/opt/homebrew/bin/python3.12 cargo test",
-    "test:llm": "PYO3_PYTHON=/opt/homebrew/bin/python3.12 cargo test --manifest-path src-tauri/Cargo.toml --package llm --lib",
+    "test:backend": "PYO3_CONFIG_FILE=\"$(pwd)/packaging/macos-arm64/build/pyo3-config.txt\" PYO3_ENVIRONMENT_SIGNATURE=riimail-python-3.12.15-tests DYLD_LIBRARY_PATH=\"$(pwd)/packaging/macos-arm64/build\" cargo test --manifest-path src-tauri/Cargo.toml",
+    "test:llm": "PYO3_CONFIG_FILE=\"$(pwd)/packaging/macos-arm64/build/pyo3-config.txt\" PYO3_ENVIRONMENT_SIGNATURE=riimail-python-3.12.15-tests DYLD_LIBRARY_PATH=\"$(pwd)/packaging/macos-arm64/build\" cargo test --manifest-path src-tauri/Cargo.toml --package llm --lib",
     "test:python": "python3 -m unittest discover -s llm/tests -p 'test_*.py'",
     "test:all": "npm run test:frontend && npm run test:backend && npm run test:llm && npm run test:python"
   },

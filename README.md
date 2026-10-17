@@ -63,29 +63,51 @@ cargo install tauri-cli
 
 On macOS, ensure Xcode Command Line Tools are installed.
 
-### Local inference requirements
+### Local inference runtime
 
-Spam rating runs locally through PyO3 and requires:
+The macOS arm64 release is self-contained. Its app bundle includes:
 
-- A Python interpreter compatible with the project's PyO3 version. Python 3.12 is recommended for the current PyO3 0.21 dependency.
-- Working `torch` and `transformers` installations in that interpreter.
-- The classification model files in `local-model/` at the repository root. This directory must contain `config.json`, `model.safetensors`, and the tokenizer files expected by Transformers.
+- the classification model from `local-model/`
+- `llm/local_inference.py`
+- a checksum-pinned, relocatable Python 3.12 runtime
+- pinned binary wheels for PyTorch, Transformers, Tokenizers, Safetensors, and their dependencies
 
-Create and activate a virtual environment before building or running Tauri so PyO3 links against the intended interpreter:
+Users do **not** need Homebrew, Python, a virtualenv, Python packages, or network access for local spam/phishing inference. At startup, RiiMail replaces inherited Python environment variables, initializes only the bundled runtime, restricts `sys.path` to app resources, enables Hugging Face offline mode, and rejects `torch` or `transformers` imports outside the app bundle.
+
+The release targets Apple Silicon and requires macOS 14 or newer because the pinned PyTorch wheel has a macOS 14 deployment target.
+
+#### Download the local model
+
+The model is intentionally excluded from the GitHub repository because of its size. Before running the app or building a package, download [`seuun/spam-rater-local-model`](https://huggingface.co/seuun/spam-rater-local-model) into `local-model/` at the repository root.
+
+Using Git LFS:
 
 ```bash
-python3.12 -m venv .venv
-source .venv/bin/activate
-python -m pip install torch transformers
+git lfs install
+git clone https://huggingface.co/seuun/spam-rater-local-model local-model
 ```
 
-Verify the environment before starting the application:
+Alternatively, using the Hugging Face CLI:
 
 ```bash
-python -c "import sys, torch, transformers; print(sys.version); print(torch.__version__); print(transformers.__version__)"
+hf download seuun/spam-rater-local-model --local-dir local-model
 ```
 
-At runtime, RiiMail dynamically locates a Python interpreter whose major/minor version matches the interpreter embedded by PyO3 and verifies that `import torch` succeeds. It checks the active virtual environment, project virtual environments, environments under `~/.venvs`, and Python executables available on `PATH`.
+Run the commands from the RiiMail repository root. If `local-model/` already exists, remove or move it before cloning rather than creating a nested `local-model/spam-rater-local-model/` directory. Confirm that the actual model data—not Git LFS pointer files—was downloaded:
+
+```bash
+test -f local-model/config.json
+test -f local-model/model.safetensors
+ls -lh local-model/model.safetensors
+```
+
+`model.safetensors` should be hundreds of megabytes; a tiny text file indicates that only a Git LFS pointer was downloaded. The build stops with an error if `local-model/config.json` is missing. The directory is ignored by Git and should not be committed to this repository.
+
+Runtime inputs are tracked in:
+
+- `packaging/macos-arm64/runtime.lock.json`
+- `packaging/macos-arm64/requirements.txt`
+- `src-tauri/tauri.macos.conf.json`
 
 ## Environment Variables
 
@@ -119,12 +141,21 @@ npm run dev
 
 This runs `cargo tauri dev --no-watch`, so Rust file watching and automatic application restarts are disabled.
 
-Build a distributable app:
+After downloading the model as described above, build the self-contained Apple Silicon DMG from the project root:
 
 ```bash
-cd src-tauri
-cargo tauri build
+npm run build:macos-arm64
 ```
+
+The first build downloads the checksum-pinned standalone Python archive and pinned wheels. The wrapper stages the runtime, links PyO3 to the bundled dylib, builds and signs the app, audits every Mach-O dependency, runs real offline model inference from the packaged app, and verifies the DMG checksum.
+
+Output:
+
+```text
+src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/RiiMail_0.1.0_aarch64.dmg
+```
+
+The generated DMG is ad-hoc signed for local testing. Public distribution still requires your Apple Developer ID signing identity and notarization to avoid Gatekeeper warnings on downloaded builds.
 
 ## Testing
 
@@ -134,10 +165,11 @@ Run all tests from one place (project root):
 npm run test:all
 ```
 
-Run Rust backend tests:
+Run Rust backend tests after staging the pinned runtime:
 
 ```bash
-PYO3_PYTHON=python3.12 cargo test --manifest-path src-tauri/Cargo.toml
+python3 packaging/macos-arm64/scripts/prepare-runtime.py
+npm run test:backend
 ```
 
 Run local-provider Rust tests and mocked Python inference tests separately:
@@ -156,7 +188,7 @@ npm test
 
 What is covered now:
 
-- Rust unit tests for error handling, email transformation, spam-rating parsing, Python discovery, local-provider invocation, fetch helper logic, worker login error mapping, and DB enum conversions.
+- Rust unit tests for error handling, email transformation, spam-rating parsing, bundled-runtime path validation, fetch helper logic, worker login error mapping, and DB enum conversions.
 - Rust async DB integration tests for initialization, label serialization, storage population, pagination reads, sync-state tracking, and cleanup behavior.
 - Mocked Python tests for model caching, device selection, warmup, inference, OOM handling, and cleanup without loading the real model.
 - Frontend unit tests for spam-rating messages, shared error parsing, state defaults, mailbox/provider helpers, cache hydration/persistence, and DOM selector wiring.
