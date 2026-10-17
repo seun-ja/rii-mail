@@ -40,7 +40,6 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../packaging/macos-arm64/build/local-model/": "local-model/",
       "../llm/local_inference.py": "llm/local_inference.py"
     }
   }

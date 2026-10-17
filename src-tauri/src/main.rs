@@ -4,11 +4,15 @@
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if std::env::args().any(|argument| argument == "--self-test-local-inference") {
         let executable = std::env::current_exe()?;
-        let contents = executable
+        let executable_dir = executable
             .parent()
-            .and_then(std::path::Path::parent)
-            .ok_or("packaged executable is not inside Contents/MacOS")?;
-        let resource_root = contents.join("Resources");
+            .ok_or("executable does not have a parent directory")?;
+        let packaged_resources = executable_dir
+            .parent()
+            .map(|contents| contents.join("Resources"));
+        let resource_root = packaged_resources
+            .filter(|resources| resources.join("python").is_dir())
+            .unwrap_or_else(|| executable_dir.to_path_buf());
         let result = riimail_lib::self_test_bundled_inference(&resource_root)
             .await
             .map_err(|error| format!("bundled inference self-test failed: {error}"))?;

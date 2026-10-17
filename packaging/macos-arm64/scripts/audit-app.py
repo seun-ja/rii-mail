@@ -7,6 +7,7 @@ import plistlib
 import subprocess
 import sys
 from pathlib import Path
+from typing import cast
 
 ALLOWED_ABSOLUTE_PREFIXES = ("/System/Library/", "/usr/lib/")
 FORBIDDEN_FRAGMENTS = ("/opt/homebrew", "/Users/", "/usr/local/")
@@ -46,7 +47,10 @@ def audit(app: Path) -> None:
         raise RuntimeError("missing bundled files:\n" + "\n".join(missing))
 
     with (contents / "Info.plist").open("rb") as stream:
-        plist = plistlib.load(stream)
+        raw_plist = cast(object, plistlib.load(stream))
+    if not isinstance(raw_plist, dict):
+        raise TypeError("Info.plist root must be a dictionary")
+    plist = cast(dict[str, object], raw_plist)
     if plist.get("LSMinimumSystemVersion") != "14.0":
         raise RuntimeError("LSMinimumSystemVersion must be 14.0")
 
@@ -88,7 +92,7 @@ def audit(app: Path) -> None:
     if failures:
         raise RuntimeError("bundle audit failed:\n" + "\n".join(failures))
 
-    subprocess.run(
+    _ = subprocess.run(
         ["codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app)],
         check=True,
     )

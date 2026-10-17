@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "cargo tauri dev --no-watch",
+    "dev": "./packaging/macos-arm64/dev.sh",
     "build:macos-arm64": "./packaging/macos-arm64/build-dmg.sh",
     "test": "node --test src/**/*.test.js",
     "test:frontend": "node --test src/**/*.test.js",

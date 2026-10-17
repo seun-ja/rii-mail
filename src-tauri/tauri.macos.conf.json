@@ -1,6 +1,7 @@
 {
   "bundle": {
     "resources": {
+      "../packaging/macos-arm64/build/local-model/": "local-model/",
       "../packaging/macos-arm64/build/python/": "python/",
       "../packaging/macos-arm64/build/runtime-manifest.json": "python/runtime-manifest.json"
     },

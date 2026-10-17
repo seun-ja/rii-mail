@@ -58,7 +58,7 @@ def _assert_bundled_dependency(module: object, name: str) -> None:
 
     module_file = getattr(module, "__file__", None)
     if not isinstance(module_file, str):
-        raise RuntimeError(f"{name} does not report a module origin")
+        raise TypeError(f"{name} does not report a module origin")
 
     expected_root = (
         Path(resource_root) / "python/lib/python3.12/site-packages"

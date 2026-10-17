@@ -1041,6 +1041,7 @@ These are important if you want the docs to reflect reality rather than intent.
 - `packaging/macos-arm64/requirements.txt` pins PyTorch, Transformers, and their complete dependency set
 - `src-tauri/tauri.macos.conf.json` places `libpython3.12.dylib` in `Contents/Frameworks` and the Python home in `Contents/Resources/python`
 - production runtime initialization does not discover Homebrew, virtualenv, home-directory, or `PATH` Python installations
+- local development must use `npm run dev`, which invokes `packaging/macos-arm64/dev.sh` to stage the same runtime and provide PyO3's link/load environment; invoking `cargo tauri dev` directly can link the debug executable to a machine-local Python
 - macOS 14 is the minimum supported release because of the pinned arm64 PyTorch wheel
 
 ### macOS matters for stored credentials

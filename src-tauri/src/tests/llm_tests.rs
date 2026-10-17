@@ -220,6 +220,18 @@ fn label_deserialization_rejects_unknown_or_serialized_names() {
 }
 
 #[test]
+fn app_error_preserves_the_underlying_llm_message() {
+    let error = crate::error::Error::from(::llm::error::Error::Other(
+        "bundled Python runtime is missing".to_string(),
+    ));
+
+    assert_eq!(
+        error.to_string(),
+        "LLM error: bundled Python runtime is missing"
+    );
+}
+
+#[test]
 fn local_inference_paths_resolve_existing_resources_to_absolute_paths() {
     let root = unique_test_dir("success");
     let model = root.join("local-model");
@@ -257,7 +269,10 @@ fn local_inference_paths_reject_missing_model_directory() {
     let error = resolve_local_inference_paths(&root)
         .expect_err("a missing model directory should return an error");
 
-    assert!(error.to_string().contains("IO Error"));
+    assert!(error
+        .to_string()
+        .contains("bundled local model is unavailable"));
+    assert!(error.to_string().contains("local-model"));
     let _ = std::fs::remove_dir_all(root);
 }
 
@@ -269,6 +284,9 @@ fn local_inference_paths_reject_missing_python_script() {
     let error = resolve_local_inference_paths(&root)
         .expect_err("a missing Python script should return an error");
 
-    assert!(error.to_string().contains("IO Error"));
+    assert!(error
+        .to_string()
+        .contains("bundled Python inference script is unavailable"));
+    assert!(error.to_string().contains("local_inference.py"));
     let _ = std::fs::remove_dir_all(root);
 }

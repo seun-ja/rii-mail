@@ -34,13 +34,13 @@ def main() -> int:
         reverse=True,
     )
     for path in native_files:
-        subprocess.run(
+        _ = subprocess.run(
             ["codesign", "--force", "--sign", "-", "--timestamp=none", str(path)],
             check=True,
             stdout=subprocess.DEVNULL,
         )
 
-    subprocess.run(
+    _ = subprocess.run(
         [
             "codesign",
             "--force",

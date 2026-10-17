@@ -139,7 +139,9 @@ From the project root:
 npm run dev
 ```
 
-This runs `cargo tauri dev --no-watch`, so Rust file watching and automatic application restarts are disabled.
+This runs `packaging/macos-arm64/dev.sh`. The wrapper prepares or reuses the pinned Python runtime, configures PyO3 to link against its `libpython3.12.dylib`, exposes that dylib to the debug executable, and then starts `cargo tauri dev --no-watch`. The first run downloads the runtime and pinned wheels; later runs reuse the staged files.
+
+Use `npm run dev` rather than invoking `cargo tauri dev` directly. The direct Cargo command does not provide the PyO3 link configuration and can produce a debug executable linked to Homebrew or another machine-local Python installation.
 
 After downloading the model as described above, build the self-contained Apple Silicon DMG from the project root:
 

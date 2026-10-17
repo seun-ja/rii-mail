@@ -89,10 +89,20 @@ impl Serialize for Label {
 pub(crate) fn resolve_local_inference_paths(
     resource_root: &Path,
 ) -> Result<(PathBuf, PathBuf), Error> {
-    let model_path = resource_root.join("local-model").canonicalize()?;
-    let script_path = resource_root
-        .join("llm/local_inference.py")
-        .canonicalize()?;
+    let model_resource = resource_root.join("local-model");
+    let model_path = model_resource.canonicalize().map_err(|error| {
+        Error::Other(format!(
+            "bundled local model is unavailable at {}: {error}",
+            model_resource.display()
+        ))
+    })?;
+    let script_resource = resource_root.join("llm/local_inference.py");
+    let script_path = script_resource.canonicalize().map_err(|error| {
+        Error::Other(format!(
+            "bundled Python inference script is unavailable at {}: {error}",
+            script_resource.display()
+        ))
+    })?;
 
     Ok((model_path, script_path))
 }

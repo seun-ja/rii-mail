@@ -1,0 +1,13 @@
+{
+
+  "typeCheckingMode": "strict",
+  "pythonVersion": "3.12",
+  "ignore": ["local-model"],
+  "exclude": [
+    "local-model",
+    "packaging/macos-arm64/.cache",
+    "packaging/macos-arm64/build",
+    "src-tauri/target",
+    "llm/target"
+  ]
+}

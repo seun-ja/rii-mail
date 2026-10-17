@@ -13,6 +13,7 @@ import tarfile
 import tempfile
 import urllib.request
 from pathlib import Path
+from typing import BinaryIO, TypedDict, cast
 
 PACKAGING_DIR = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = PACKAGING_DIR.parents[1]
@@ -23,6 +24,24 @@ BUILD_DIR = PACKAGING_DIR / "build"
 PYTHON_STDLIB = Path("lib/python3.12")
 SITE_PACKAGES = PYTHON_STDLIB / "site-packages"
 DYLIB_NAME = "libpython3.12.dylib"
+
+
+class RuntimeLock(TypedDict):
+    python_version: str
+    release: str
+    archive: str
+    url: str
+    sha256: str
+    python_tag: str
+    platform_tag: str
+
+
+class RuntimeManifest(TypedDict):
+    python: str
+    release: str
+    archive_sha256: str
+    requirements_sha256: str
+    model_sha256: str
 
 
 def sha256(path: Path) -> str:
@@ -50,12 +69,13 @@ def download(url: str, destination: Path) -> None:
     temporary = destination.with_suffix(destination.suffix + ".download")
     temporary.unlink(missing_ok=True)
     print(f"Downloading {url}")
-    with urllib.request.urlopen(url) as response, temporary.open("wb") as output:
+    response = cast(BinaryIO, urllib.request.urlopen(url))
+    with response, temporary.open("wb") as output:
         shutil.copyfileobj(response, output)
-    temporary.replace(destination)
+    _ = temporary.replace(destination)
 
 
-def checked_archive(lock: dict[str, str]) -> Path:
+def checked_archive(lock: RuntimeLock) -> Path:
     archive = CACHE_DIR / lock["archive"]
     if not archive.exists():
         download(lock["url"], archive)
@@ -91,7 +111,7 @@ def remove_caches(root: Path) -> None:
 
 def run(command: list[str], *, env: dict[str, str] | None = None) -> None:
     print("+", " ".join(command))
-    subprocess.run(command, cwd=PROJECT_ROOT, env=env, check=True)
+    _ = subprocess.run(command, cwd=PROJECT_ROOT, env=env, check=True)
 
 
 def verify_staged_runtime(interpreter: Path, python_home: Path) -> None:
@@ -110,7 +130,7 @@ def verify_staged_runtime(interpreter: Path, python_home: Path) -> None:
         }
     )
     for name in ("PYTHONUSERBASE", "PYTHONSTARTUP", "VIRTUAL_ENV", "CONDA_PREFIX"):
-        environment.pop(name, None)
+        _ = environment.pop(name, None)
 
     verification = """
 import pathlib
@@ -131,7 +151,7 @@ print(torch.__file__)
     run([str(interpreter), "-c", verification, str(python_home)], env=environment)
 
 
-def write_pyo3_config(destination: Path, lock: dict[str, str]) -> None:
+def write_pyo3_config(destination: Path, lock: RuntimeLock) -> None:
     config = "\n".join(
         [
             "implementation=CPython",
@@ -147,26 +167,43 @@ def write_pyo3_config(destination: Path, lock: dict[str, str]) -> None:
             "",
         ]
     )
-    (BUILD_DIR / "pyo3-config.txt").write_text(config, encoding="utf-8")
+    _ = (BUILD_DIR / "pyo3-config.txt").write_text(config, encoding="utf-8")
 
 
 def main() -> int:
     if sys.platform != "darwin" or os.uname().machine != "arm64":
         raise RuntimeError("the macOS runtime must be prepared on an Apple Silicon Mac")
 
-    lock = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
+    raw_lock_value = cast(
+        object, json.loads(LOCK_PATH.read_text(encoding="utf-8"))
+    )
+    if not isinstance(raw_lock_value, dict):
+        raise TypeError(f"runtime lock must be a JSON object: {LOCK_PATH}")
+    raw_lock = cast(dict[str, object], raw_lock_value)
+    try:
+        lock = RuntimeLock(
+            python_version=str(raw_lock["python_version"]),
+            release=str(raw_lock["release"]),
+            archive=str(raw_lock["archive"]),
+            url=str(raw_lock["url"]),
+            sha256=str(raw_lock["sha256"]),
+            python_tag=str(raw_lock["python_tag"]),
+            platform_tag=str(raw_lock["platform_tag"]),
+        )
+    except KeyError as error:
+        raise ValueError(f"runtime lock is missing {error.args[0]!r}") from error
     archive = checked_archive(lock)
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    _ = CACHE_DIR.mkdir(parents=True, exist_ok=True)
     model_source = PROJECT_ROOT / "local-model"
     if not (model_source / "config.json").is_file():
         raise RuntimeError(f"local model is missing from {model_source}")
-    manifest = {
-        "python": lock["python_version"],
-        "release": lock["release"],
-        "archive_sha256": lock["sha256"],
-        "requirements_sha256": sha256(REQUIREMENTS_PATH),
-        "model_sha256": directory_sha256(model_source),
-    }
+    manifest = RuntimeManifest(
+        python=lock["python_version"],
+        release=lock["release"],
+        archive_sha256=lock["sha256"],
+        requirements_sha256=sha256(REQUIREMENTS_PATH),
+        model_sha256=directory_sha256(model_source),
+    )
     manifest_path = BUILD_DIR / "runtime-manifest.json"
     required_staged_files = [
         BUILD_DIR / DYLIB_NAME,
@@ -178,7 +215,9 @@ def main() -> int:
     remove_caches(BUILD_DIR)
     if manifest_path.is_file() and all(path.is_file() for path in required_staged_files):
         try:
-            existing_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            existing_manifest = cast(
+                object, json.loads(manifest_path.read_text(encoding="utf-8"))
+            )
         except json.JSONDecodeError:
             existing_manifest = None
         if existing_manifest == manifest:
@@ -192,9 +231,9 @@ def main() -> int:
         python_home = staged / "python"
         (python_home / PYTHON_STDLIB.parent).mkdir(parents=True, exist_ok=True)
 
-        shutil.copytree(runtime / PYTHON_STDLIB, python_home / PYTHON_STDLIB)
-        (python_home / "bin").mkdir(parents=True, exist_ok=True)
-        shutil.copy2(runtime / "bin/python3.12", python_home / "bin/python3.12")
+        _ = shutil.copytree(runtime / PYTHON_STDLIB, python_home / PYTHON_STDLIB)
+        _ = (python_home / "bin").mkdir(parents=True, exist_ok=True)
+        _ = shutil.copy2(runtime / "bin/python3.12", python_home / "bin/python3.12")
         site_packages = python_home / SITE_PACKAGES
         shutil.rmtree(site_packages, ignore_errors=True)
         site_packages.mkdir(parents=True, exist_ok=True)
@@ -225,22 +264,22 @@ def main() -> int:
         run(["codesign", "--force", "--sign", "-", "--timestamp=none", str(libomp)])
         verify_staged_runtime(python_home / "bin/python3.12", python_home)
 
-        shutil.copy2(runtime / "lib" / DYLIB_NAME, staged / DYLIB_NAME)
-        shutil.copytree(
+        _ = shutil.copy2(runtime / "lib" / DYLIB_NAME, staged / DYLIB_NAME)
+        _ = shutil.copytree(
             model_source,
             staged / "local-model",
             ignore=shutil.ignore_patterns(".DS_Store", "__pycache__", "*.pyc", "*.pyo"),
         )
-        (staged / "runtime-manifest.json").write_text(
+        _ = (staged / "runtime-manifest.json").write_text(
             json.dumps(manifest, indent=2) + "\n",
             encoding="utf-8",
         )
 
         replacement = PACKAGING_DIR / "build.new"
         shutil.rmtree(replacement, ignore_errors=True)
-        shutil.copytree(staged, replacement)
+        _ = shutil.copytree(staged, replacement)
         shutil.rmtree(BUILD_DIR, ignore_errors=True)
-        replacement.replace(BUILD_DIR)
+        _ = replacement.replace(BUILD_DIR)
         write_pyo3_config(BUILD_DIR, lock)
 
     print(f"Staged bundled Python runtime at {BUILD_DIR}")

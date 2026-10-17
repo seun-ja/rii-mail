@@ -59,7 +59,7 @@ pub enum Error {
     SendEmail(#[from] lettre::error::Error),
     #[error("Error parsing Email Address")]
     AddressParse(#[from] AddressError),
-    #[error("LLM Error")]
+    #[error("LLM error: {0}")]
     Llm(#[from] llm::error::Error),
 }
 

@@ -1,8 +1,11 @@
+# pyright: basic
+
 import importlib.util
 import json
 import sys
 import types
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -48,8 +51,8 @@ class FakeTokenizer:
         if model_max_length is not _MISSING:
             self.model_max_length = model_max_length
         self.calls = []
-        self.side_effect = None
-        self.return_value = None
+        self.side_effect: Exception | Callable[..., dict[str, FakeTensor]] | None = None
+        self.return_value: dict[str, FakeTensor] | None = None
 
     def __call__(self, text, **kwargs):
         self.calls.append((text, kwargs))
@@ -69,7 +72,7 @@ class FakeModel:
         self.fail_to_devices = set()
         self.eval_calls = 0
         self.calls = []
-        self.side_effect = None
+        self.side_effect: RuntimeError | None = None
         self.output = types.SimpleNamespace(logits=object())
 
     def to(self, device):
@@ -104,6 +107,22 @@ class FakeInferenceMode:
         return False
 
 
+class FakeTorchModule(types.ModuleType):
+    set_num_threads: Mock
+    set_num_interop_threads: Mock
+    device: Mock
+    inference_mode: Mock
+    backends: types.SimpleNamespace
+    cuda: types.SimpleNamespace
+    mps: types.SimpleNamespace
+    nn: types.SimpleNamespace
+
+
+class FakeTransformersModule(types.ModuleType):
+    AutoTokenizer: types.SimpleNamespace
+    AutoModelForSequenceClassification: types.SimpleNamespace
+
+
 class FakeEnvironment:
     def __init__(
         self,
@@ -120,7 +139,7 @@ class FakeEnvironment:
         self.model = FakeModel(self.inference_state)
         self.probabilities = FakeProbabilities(predicted_index, score)
 
-        self.torch = types.ModuleType("torch")
+        self.torch = FakeTorchModule("torch")
         self.torch.set_num_threads = Mock()
         self.torch.set_num_interop_threads = Mock()
         self.torch.device = Mock(side_effect=lambda name: name)
@@ -143,7 +162,7 @@ class FakeEnvironment:
             functional=types.SimpleNamespace(softmax=self.softmax)
         )
 
-        self.transformers = types.ModuleType("transformers")
+        self.transformers = FakeTransformersModule("transformers")
         self.tokenizer_from_pretrained = Mock(return_value=self.tokenizer)
         self.model_from_pretrained = Mock(return_value=self.model)
         self.transformers.AutoTokenizer = types.SimpleNamespace(
@@ -169,9 +188,10 @@ class LocalInferenceTests(unittest.TestCase):
         type(self).module_number += 1
         module_name = "_local_inference_under_test_" + str(type(self).module_number)
         spec = importlib.util.spec_from_file_location(module_name, _TARGET)
-        self.assertIsNotNone(spec)
-        self.assertIsNotNone(spec.loader)
+        if spec is None or spec.loader is None:
+            raise AssertionError(f"could not load module spec for {_TARGET}")
         module = importlib.util.module_from_spec(spec)
+        loader = spec.loader
 
         injected_modules = {
             "torch": environment.torch,
@@ -179,9 +199,9 @@ class LocalInferenceTests(unittest.TestCase):
             module_name: module,
         }
         with patch.dict(sys.modules, injected_modules):
-            spec.loader.exec_module(module)
+            loader.exec_module(module)
 
-        setattr(module, "MODEL_DIR", str(_TARGET.parents[1] / "local-model"))
+        module.__dict__["MODEL_DIR"] = str(_TARGET.parents[1] / "local-model")
         self.assertIsNone(module.ModelCache._instance)
         environment.torch.set_num_threads.assert_called_once_with(1)
         environment.torch.set_num_interop_threads.assert_called_once_with(1)
