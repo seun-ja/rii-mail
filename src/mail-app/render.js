@@ -1,4 +1,5 @@
 import { getEmails } from "./cache.js";
+import { escapeHtml, prepareEmailHtml } from "./helpers.js";
 
 export function createRenderer(state, dom) {
   function getVisibleEmails() {
@@ -82,27 +83,44 @@ export function createRenderer(state, dom) {
         ? selected.textBody
         : selected.body) || "No message body";
 
-    dom.mailReaderEl.className = "mail-reader";
+    const subject = escapeHtml(selected.subject || "(No subject)");
+    const senderName = escapeHtml(selected.senderName || "Unknown sender");
+    const emailFrom = escapeHtml(selected.emailFrom);
+    const folder = escapeHtml(selected.folder);
+    const receivedAt = escapeHtml(selected.time);
+
+    dom.mailReaderEl.className = hasHtmlBody
+      ? "mail-reader reader-html-message"
+      : "mail-reader";
     dom.mailReaderEl.innerHTML = `
-      <div class="reader-head">
-        <h2 class="reader-subject">${selected.subject}</h2>
+      <header class="reader-head">
+        <h2 class="reader-subject">${subject}</h2>
         <div class="reader-meta">
-          <span><strong>From:</strong> ${selected.senderName} &lt;${selected.emailFrom}&gt;</span>
-          <span><strong>Folder:</strong> ${selected.folder}</span>
-          <span><strong>Received:</strong> ${selected.time}</span>
+          <div class="reader-meta-item reader-meta-sender">
+            <span class="reader-meta-label">From</span>
+            <span class="reader-meta-value">${senderName}${emailFrom ? ` &lt;${emailFrom}&gt;` : ""}</span>
+          </div>
+          <div class="reader-meta-item">
+            <span class="reader-meta-label">Folder</span>
+            <span class="reader-meta-value">${folder}</span>
+          </div>
+          <div class="reader-meta-item">
+            <span class="reader-meta-label">Received</span>
+            <span class="reader-meta-value">${receivedAt}</span>
+          </div>
         </div>
-      </div>
+      </header>
       ${
         hasHtmlBody
-          ? '<iframe class="reader-html-frame" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe>'
-          : `<div class="reader-body reader-body-text">${textBody}</div>`
+          ? `<iframe class="reader-html-frame" title="Email content: ${subject}" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe>`
+          : `<div class="reader-body reader-body-text">${escapeHtml(textBody)}</div>`
       }
     `;
 
     if (hasHtmlBody) {
       const frame = dom.mailReaderEl.querySelector(".reader-html-frame");
       if (frame) {
-        frame.srcdoc = selected.htmlBody;
+        frame.srcdoc = prepareEmailHtml(selected.htmlBody);
       }
     }
   }
@@ -147,17 +165,21 @@ export function createRenderer(state, dom) {
 
     dom.mailListEl.innerHTML = visibleEmails
       .map((mail) => {
-        const initials = mail.senderName.slice(0, 1).toUpperCase();
+        const initials = escapeHtml(
+          String(mail.senderName || "?")
+            .slice(0, 1)
+            .toUpperCase(),
+        );
         return `
-          <li class="mail-item ${mail.read ? "" : "unread"} ${state.selectedId === mail.id ? "active" : ""}" data-id="${mail.id}">
+          <li class="mail-item ${mail.read ? "" : "unread"} ${state.selectedId === mail.id ? "active" : ""}" data-id="${escapeHtml(mail.id)}">
             <div class="mail-item-avatar">${initials}</div>
             <div class="mail-item-content">
               <div class="mail-item-row">
-                <span class="mail-item-sender">${mail.senderName}</span>
-                <span class="mail-item-time">${mail.time}</span>
+                <span class="mail-item-sender">${escapeHtml(mail.senderName || "Unknown sender")}</span>
+                <span class="mail-item-time">${escapeHtml(mail.time)}</span>
               </div>
-              <div class="mail-item-subject">${mail.subject}</div>
-              <div class="mail-item-preview">${mail.preview}</div>
+              <div class="mail-item-subject">${escapeHtml(mail.subject || "(No subject)")}</div>
+              <div class="mail-item-preview">${escapeHtml(mail.preview)}</div>
             </div>
           </li>
         `;
