@@ -8,7 +8,7 @@ export function createLayoutController(state, dom) {
     const sidebarWidth = state.isSidebarCollapsed ? 74 : 220;
     const resizerWidth = 10;
     const minListWidth = 260;
-    const minReaderWidth = 360;
+    const minReaderWidth = 480;
     const maxListWidth = Math.max(
       minListWidth,
       bodyRect.width - sidebarWidth - resizerWidth - minReaderWidth,

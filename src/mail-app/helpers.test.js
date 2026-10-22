@@ -2,12 +2,37 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  escapeHtml,
   getActiveBackendFolderKey,
   getActiveMailboxLiteral,
   getFolderPaginationState,
   isMailListNearBottom,
+  prepareEmailHtml,
   resetFolderPagination,
 } from "./helpers.js";
+
+test("escapeHtml safely encodes content inserted into the mail UI", () => {
+  assert.equal(
+    escapeHtml(`<script data-value="test">'unsafe' & text</script>`),
+    "&lt;script data-value=&quot;test&quot;&gt;&#039;unsafe&#039; &amp; text&lt;/script&gt;",
+  );
+  assert.equal(escapeHtml(null), "");
+});
+
+test("prepareEmailHtml injects responsive viewer styles into a document head", () => {
+  const source = "<html><head><title>Message</title></head><body><table width=\"900\"></table></body></html>";
+  const result = prepareEmailHtml(source);
+
+  assert.match(result, /data-riimail-viewer-styles/);
+  assert.match(result, /max-width: 100% !important/);
+  assert.ok(result.indexOf("data-riimail-viewer-styles") < result.indexOf("</head>"));
+  assert.match(result, /<table width="900"><\/table>/);
+});
+
+test("prepareEmailHtml supports fragments and empty values", () => {
+  assert.match(prepareEmailHtml("<p>Hello</p>"), /^\s*<meta name="viewport"/);
+  assert.equal(prepareEmailHtml("  "), "");
+});
 
 test("folder helpers map frontend folder to backend mailbox", () => {
   assert.equal(getActiveBackendFolderKey({ activeFolder: "INBOX" }), "INBOX");
