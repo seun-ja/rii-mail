@@ -12,7 +12,9 @@ mod fetcher;
 
 pub use fetcher::{fetch_emails, fetch_latest};
 #[cfg(test)]
-pub(crate) use fetcher::{mailbox_name_matches, uid_vec_to_set, FetchResult};
+pub(crate) use fetcher::{
+    incremental_uid_search_query, mailbox_name_matches, uid_vec_to_set, FetchResult,
+};
 use sqlx::prelude::FromRow;
 
 pub type SharedImapSession = Arc<Mutex<Session<TlsStream<TcpStream>>>>;
@@ -71,6 +73,7 @@ impl From<StandardEmail> for CompleteEmail {
         let body = parsed_message.map(EmailContent::from);
 
         Self {
+            uid: value.uid,
             date: value.date.or(parsed_date),
             body,
             labels: value.labels,
@@ -80,6 +83,7 @@ impl From<StandardEmail> for CompleteEmail {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompleteEmail {
+    pub uid: Option<u32>,
     pub date: Option<DateTime<FixedOffset>>,
     pub body: Option<EmailContent>,
     pub labels: Option<Vec<String>>,

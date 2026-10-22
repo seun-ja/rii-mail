@@ -11,6 +11,7 @@ use crate::{
 
 #[derive(sqlx::FromRow)]
 struct DbEmail {
+    pub uid: i64,
     pub date: Option<DateTime<FixedOffset>>,
     pub body: Option<Vec<u8>>,
     pub labels: Option<String>,
@@ -98,7 +99,7 @@ pub async fn get_emails(
     let offset = i64::from(min_range);
 
     let rows: Vec<DbEmail> = sqlx::query_as::<_, DbEmail>(&format!(
-        "SELECT date, body, labels FROM {} ORDER BY datetime(date) DESC, rowid DESC LIMIT ? OFFSET ?",
+        "SELECT uid, date, body, labels FROM {} ORDER BY datetime(date) DESC, rowid DESC LIMIT ? OFFSET ?",
         table_name
     ))
     .bind(limit)
@@ -118,7 +119,7 @@ pub async fn get_emails(
             });
 
             Ok(StandardEmail {
-                uid: None,
+                uid: u32::try_from(row.uid).ok(),
                 date: row.date,
                 body: row.body,
                 labels,

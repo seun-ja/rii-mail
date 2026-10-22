@@ -37,6 +37,7 @@ fn map_folder_and_starred_maps_spam_to_archive() {
 #[test]
 fn into_frontend_uses_text_body_when_available() {
     let complete = CompleteEmail {
+        uid: Some(1),
         date: None,
         labels: Some(vec!["\\Inbox".to_string()]),
         body: Some(EmailContent {
@@ -68,6 +69,7 @@ fn into_frontend_uses_text_body_when_available() {
 #[test]
 fn into_frontend_falls_back_when_body_is_missing() {
     let complete = CompleteEmail {
+        uid: None,
         date: None,
         labels: None,
         body: None,

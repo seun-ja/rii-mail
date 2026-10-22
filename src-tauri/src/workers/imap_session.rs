@@ -2,7 +2,6 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_imap::Client;
 use async_native_tls::TlsStream;
 use sqlx::SqlitePool;
 use tokio::sync::mpsc::UnboundedSender;
@@ -18,6 +17,13 @@ use crate::email_cache::SharedImapSession;
 use crate::error::{friendly_login_error_message, Error};
 use crate::imap::{init_imap_client, ImapCommand, RefreshSummary};
 use crate::{auth, FETCH_MANAGER, LOGGED_IN, LOGGING_IN};
+
+pub(crate) fn is_imap_connection_error(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::Imap(async_imap::error::Error::Io(_) | async_imap::error::Error::ConnectionLost)
+    )
+}
 
 pub async fn worker(
     mut imap_client_channel_rx: UnboundedReceiver<ImapClientConfig>,
@@ -41,7 +47,7 @@ pub async fn worker(
         let mut initial_fetch_completed: HashSet<Provider> = HashSet::new();
         let mut database_initialized = false;
 
-        let mut initialized_client: Option<Client<TlsStream<TcpStream>>> = None;
+        let mut imap_endpoint: Option<(String, u16)> = None;
 
         let logged_in_finalised = {
             let logged_in = LOGGED_IN.lock().await;
@@ -76,6 +82,7 @@ pub async fn worker(
                         sqlite_pool: config.sqlite_pool.clone(),
                         login_result_tx: None,
                     };
+                    imap_endpoint = Some((config.imap_server_url.clone(), config.imap_port));
 
                     tracing::info!("Initiating IMAP session");
                     match init_imap_client(&config.imap_server_url, config.imap_port).await {
@@ -94,9 +101,6 @@ pub async fn worker(
 
                     match init_imap_client(&background_config.imap_server_url, background_config.imap_port).await {
                         Ok(imap_client) => {
-                            let bg_server_url = background_config.imap_server_url.clone();
-                            let bg_server_port = background_config.imap_port;
-
                             login(
                                 background_config,
                                 &mut initialized_session_background,
@@ -104,15 +108,6 @@ pub async fn worker(
                                 &mut pool,
                             )
                             .await;
-
-                            match init_imap_client(&bg_server_url, bg_server_port).await {
-                                Ok(store_client) => {
-                                    initialized_client = Some(store_client);
-                                }
-                                Err(err) => {
-                                    tracing::error!(error = ?err, "Failed to initialize stored background IMAP client");
-                                }
-                            }
                         }
                         Err(err) => {
                             tracing::error!(error = ?err, "Failed to initialize background IMAP client");
@@ -134,6 +129,7 @@ pub async fn worker(
                         sqlite_pool: config.sqlite_pool.clone(),
                         login_result_tx: None,
                     };
+                    imap_endpoint = Some((config.imap_server_url.clone(), config.imap_port));
 
                     tracing::info!("Initiating IMAP session for returning user");
                     // TODO: A retry mechanism or timeout
@@ -244,6 +240,7 @@ pub async fn worker(
                             }
 
                             pool = None;
+                            imap_endpoint = None;
                             providers.clear();
                             initial_fetch_completed.clear();
                             database_initialized = false;
@@ -281,40 +278,47 @@ pub async fn worker(
                             .await;
 
                             let refresh_result = match refresh_result {
-                                Err(err) if err.to_string().contains("connection closed gracefully") => {
-                                    tracing::warn!("unable to fetch latest email; restarting session");
+                                Err(err) if is_imap_connection_error(&err) => {
+                                    tracing::warn!(error = %err, "Unable to fetch latest email; reconnecting IMAP session");
 
                                     match keychain_manager.retrieve_password(&username) {
                                         Ok(password) => {
-                                            match auth::login(
-                                                &username,
-                                                &password,
-                                                initialized_client.take(),
-                                            )
-                                            .await
-                                            {
+                                            let reconnect_result = match imap_endpoint.as_ref() {
+                                                Some((server, port)) => {
+                                                    match init_imap_client(server, *port).await {
+                                                        Ok(client) => auth::login(
+                                                            &username,
+                                                            &password,
+                                                            Some(client),
+                                                        )
+                                                        .await,
+                                                        Err(reconnect_err) => Err(reconnect_err),
+                                                    }
+                                                }
+                                                None => Err(Error::Other(
+                                                    "IMAP endpoint is not initialized".to_string(),
+                                                )),
+                                            };
+
+                                            match reconnect_result {
                                                 Ok(new_session) => {
                                                     let new_session = Arc::new(Mutex::new(new_session));
+                                                    initialized_session = Some(new_session.clone());
+
                                                     let retry_refresh_token = FETCH_MANAGER
                                                         .refresh_token
                                                         .lock()
                                                         .await
                                                         .child_token();
 
-                                                    let retry_result = crate::email_cache::fetch_latest(
-                                                        new_session.clone(),
+                                                    crate::email_cache::fetch_latest(
+                                                        new_session,
                                                         pool_ref,
                                                         &mail_box,
                                                         &provider,
                                                         retry_refresh_token,
                                                     )
-                                                    .await;
-
-                                                    if retry_result.is_ok() {
-                                                        initialized_session = Some(new_session);
-                                                    }
-
-                                                    retry_result
+                                                    .await
                                                 }
                                                 Err(retry_err) => Err(retry_err),
                                             }

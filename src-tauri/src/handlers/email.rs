@@ -129,11 +129,11 @@ pub(crate) async fn get_emails_as_front_end_from_pool(
         .into_iter()
         .enumerate()
         .map(|(idx, email)| {
-            let mut frontend = email.into_frontend(format!(
-                "db-{}-{}",
-                mailbox.as_ref(),
-                min_range + idx as u16
-            ));
+            let id = email.uid.map_or_else(
+                || format!("db-{}-{}", mailbox.as_ref(), min_range + idx as u16),
+                |uid| format!("db-{}-uid-{uid}", mailbox.as_ref()),
+            );
+            let mut frontend = email.into_frontend(id);
             frontend.folder = frontend_folder.clone();
             frontend
         })
