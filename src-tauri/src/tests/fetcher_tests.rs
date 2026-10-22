@@ -1,5 +1,7 @@
 use crate::db::MailBox;
-use crate::email_cache::{mailbox_name_matches, uid_vec_to_set, FetchResult};
+use crate::email_cache::{
+    incremental_uid_search_query, mailbox_name_matches, uid_vec_to_set, FetchResult,
+};
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -25,6 +27,12 @@ fn fetch_result_count_returns_expected_value() {
         .total_emails(),
         42
     );
+}
+
+#[test]
+fn incremental_sync_searches_by_uid_above_the_high_water_mark() {
+    assert_eq!(incremental_uid_search_query(100), "UID 101:*");
+    assert_eq!(incremental_uid_search_query(0), "UID 1:*");
 }
 
 #[test]

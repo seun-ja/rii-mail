@@ -447,6 +447,10 @@ pub(crate) fn uid_vec_to_set(uids: &HashSet<u32>) -> String {
         .join(",")
 }
 
+pub(crate) fn incremental_uid_search_query(last_uid: u32) -> String {
+    format!("UID {}:*", last_uid.saturating_add(1))
+}
+
 #[tracing::instrument(
     name = "imap.sync.incremental",
     skip_all,
@@ -481,9 +485,10 @@ pub async fn fetch_latest(
 
     let last_uid = get_last_uid(pool, &table_name).await?.unwrap_or(0);
 
-    let search_query = format!("{}:*", last_uid + 1);
+    let search_query = incremental_uid_search_query(last_uid);
 
-    let new_uids = session.uid_search(search_query).await?;
+    let mut new_uids = session.uid_search(search_query).await?;
+    new_uids.retain(|uid| *uid > last_uid);
 
     if new_uids.is_empty() {
         tracing::info!("Mailbox already up to date");

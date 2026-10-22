@@ -383,38 +383,43 @@ export function createSyncController(
               totalEmails: null,
             };
 
-      const latest = Array.isArray(payload.emails) ? payload.emails : [];
-      const totalEmails = await fetchMailboxEmailCount(mailbox, provider);
+      const reportedNewCount = Number.isInteger(payload.newEmailsCount)
+        ? Math.max(0, payload.newEmailsCount)
+        : 0;
+      const pageSize = Math.max(
+        INITIAL_BATCH_SIZE,
+        state.cachedByFolder[folderKey].length + reportedNewCount,
+      );
+      const refreshed = await invoke("fetch_emails", {
+        minRange: 0,
+        maxRange: pageSize,
+        mailbox,
+        provider,
+      });
+      const refreshedPage = normalizeFetchPayload(refreshed).emails;
+      const storedTotalEmails = await fetchMailboxEmailCount(mailbox, provider);
+      const totalEmails = Number.isInteger(payload.totalEmails)
+        ? payload.totalEmails
+        : typeof storedTotalEmails === "number"
+          ? storedTotalEmails
+          : null;
 
       if (typeof totalEmails === "number") {
         state.totalEmailsByFolder[folderKey] = totalEmails;
       }
 
-      if (latest.length === 0) {
-        return { newCount: 0, totalEmails };
-      }
-
-      const existingIds = new Set(
-        state.cachedByFolder[folderKey].map((mail) => mail.id),
-      );
-      const uniqueLatest = latest.filter((mail) => !existingIds.has(mail.id));
-
-      if (uniqueLatest.length === 0) {
-        return { newCount: 0, totalEmails };
-      }
-
-      state.cachedByFolder[folderKey] = [
-        ...uniqueLatest,
-        ...state.cachedByFolder[folderKey],
-      ];
-
-      pagination.nextOffset += uniqueLatest.length;
+      state.cachedByFolder[folderKey] = refreshedPage;
+      pagination.nextOffset = refreshedPage.length;
+      pagination.hasMoreEmails =
+        typeof totalEmails === "number"
+          ? refreshedPage.length < totalEmails
+          : refreshedPage.length >= pageSize;
       pagination.lastFetchSignature = null;
       pagination.lastFetchAt = 0;
 
       saveCachedEmails(state, storage);
 
-      return { newCount: uniqueLatest.length, totalEmails };
+      return { newCount: reportedNewCount, totalEmails };
     } finally {
       state.isLoadingEmails = false;
       renderer.renderList();

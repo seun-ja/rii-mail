@@ -5,6 +5,8 @@ use tokio_util::sync::CancellationToken;
 
 mod imap_session;
 
+#[cfg(test)]
+pub(crate) use imap_session::is_imap_connection_error;
 pub use imap_session::worker;
 
 #[derive(Default)]
