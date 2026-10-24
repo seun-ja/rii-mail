@@ -149,9 +149,21 @@ After downloading the model as described above, build the self-contained Apple S
 npm run build:macos-arm64
 ```
 
-The first build downloads the checksum-pinned standalone Python archive and pinned wheels. The wrapper stages the runtime, links PyO3 to the bundled dylib, builds and signs the app, audits every Mach-O dependency, runs real offline model inference from the packaged app, and verifies the DMG checksum.
+Optionally, pass a destination directory after `--`:
 
-Output:
+```bash
+npm run build:macos-arm64 -- ~/Desktop
+```
+
+You can also provide the complete installer filename:
+
+```bash
+npm run build:macos-arm64 -- ~/Desktop/RiiMail.dmg
+```
+
+Relative output paths are resolved from the project root. The first build downloads the checksum-pinned standalone Python archive and pinned wheels. The wrapper stages the runtime, links PyO3 to the bundled dylib, builds and signs the app, audits every Mach-O dependency, runs real offline model inference from the packaged app, and verifies the DMG checksum.
+
+Default output:
 
 ```text
 src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/RiiMail_0.1.0_aarch64.dmg

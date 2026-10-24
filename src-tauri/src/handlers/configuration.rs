@@ -3,7 +3,7 @@ use std::sync::Arc;
 use arc_swap::ArcSwap;
 use lettre::transport::smtp::authentication::Credentials;
 use llm::tools::{SearchEmailsTool, ToolWrapper};
-use tauri::{LogicalSize, Manager as _, Size};
+use tauri::{window::Color, LogicalSize, Manager as _, Size};
 use tokio::{
     fs::{self, create_dir_all},
     sync::oneshot,
@@ -96,7 +96,6 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
     let config_path = config_dir.join("config.json");
 
     let Ok(config) = Config::init(&config_path).await else {
-        ensure_compact_startup_window(&app)?;
         return Ok(InitStatus::Setup);
     };
 
@@ -105,7 +104,6 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
 
     if config.accounts.is_empty() {
         tracing::warn!("Config accounts field is empty, cannot attempt returning user login");
-        ensure_compact_startup_window(&app)?;
         return Ok(InitStatus::Login(None));
     }
 
@@ -135,8 +133,6 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
             .send(imap_client_config)
             .map_err(|e| Error::ReturningUserImapConfigChannelSend(e.to_string()))?;
 
-        ensure_expanded_startup_window(&app)?;
-
         match login_result_rx.await.map_err(|_| {
             Error::Other("Login worker failed to send authentication result".to_string())
         })? {
@@ -145,7 +141,6 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
             }
             Err(message) => {
                 ::tracing::error!(error = ?message, "Returning user login failed: {message}");
-                ensure_compact_startup_window(&app)?;
                 return Ok(InitStatus::Login(Some(message)));
             }
         }
@@ -180,9 +175,46 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
         Ok(status)
     } else {
         ::tracing::info!("No stored credentials found, user needs to login");
-        ensure_compact_startup_window(&app)?;
         Ok(InitStatus::Login(None))
     }
+}
+
+#[tauri::command]
+#[tracing::instrument(name = "command.window.finish_startup", skip_all, err)]
+pub async fn finish_startup(
+    app: tauri::AppHandle,
+    startup_window: tauri::WebviewWindow,
+) -> Result<(), Error> {
+    let status = check_app_status(app.clone()).await?;
+    let destination = match status {
+        InitStatus::Setup => {
+            ensure_compact_startup_window(&app)?;
+            "/setup.html"
+        }
+        InitStatus::Login(_) => {
+            ensure_compact_startup_window(&app)?;
+            "/login.html"
+        }
+        InitStatus::SignedIn | InitStatus::ReturningSigned => {
+            ensure_expanded_startup_window(&app)?;
+            "/"
+        }
+    };
+
+    let navigation_script = if destination == "/" {
+        "window.location.replace('/');".to_string()
+    } else {
+        format!(
+            "window.sessionStorage.setItem('riimail.startupStatusChecked', 'true'); \
+             window.location.replace('{destination}');"
+        )
+    };
+
+    startup_window.eval(&navigation_script)?;
+    startup_window.show()?;
+    startup_window.set_focus()?;
+
+    Ok(())
 }
 
 fn ensure_expanded_startup_window(app: &tauri::AppHandle) -> Result<(), Error> {
@@ -190,11 +222,16 @@ fn ensure_expanded_startup_window(app: &tauri::AppHandle) -> Result<(), Error> {
         let expanded_size = Size::Logical(LogicalSize::new(1100.0, 760.0));
         let expanded_min_size = Size::Logical(LogicalSize::new(900.0, 620.0));
 
+        window.set_min_size::<Size>(None)?;
+        window.set_max_size::<Size>(None)?;
+        window.set_background_color(Some(Color(244, 247, 251, 255)))?;
+        window.set_decorations(true)?;
+        window.set_shadow(true)?;
+        window.set_minimizable(true)?;
         window.set_resizable(true)?;
         window.set_maximizable(true)?;
-        window.set_max_size::<Size>(None)?;
-        window.set_min_size(Some(expanded_min_size))?;
         window.set_size(expanded_size)?;
+        window.set_min_size(Some(expanded_min_size))?;
         window.center()?;
     }
 
@@ -205,11 +242,17 @@ fn ensure_compact_startup_window(app: &tauri::AppHandle) -> Result<(), Error> {
     if let Some(window) = app.get_webview_window("main") {
         let compact_size = Size::Logical(LogicalSize::new(600.0, 640.0));
 
+        window.set_min_size::<Size>(None)?;
+        window.set_max_size::<Size>(None)?;
+        window.set_background_color(Some(Color(244, 247, 251, 255)))?;
+        window.set_decorations(true)?;
+        window.set_shadow(true)?;
+        window.set_minimizable(true)?;
         window.set_resizable(false)?;
         window.set_maximizable(false)?;
-        window.set_max_size::<Size>(Some(compact_size))?;
-        window.set_min_size(Some(compact_size))?;
         window.set_size(compact_size)?;
+        window.set_min_size(Some(compact_size))?;
+        window.set_max_size::<Size>(Some(compact_size))?;
         window.center()?;
     }
 
@@ -225,6 +268,7 @@ pub async fn open_main_window(current_window: tauri::WebviewWindow) -> Result<()
     let expanded_min_size = Size::Logical(LogicalSize::new(900.0, 620.0));
 
     // Reuse the current auth window for post-login to avoid close/create race conditions.
+    current_window.set_background_color(Some(Color(244, 247, 251, 255)))?;
     current_window.set_resizable(true)?;
     current_window.set_maximizable(true)?;
     current_window.set_max_size::<Size>(None)?;

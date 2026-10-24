@@ -8,20 +8,28 @@
   },
   "app": {
     "withGlobalTauri": true,
+    "macOSPrivateApi": true,
     "windows": [
       {
+        "label": "main",
         "title": "RiiMail",
-        "url": "login.html",
-        "width": 600,
-        "height": 640,
-        "minWidth": 600,
-        "minHeight": 640,
-        "maxWidth": 600,
-        "maxHeight": 640,
+        "url": "splash.html",
+        "width": 280,
+        "height": 280,
+        "minWidth": 280,
+        "minHeight": 280,
+        "maxWidth": 280,
+        "maxHeight": 280,
+        "center": true,
+        "focus": true,
         "resizable": false,
         "maximizable": false,
-        "decorations": true,
-        "alwaysOnTop": false
+        "minimizable": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": false,
+        "skipTaskbar": false
       }
     ],
     "security": {

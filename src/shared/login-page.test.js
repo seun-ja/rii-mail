@@ -154,3 +154,40 @@ test("initLoginPage reveals login when status is login and validates empty crede
   );
   assert.deepEqual(callLog, ["check_app_status"]);
 });
+
+test("initLoginPage skips the duplicate status check after splash startup", async () => {
+  const loginForm = createElement();
+  const loginMsgEl = createElement();
+  const usernameInput = createElement();
+  const passwordInput = createElement();
+  passwordInput.type = "password";
+  const loginContentEl = createElement();
+  const initLoadingEl = createElement();
+  const initLoadingTextEl = createElement();
+
+  const doc = createDoc({
+    "#login-form": loginForm,
+    "#login-msg": loginMsgEl,
+    "#username-input": usernameInput,
+    "#password-input": passwordInput,
+    "#login-content": loginContentEl,
+    "#init-loading": initLoadingEl,
+    "#init-loading-text": initLoadingTextEl,
+  });
+
+  let invokeCalls = 0;
+  const result = await initLoginPage({
+    doc,
+    location: { replace() {} },
+    startupStatusChecked: true,
+    invokeFn: async () => {
+      invokeCalls += 1;
+      return "login";
+    },
+  });
+
+  assert.deepEqual(result, { ready: true, redirected: false });
+  assert.equal(invokeCalls, 0);
+  assert.equal(initLoadingEl.classList.contains("hidden"), true);
+  assert.equal(loginContentEl.classList.contains("hidden"), false);
+});
