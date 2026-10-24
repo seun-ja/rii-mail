@@ -27,7 +27,7 @@ pub enum Error {
     #[error("SQLx Error: {0}")]
     Sqlx(#[from] sqlx::Error),
     #[error("State Channel Send Error: {0}")]
-    StateChannelSend(#[from] SendError<InitializedState>),
+    StateChannelSend(#[from] Box<SendError<InitializedState>>),
     #[error("Imap Config Channel Send Error: {0}")]
     ImapConfigChannelSend(#[from] SendError<ImapClientConfig>),
     #[error("Returning User Imap Config Channel Send Error: {0}")]
