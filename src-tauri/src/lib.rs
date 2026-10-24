@@ -19,8 +19,8 @@ use crate::workers::{worker, FetchManager};
 use crate::{
     config::{AppState, StartupStatusCache},
     handlers::{
-        check_app_status, config_setup, fetch_emails, login, logout_with_state, open_main_window,
-        rater,
+        check_app_status, config_setup, fetch_emails, finish_startup, login, logout_with_state,
+        open_main_window, rater,
     },
 };
 
@@ -168,22 +168,7 @@ pub async fn run() {
 
             app.set_menu(menu)?;
 
-            // On app relaunch for an already authenticated user, immediately expand
-            // the default startup window to main-app dimensions.
-            if let Some(window) = app.get_webview_window("main") {
-                let config_dir = app.path().app_config_dir()?;
 
-                if config_dir.join("data").exists() {
-                    let expanded_size = Size::Logical(LogicalSize::new(1100.0, 760.0));
-                    let expanded_min_size = Size::Logical(LogicalSize::new(900.0, 620.0));
-
-                    window.set_resizable(true)?;
-                    window.set_maximizable(true)?;
-                    window.set_max_size::<Size>(None)?;
-                    window.set_min_size(Some(expanded_min_size))?;
-                    window.set_size(expanded_size)?;
-                }
-            }
 
             Ok(())
         })
@@ -243,6 +228,7 @@ pub async fn run() {
             inbox_intial_email_populated,
             config_setup,
             fetch_emails,
+            finish_startup,
             login,
             open_main_window,
             rater,

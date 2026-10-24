@@ -5,8 +5,55 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
 BUILD_DIR="$SCRIPT_DIR/build"
 APP="$PROJECT_ROOT/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/RiiMail.app"
-DMG_DIR="$PROJECT_ROOT/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg"
-DMG="$DMG_DIR/RiiMail_0.1.0_aarch64.dmg"
+DMG_NAME="RiiMail_0.1.0_aarch64.dmg"
+
+usage() {
+    cat <<EOF
+Usage: npm run build:macos-arm64 -- [OUTPUT]
+
+OUTPUT may be either:
+  - a destination directory, such as ~/Desktop
+  - an explicit installer path ending in .dmg
+
+When OUTPUT is omitted, the installer is saved under:
+  src-tauri/target/aarch64-apple-darwin/release/bundle/dmg
+EOF
+}
+
+if [ "$#" -gt 1 ]; then
+    usage >&2
+    exit 2
+fi
+
+case "${1:-}" in
+    -h|--help)
+        usage
+        exit 0
+        ;;
+esac
+
+if [ "$#" -eq 0 ]; then
+    DMG_DIR="$PROJECT_ROOT/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg"
+    DMG="$DMG_DIR/$DMG_NAME"
+else
+    case "$1" in
+        /*) OUTPUT="$1" ;;
+        *) OUTPUT="$PROJECT_ROOT/$1" ;;
+    esac
+
+    case "$OUTPUT" in
+        *.dmg)
+            DMG="$OUTPUT"
+            DMG_DIR=$(dirname -- "$DMG")
+            ;;
+        *)
+            DMG_DIR="$OUTPUT"
+            DMG="$DMG_DIR/$DMG_NAME"
+            ;;
+    esac
+fi
+
+printf 'Installer output: %s\n' "$DMG"
 
 python3 "$SCRIPT_DIR/scripts/prepare-runtime.py"
 

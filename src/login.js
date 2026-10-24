@@ -56,6 +56,10 @@ export async function initLoginPage({
   invokeFn = invoke,
   doc = document,
   location = window?.location,
+  startupStatusChecked =
+    globalThis.__RIIMAIL_STARTUP_CHECKED__ === true ||
+    globalThis.sessionStorage?.getItem("riimail.startupStatusChecked") ===
+      "true",
 } = {}) {
   const loginForm = doc.querySelector("#login-form");
   const loginMsgEl = doc.querySelector("#login-msg");
@@ -91,27 +95,33 @@ export async function initLoginPage({
     passwordToggle.setAttribute("title", actionLabel);
   });
 
+  if (startupStatusChecked) {
+    globalThis.sessionStorage?.removeItem("riimail.startupStatusChecked");
+  }
+
   if (!invokeFn) {
     setLoadingState(false, loginContentEl, initLoadingEl, initLoadingTextEl);
     loginMsgEl.textContent = "Backend connection is unavailable.";
     return { ready: false, redirected: false };
   }
 
-  setLoadingState(
-    true,
-    loginContentEl,
-    initLoadingEl,
-    initLoadingTextEl,
-    "Checking account status...",
-  );
+  if (!startupStatusChecked) {
+    setLoadingState(
+      true,
+      loginContentEl,
+      initLoadingEl,
+      initLoadingTextEl,
+      "Checking account status...",
+    );
 
-  const redirected = await checkInitializationStatus(
-    loginMsgEl,
-    invokeFn,
-    location,
-  );
-  if (redirected) {
-    return { ready: false, redirected: true };
+    const redirected = await checkInitializationStatus(
+      loginMsgEl,
+      invokeFn,
+      location,
+    );
+    if (redirected) {
+      return { ready: false, redirected: true };
+    }
   }
 
   setLoadingState(false, loginContentEl, initLoadingEl, initLoadingTextEl);
