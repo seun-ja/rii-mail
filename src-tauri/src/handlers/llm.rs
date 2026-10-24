@@ -1,9 +1,11 @@
 use arc_swap::ArcSwap;
+
 use tauri::Manager as _;
 
 use crate::{
     config::AppState,
     error::Error,
+    handlers::ensure_chatgpt_agent_fresh,
     llm::{Email, SpamRating},
 };
 
@@ -32,18 +34,35 @@ pub async fn rater(
 }
 
 #[tauri::command]
+#[tracing::instrument(name = "command.llm.is_enabled", skip_all)]
+pub async fn is_llm_enabled(app: tauri::AppHandle) -> bool {
+    let state = app.state::<ArcSwap<AppState>>();
+    let current_state = state.load();
+    let enabled = current_state.state().llm_agent.read().await.is_some();
+    enabled
+}
+
+#[tauri::command]
 #[tracing::instrument(name = "command.email_generator", skip(app, _context, thoughts), err)]
 pub async fn email_generator(
     app: tauri::AppHandle,
     thoughts: String,
     _context: Option<String>, // The idea here should be that it can take a file (pdf/docs) or past mails, or a link. This would be the base of assigning tools to the agent
 ) -> Result<Email, Error> {
+    ensure_chatgpt_agent_fresh(&app).await?;
+
     let state = app.state::<ArcSwap<AppState>>();
     let current_state = state.load();
     let initialized = current_state.state();
 
     // TODO: returning a stream instead
-    let message = initialized.llm_agent.agent().schema_chat(&thoughts).await?;
+    let agent_guard = initialized.llm_agent.read().await;
+    let agent = agent_guard
+        .as_ref()
+        .ok_or(Error::Llm(llm::error::Error::ProviderError(
+            "Uninitialized Provider".to_string(),
+        )))?;
+    let message = agent.agent().schema_chat(&thoughts).await?;
 
     Ok(message)
 }

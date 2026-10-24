@@ -27,6 +27,7 @@ import {
   formatSpamRatingError,
   formatSpamRatingResponse,
 } from "./spam-rating.js";
+import { updateAiAssistantAvailability } from "./ai-assistant.js";
 
 export function initializeMailApp({
   invoke,
@@ -63,6 +64,12 @@ export function initializeMailApp({
     ui.showMessage("Backend invoke bridge is unavailable.", true);
     return;
   }
+
+  void updateAiAssistantAvailability({
+    invoke,
+    button: dom.openAiAssistantBtnEl,
+    panel: dom.aiAssistantPanelEl,
+  });
 
   const sync = createSyncController(state, renderer, ui, invoke, storage);
   invoke("inbox_email_populated").catch(console.error);
@@ -362,18 +369,16 @@ export function initializeMailApp({
     }
   });
 
-  const aiPanel = document.getElementById("ai-assistant-panel");
+  const aiPanel = dom.aiAssistantPanelEl;
 
-  document
-    .getElementById("open-ai-assistant-btn")
-    ?.addEventListener("click", () => {
-      aiPanel.classList.remove("hidden");
-    });
+  dom.openAiAssistantBtnEl?.addEventListener("click", () => {
+    aiPanel?.classList.remove("hidden");
+  });
 
   document
     .getElementById("close-ai-assistant-btn")
     ?.addEventListener("click", () => {
-      aiPanel.classList.add("hidden");
+      aiPanel?.classList.add("hidden");
     });
 
   const generateBtn = document.getElementById("generate-email-btn");

@@ -5,6 +5,7 @@ use schemars::JsonSchema;
 
 use crate::{error::Error, tools::ToolWrapper};
 
+mod chatgpt;
 mod local_inference;
 mod ollama;
 mod openai;
@@ -24,8 +25,10 @@ pub trait CompletionProvider<J: JsonSchema + serde::de::DeserializeOwned>: Send 
 pub enum Providers {
     /// Ollama provider: local AI model inference.
     Ollama,
-    /// OpenAI provider: cloud-based AI model inference.
+    /// OpenAI provider: cloud-based AI model inference using an API key.
     OpenAI,
+    /// ChatGPT provider: Responses API inference using a user's ChatGPT plan.
+    ChatGPT,
     /// Custom SageMaker AI provider: cloud-based AI model inference using SageMaker.
     ///
     /// The following environment variables must be set:
@@ -41,6 +44,7 @@ impl Display for Providers {
         match self {
             Providers::Ollama => write!(f, "ollama"),
             Providers::OpenAI => write!(f, "openai"),
+            Providers::ChatGPT => write!(f, "chatgpt"),
             Providers::CustomSageMakerAI => write!(f, "sagemaker"),
             Providers::LocalInference => write!(f, "local"),
         }
@@ -52,10 +56,11 @@ impl From<&str> for Providers {
         match value.to_lowercase().as_str() {
             "ollama" => Providers::Ollama,
             "openai" => Providers::OpenAI,
+            "chatgpt" => Providers::ChatGPT,
             "sagemaker" => Providers::CustomSageMakerAI,
             "local" => Providers::LocalInference,
             _ => panic!(
-                "unknown provider: {}. Currently supported providers are: ollama, openai, sagemaker, local",
+                "unknown provider: {}. Currently supported providers are: ollama, openai, chatgpt, sagemaker, local",
                 value
             ),
         }
@@ -102,6 +107,19 @@ impl Providers {
                     tools,
                 )?;
                 Box::new(client)
+            }
+            Providers::ChatGPT => {
+                let access_token = api_key.ok_or_else(|| {
+                    Error::AuthenticationError(
+                        "access token is required for ChatGPT provider".to_string(),
+                    )
+                })?;
+                Box::new(chatgpt::ChatGPT::new(
+                    access_token,
+                    model,
+                    Some(&system_message),
+                    tools,
+                )?)
             }
             Providers::CustomSageMakerAI => {
                 let client = sagemaker::CustomSageMakerAI::build_sagemaker_client(model).await;
@@ -159,6 +177,19 @@ impl Providers {
                     tools,
                 )?;
                 Ok(Box::new(client))
+            }
+            Providers::ChatGPT => {
+                let access_token = api_key.ok_or_else(|| {
+                    Error::AuthenticationError(
+                        "access token is required for ChatGPT provider".to_string(),
+                    )
+                })?;
+                Ok(Box::new(chatgpt::ChatGPT::new(
+                    access_token,
+                    model,
+                    Some(&system_message),
+                    tools,
+                )?))
             }
             Providers::CustomSageMakerAI => {
                 unimplemented!("Does not support Schema responses")

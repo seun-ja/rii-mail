@@ -145,9 +145,8 @@ export async function initLoginPage({
         password: password,
       });
 
-      loginMsgEl.textContent = "Login successful. Opening app...";
-
-      await invokeFn("open_main_window");
+      loginMsgEl.textContent = "Login successful. Continuing setup...";
+      location?.replace("/llm-setup.html");
     } catch (error) {
       const errorMessage = getErrorMessage(error);
       loginMsgEl.textContent = `Login failed: ${errorMessage}`;

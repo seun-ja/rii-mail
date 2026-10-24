@@ -220,7 +220,7 @@ It:
 - `SMTP_RELAY_URL` default: `smtp.mail.yahoo.com`
 - `MODEL` default: `gemma4:e4b`
 - `LLM_API_KEY` default: `ollama`
-- env var named `ollama` default: `ollama`
+- `LLM_PROVIDER` default: `ollama`
 
 That last value is saved into `Config.provider`, but as noted above it is not part of the active provider-selection path.
 

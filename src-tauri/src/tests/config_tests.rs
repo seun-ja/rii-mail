@@ -37,6 +37,30 @@ async fn config_init_reads_valid_config() {
     let _ = tokio::fs::remove_file(path).await;
 }
 
+#[test]
+fn chatgpt_config_is_grouped_without_changing_stored_field_names() {
+    let body = r#"{
+        "imap_server_url":"imap.gmail.com",
+        "smtp_relay_url":"smtp.gmail.com",
+        "imap_port":993,
+        "sqlite_db":"emails.db",
+        "accounts":[],
+        "default_model":"model",
+        "api_key":"",
+        "chatgpt_client_id":"oaiapp_test",
+        "chatgpt_email":"alice@example.com",
+        "chatgpt_scopes":["openid","resource.invoke"]
+    }"#;
+
+    let parsed: Config = serde_json::from_str(body).expect("flat config should deserialize");
+    assert_eq!(parsed.chatgpt.client_id.as_deref(), Some("oaiapp_test"));
+    assert_eq!(parsed.chatgpt.email.as_deref(), Some("alice@example.com"));
+
+    let serialized = serde_json::to_value(parsed).expect("config should serialize");
+    assert_eq!(serialized["chatgpt_client_id"], "oaiapp_test");
+    assert!(serialized.get("chatgpt").is_none());
+}
+
 #[tokio::test]
 async fn config_init_rejects_missing_imap_values() {
     let path = unique_config_path("config-invalid");

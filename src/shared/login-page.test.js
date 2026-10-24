@@ -155,6 +155,52 @@ test("initLoginPage reveals login when status is login and validates empty crede
   assert.deepEqual(callLog, ["check_app_status"]);
 });
 
+test("initLoginPage navigates to LLM setup after successful login", async () => {
+  const loginForm = createElement();
+  const loginMsgEl = createElement();
+  const usernameInput = createElement();
+  usernameInput.value = "person@example.com";
+  const passwordInput = createElement();
+  passwordInput.value = "secret";
+  passwordInput.type = "password";
+  const loginContentEl = createElement();
+  const initLoadingEl = createElement();
+  const initLoadingTextEl = createElement();
+
+  const doc = createDoc({
+    "#login-form": loginForm,
+    "#login-msg": loginMsgEl,
+    "#username-input": usernameInput,
+    "#password-input": passwordInput,
+    "#login-content": loginContentEl,
+    "#init-loading": initLoadingEl,
+    "#init-loading-text": initLoadingTextEl,
+  });
+
+  const calls = [];
+  let redirectedTo = "";
+  await initLoginPage({
+    doc,
+    startupStatusChecked: true,
+    location: {
+      replace(path) {
+        redirectedTo = path;
+      },
+    },
+    invokeFn: async (command, args) => {
+      calls.push([command, args]);
+    },
+  });
+
+  await loginForm.trigger("submit", { preventDefault() {} });
+
+  assert.deepEqual(calls, [
+    ["login", { username: "person@example.com", password: "secret" }],
+  ]);
+  assert.equal(redirectedTo, "/llm-setup.html");
+  assert.equal(loginMsgEl.textContent, "Login successful. Continuing setup...");
+});
+
 test("initLoginPage skips the duplicate status check after splash startup", async () => {
   const loginForm = createElement();
   const loginMsgEl = createElement();

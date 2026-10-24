@@ -7,18 +7,14 @@ use arc_swap::ArcSwap;
 use lettre::transport::smtp::authentication::Credentials;
 use llm::tools::{SearchEmailsTool, ToolWrapper};
 use tauri::Manager as _;
-use tokio::{
-    fs,
-    sync::{mpsc::UnboundedSender, oneshot},
-};
-use tokio_util::sync::CancellationToken;
+use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use crate::{
     auth::AppleKeychainManager,
     config::{self, Account, AppState, Config, ImapClientConfig, InitializedState},
     db::{self, Provider},
     error::Error,
-    handlers::provider_from_imap_server,
+    handlers::{provider_from_imap_server, refresh_chatgpt_token_if_needed},
     imap::ImapCommand,
     llm::{init_llm_agent, initialize_local_inference},
     workers::SharedFetchManager,
@@ -41,9 +37,13 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
         Error::Other("Configuration not found. Please run setup first.".to_string())
     })?;
 
+    refresh_chatgpt_token_if_needed(&mut config, &config_path).await?;
     config.accounts.push(username.clone());
 
-    fs::write(config_path, serde_json::to_string_pretty(&config)?).await?;
+    config
+        .save(&config_path)
+        .await
+        .map_err(|error| Error::Other(format!("Could not save configuration: {error}")))?;
     tracing::info!("Configuration updated with username and saved to disk");
 
     let (initialized_state, provider) = handle_initialization(
@@ -88,13 +88,8 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
 
     let fetch_manager = app.state::<SharedFetchManager>();
 
-    let fetch_token = {
-        let mut parent = fetch_manager.logout_token.lock().await;
-
-        *parent = CancellationToken::new();
-
-        parent.child_token()
-    };
+    fetch_manager.reset_for_session().await;
+    let fetch_token = fetch_manager.logout_token.lock().await.child_token();
 
     imap_cmd_channel_tx.send(ImapCommand::FetchEmails(provider.clone(), fetch_token))?;
 
@@ -108,14 +103,14 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
             email: username,
             provider: provider_from_imap_server(&config.imap_server_url),
         }],
-        llm_agent: init_llm_agent(
-            llm::providers::Providers::Ollama,
+        llm_agent: tokio::sync::RwLock::new(init_llm_agent(
+            config.llm_provider.map(|provider| provider.as_str().into()),
             &config.default_model,
-            &config.api_key,
+            config.access_token.as_deref().unwrap_or(&config.api_key),
             None,
             None,
             vec![ToolWrapper::new(SearchEmailsTool)],
-        )?,
+        )?),
     };
 
     let app_state = app.state::<ArcSwap<AppState>>();
@@ -158,14 +153,14 @@ async fn handle_initialization(
             email: username,
             provider: provider_from_imap_server(&config.imap_server_url),
         }],
-        llm_agent: init_llm_agent(
-            llm::providers::Providers::Ollama,
+        llm_agent: tokio::sync::RwLock::new(init_llm_agent(
+            config.llm_provider.map(|provider| provider.as_str().into()),
             &config.default_model,
-            &config.api_key,
+            config.access_token.as_deref().unwrap_or(&config.api_key),
             None,
             None,
             vec![ToolWrapper::new(SearchEmailsTool)],
-        )?,
+        )?),
     };
 
     Ok((initialized_state, provider))

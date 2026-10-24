@@ -5,20 +5,21 @@ use lettre::transport::smtp::authentication::Credentials;
 use llm::tools::{SearchEmailsTool, ToolWrapper};
 use tauri::{window::Color, LogicalSize, Manager as _, Size};
 use tokio::{
-    fs::{self, create_dir_all},
+    fs::{create_dir_all, try_exists},
     sync::oneshot,
 };
 
 use crate::{
     auth::AppleKeychainManager,
     config::{
-        self, smtp_transport_client, Account, AppState, Config, ImapClientConfig, InitStatus,
-        StartupStatusCache,
+        self, smtp_transport_client, Account, AppState, ChatGptConfig, Config, ImapClientConfig,
+        InitStatus, StartupStatusCache,
     },
     db,
     error::Error,
-    handlers::provider_from_imap_server,
+    handlers::{provider_from_imap_server, refresh_chatgpt_token_if_needed},
     llm::{init_llm_agent, initialize_local_inference},
+    workers::SharedFetchManager,
     ReturningUserImapClientChannelTx,
 };
 
@@ -38,7 +39,7 @@ pub async fn config_setup(
         std::env::var("SMTP_RELAY_URL").unwrap_or("smtp.mail.yahoo.com".to_string());
     let default_model = std::env::var("MODEL").unwrap_or("gemma4:e4b".to_string());
     let api_key = std::env::var("LLM_API_KEY").unwrap_or("ollama".to_string());
-    let provider = std::env::var("ollama").unwrap_or("ollama".to_string());
+    let llm_provider = std::env::var("LLM_PROVIDER").ok();
 
     let config = Config {
         imap_server_url,
@@ -46,14 +47,15 @@ pub async fn config_setup(
         imap_port,
         sqlite_db,
         accounts: vec![],
-        provider,
+        llm_provider,
         default_model,
         api_key,
+        access_token: None,
+        refresh_token: None,
+        chatgpt: ChatGptConfig::default(),
     };
 
     let config_dir = app.path().app_config_dir()?;
-
-    let config_json = serde_json::to_string_pretty(&config)?;
 
     let provider = provider_from_imap_server(&config.imap_server_url);
 
@@ -67,7 +69,14 @@ pub async fn config_setup(
     create_dir_all(&config_dir).await?;
 
     let path = config_dir.join("config.json");
-    fs::write(path, config_json).await?;
+    config
+        .save(&path)
+        .await
+        .map_err(|error| Error::Other(format!("Could not save configuration: {error}")))?;
+
+    // The startup check may have cached `Setup` while the configuration file
+    // did not exist. Force the next status request to read the new config.
+    *app.state::<StartupStatusCache>().0.lock().await = None;
 
     Ok(())
 }
@@ -95,9 +104,17 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
     let config_dir = app.path().app_config_dir()?;
     let config_path = config_dir.join("config.json");
 
-    let Ok(config) = Config::init(&config_path).await else {
+    if !try_exists(&config_path).await? {
+        tracing::warn!(path = %config_path.display(), "Configuration not found; setup is required");
+        let status = InitStatus::Setup;
+        *startup_status = Some(status.clone());
+        return Ok(status);
+    }
+
+    let Ok(mut config) = Config::init(&config_path).await else {
         return Ok(InitStatus::Setup);
     };
+    refresh_chatgpt_token_if_needed(&mut config, &config_path).await?;
 
     let app_service_name = app.config().identifier.clone();
     let apple_keychain_manager = AppleKeychainManager::new(&app_service_name);
@@ -145,6 +162,8 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
             }
         }
 
+        app.state::<SharedFetchManager>().reset_for_session().await;
+
         let resource_root = app.path().resource_dir()?;
         let initialized_state = config::InitializedState {
             local_inference: initialize_local_inference(&resource_root).await?,
@@ -156,14 +175,14 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
                 email: username,
                 provider: provider_from_imap_server(&config.imap_server_url),
             }],
-            llm_agent: init_llm_agent(
-                llm::providers::Providers::Ollama,
+            llm_agent: tokio::sync::RwLock::new(init_llm_agent(
+                config.llm_provider.map(|provider| provider.as_str().into()),
                 &config.default_model,
-                &config.api_key,
+                config.access_token.as_deref().unwrap_or(&config.api_key),
                 None,
                 None,
                 vec![ToolWrapper::new(SearchEmailsTool)],
-            )?,
+            )?),
         };
 
         let app_state = app.state::<ArcSwap<AppState>>();

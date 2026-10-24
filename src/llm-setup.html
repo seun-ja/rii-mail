@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <link rel="stylesheet" href="styles.css" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Connect an AI Assistant</title>
+        <script type="module" src="/llm-setup.js" defer></script>
+    </head>
+
+    <body>
+        <main class="setup-page llm-setup-page">
+            <div class="setup-container llm-setup-container">
+                <div class="setup-header">
+                    <div class="setup-brand">
+                        <img
+                            class="setup-brand-img"
+                            src="/assets/mail.png"
+                            alt="RiiMail"
+                        />
+                    </div>
+
+                    <p class="setup-step">Account setup · Step 2 of 2</p>
+                    <h1>Connect an AI assistant</h1>
+                    <p class="setup-subtitle">
+                        Choose how RiiMail should power email generation. You can
+                        skip this and connect later.
+                    </p>
+                </div>
+
+                <div class="llm-options" aria-label="AI connection options">
+                    <section class="llm-option" aria-labelledby="ollama-title">
+                        <div class="llm-option-heading">
+                            <span
+                                class="llm-option-icon llm-option-icon-ollama"
+                                aria-hidden="true"
+                            >
+                                <img
+                                    class="llm-option-logo llm-option-logo-ollama"
+                                    src="/assets/ollama-logo.png"
+                                    alt=""
+                                />
+                            </span>
+                            <div>
+                                <h2 id="ollama-title">Ollama</h2>
+                                <p>Use a local model running on this device.</p>
+                            </div>
+                        </div>
+                        <button
+                            id="connect-ollama-button"
+                            class="llm-connect-button"
+                            type="button"
+                        >
+                            Connect Ollama
+                        </button>
+                    </section>
+
+                    <section class="llm-option" aria-labelledby="chatgpt-title">
+                        <div class="llm-option-heading">
+                            <span
+                                class="llm-option-icon llm-option-icon-chatgpt"
+                                aria-hidden="true"
+                            >
+                                <img
+                                    class="llm-option-logo llm-option-logo-chatgpt"
+                                    src="/assets/chatgpt-logo-white.svg"
+                                    alt=""
+                                />
+                            </span>
+                            <div>
+                                <h2 id="chatgpt-title">ChatGPT</h2>
+                                <p>Use your eligible ChatGPT plan.</p>
+                            </div>
+                        </div>
+                        <p class="llm-browser-note">
+                            Your system browser will open for secure sign-in.
+                            Keep this window open while authorization completes.
+                        </p>
+                        <button
+                            id="connect-chatgpt-button"
+                            class="llm-connect-button"
+                            type="button"
+                        >
+                            Continue with ChatGPT
+                        </button>
+                    </section>
+                </div>
+
+                <div
+                    id="llm-setup-status"
+                    class="llm-setup-status"
+                    role="status"
+                    aria-live="polite"
+                    aria-atomic="true"
+                ></div>
+
+                <button id="skip-llm-button" class="llm-skip-button" type="button">
+                    Skip for now
+                </button>
+
+                <p class="setup-privacy llm-privacy">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path
+                            d="M7 10V8a5 5 0 0 1 10 0v2m-11 0h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1Z"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                        />
+                    </svg>
+                    OAuth credentials stay in the desktop app, not browser storage.
+                </p>
+            </div>
+        </main>
+    </body>
+</html>

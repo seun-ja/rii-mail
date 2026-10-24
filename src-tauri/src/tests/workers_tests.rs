@@ -1,5 +1,17 @@
 use crate::error::{friendly_login_error_message, Error};
-use crate::workers::is_imap_connection_error;
+use crate::workers::{is_imap_connection_error, FetchManager};
+
+#[tokio::test]
+async fn starting_a_session_replaces_cancelled_fetch_tokens() {
+    let manager = FetchManager::default();
+    manager.logout_token.lock().await.cancel();
+    manager.refresh_token.lock().await.cancel();
+
+    manager.reset_for_session().await;
+
+    assert!(!manager.logout_token.lock().await.is_cancelled());
+    assert!(!manager.refresh_token.lock().await.is_cancelled());
+}
 
 #[test]
 fn login_error_message_maps_auth_failures() {

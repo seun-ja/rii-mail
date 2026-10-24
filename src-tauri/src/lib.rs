@@ -11,16 +11,16 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::config::ImapClientConfig;
 use crate::handlers::{
-    email_generator, inbox_email_populated, inbox_intial_email_populated, refresh_emails_handler,
-    send_email, sent_email_populated, sent_intial_email_populated,
+    email_generator, inbox_email_populated, inbox_intial_email_populated, is_llm_enabled,
+    refresh_emails_handler, send_email, sent_email_populated, sent_intial_email_populated,
 };
 use crate::imap::ImapCommand;
 use crate::workers::{worker, FetchManager};
 use crate::{
     config::{AppState, StartupStatusCache},
     handlers::{
-        check_app_status, config_setup, fetch_emails, finish_startup, login, logout_with_state,
-        open_main_window, rater,
+        check_app_status, config_setup, connect_chatgpt, connect_ollama, fetch_emails,
+        finish_startup, login, logout_with_state, open_main_window, rater,
     },
 };
 
@@ -226,7 +226,10 @@ pub async fn run() {
             email_generator,
             inbox_email_populated,
             inbox_intial_email_populated,
+            is_llm_enabled,
             config_setup,
+            connect_chatgpt,
+            connect_ollama,
             fetch_emails,
             finish_startup,
             login,

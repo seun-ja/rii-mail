@@ -131,19 +131,23 @@ pub async fn initialize_local_inference(resource_root: &Path) -> Result<Agent<Em
 
 #[tracing::instrument(name = "llm.agent.initialize", skip_all, err)]
 pub fn init_llm_agent<T: Tool>(
-    provider: Providers,
+    provider: Option<Providers>,
     model: &str,
     api_key: &str,
     temperature: Option<f64>,
     max_tokens: Option<u64>,
     tools: Vec<ToolWrapper<T>>,
-) -> Result<Agent<Email>, Error> {
-    let agent = AgentBuilder::new(provider, EMAIL_LLM_SYSTEM_MESSAGE, model) // TODO: work on the system message
-        .api_key(api_key)
-        .temperature(temperature.unwrap_or(0.0))
-        .max_tokens(max_tokens.unwrap_or(3000))
-        .tools(tools)
-        .build_with_schema::<Email>()?;
-
-    Ok(agent)
+) -> Result<Option<Agent<Email>>, Error> {
+    match provider {
+        Some(p) => {
+            AgentBuilder::new(p, EMAIL_LLM_SYSTEM_MESSAGE, model) // TODO: work on the system message
+                .api_key(api_key)
+                .temperature(temperature.unwrap_or(0.0))
+                .max_tokens(max_tokens.unwrap_or(3000))
+                .tools(tools)
+                .build_with_schema::<Email>()
+                .map(|agent| Ok(Some(agent)))?
+        }
+        None => Ok(None),
+    }
 }

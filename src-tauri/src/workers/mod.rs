@@ -15,4 +15,12 @@ pub struct FetchManager {
     pub refresh_token: Mutex<CancellationToken>,
 }
 
+impl FetchManager {
+    /// Starts a new authenticated session with uncancelled token parents.
+    pub async fn reset_for_session(&self) {
+        *self.logout_token.lock().await = CancellationToken::new();
+        *self.refresh_token.lock().await = CancellationToken::new();
+    }
+}
+
 pub type SharedFetchManager = Arc<FetchManager>;

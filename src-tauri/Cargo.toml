@@ -29,7 +29,13 @@ tokio = { version = "1.38.0", features = ["full", "tracing"] }
 tokio-util = "0.7.18"
 futures = "0.3.28"
 
+reqwest = { version = "0.13.5", features = ["form", "json"] }
 thiserror = "1.0.61"
+base64 = "0.22"
+jsonwebtoken = "9"
+rand = "0.8"
+sha2 = "0.10"
+uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4.44", features = ["serde"] }
 dotenv = "0.15.0"
 

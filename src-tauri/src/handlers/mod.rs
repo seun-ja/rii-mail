@@ -2,6 +2,7 @@ pub(crate) mod configuration;
 pub(crate) mod email;
 mod events;
 mod llm;
+mod llm_connections;
 mod login;
 mod menu;
 
@@ -12,7 +13,10 @@ pub use events::{
     sent_intial_email_populated,
 };
 use lettre::Address;
-pub use llm::{email_generator, rater};
+pub use llm::{email_generator, is_llm_enabled, rater};
+pub use llm_connections::{
+    connect_chatgpt, connect_ollama, ensure_chatgpt_agent_fresh, refresh_chatgpt_token_if_needed,
+};
 pub use login::login;
 pub use menu::logout_with_state;
 

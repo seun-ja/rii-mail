@@ -23,6 +23,8 @@ test("getMailAppDom queries all expected selectors", () => {
   assert.equal(dom.mailListEl.selector, "#mail-list");
   assert.equal(dom.mailReaderEl.selector, "#mail-reader");
   assert.equal(dom.syncProgressBarEl.selector, "#sync-progress-bar");
+  assert.equal(dom.openAiAssistantBtnEl.selector, "#open-ai-assistant-btn");
+  assert.equal(dom.aiAssistantPanelEl.selector, "#ai-assistant-panel");
 
   assert.ok(calls.some(([, selector]) => selector === "#mail-reader"));
   assert.ok(calls.some(([, selector]) => selector === "#sync-overlay"));

@@ -25,5 +25,7 @@ export function getMailAppDom(documentRef = document) {
     composeBodyInput: documentRef.querySelector("#compose-body"),
     composeCcInput: documentRef.querySelector("#compose-cc"),
     composeBccInput: documentRef.querySelector("#compose-bcc"),
+    openAiAssistantBtnEl: documentRef.querySelector("#open-ai-assistant-btn"),
+    aiAssistantPanelEl: documentRef.querySelector("#ai-assistant-panel"),
   };
 }

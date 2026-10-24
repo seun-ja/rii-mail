@@ -34,6 +34,24 @@ pub struct Account {
     pub provider: Provider,
 }
 
+#[derive(Debug, Default, Deserialize, Serialize, Clone)]
+pub struct ChatGptConfig {
+    #[serde(default, rename = "chatgpt_client_id")]
+    pub client_id: Option<String>,
+    #[serde(default, rename = "chatgpt_id_token")]
+    pub id_token: Option<String>,
+    #[serde(default, rename = "chatgpt_email")]
+    pub email: Option<String>,
+    #[serde(default, rename = "chatgpt_subject")]
+    pub subject: Option<String>,
+    #[serde(default, rename = "chatgpt_scopes")]
+    pub scopes: Vec<String>,
+    #[serde(default, rename = "chatgpt_token_expires_at")]
+    pub token_expires_at: Option<u64>,
+    #[serde(default, rename = "chatgpt_host_id")]
+    pub host_id: Option<String>,
+}
+
 #[derive(Deserialize, Serialize, Clone)]
 pub struct Config {
     pub imap_server_url: String,
@@ -41,9 +59,17 @@ pub struct Config {
     pub imap_port: u16,
     pub sqlite_db: String,
     pub accounts: Vec<String>,
-    pub provider: String,
+    #[serde(default)]
+    pub llm_provider: Option<String>,
     pub default_model: String,
+    #[serde(default)]
     pub api_key: String,
+    #[serde(default)]
+    pub access_token: Option<String>,
+    #[serde(default)]
+    pub refresh_token: Option<String>,
+    #[serde(flatten)]
+    pub chatgpt: ChatGptConfig,
 }
 
 impl Config {
@@ -57,6 +83,23 @@ impl Config {
         }
 
         Ok(config)
+    }
+
+    /// Saves configuration with owner-only permissions because it may contain
+    /// renewable OAuth credentials.
+    pub async fn save(
+        &self,
+        path: &PathBuf,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        fs::write(path, serde_json::to_string_pretty(self)?).await?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).await?;
+        }
+
+        Ok(())
     }
 }
 
@@ -83,7 +126,7 @@ pub struct InitializedState {
     pub sqlite_pool: SqlitePool,
     pub apple_keychain_manager: AppleKeychainManager,
     pub smtp_transport_client: SmtpTransport,
-    pub llm_agent: Agent<Email>,
+    pub llm_agent: tokio::sync::RwLock<Option<Agent<Email>>>,
     pub accounts: Vec<Account>,
 }
 
