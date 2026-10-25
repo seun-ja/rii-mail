@@ -105,7 +105,15 @@
                             type="button"
                             data-folder="INBOX"
                         >
-                            <span class="folder-label">Inbox</span>
+                            <span class="folder-leading">
+                                <img
+                                    class="folder-icon"
+                                    src="/assets/folder-inbox.png"
+                                    alt=""
+                                    aria-hidden="true"
+                                />
+                                <span class="folder-label">Inbox</span>
+                            </span>
                             <span class="folder-count" id="count-inbox">0</span>
                         </button>
                         <button
@@ -113,7 +121,22 @@
                             type="button"
                             data-folder="starred"
                         >
-                            <span class="folder-label">Starred</span>
+                            <span class="folder-leading">
+                                <svg
+                                    class="folder-icon folder-icon-symbol"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    aria-hidden="true"
+                                >
+                                    <path
+                                        d="m12 3 2.78 5.63 6.22.9-4.5 4.38 1.06 6.19L12 17.18 6.44 20.1 7.5 13.91 3 9.53l6.22-.9L12 3Z"
+                                        stroke="currentColor"
+                                        stroke-width="1.8"
+                                        stroke-linejoin="round"
+                                    />
+                                </svg>
+                                <span class="folder-label">Starred</span>
+                            </span>
                             <span class="folder-count" id="count-starred"
                                 >0</span
                             >
@@ -123,7 +146,15 @@
                             type="button"
                             data-folder="Sent"
                         >
-                            <span class="folder-label">Sent</span>
+                            <span class="folder-leading">
+                                <img
+                                    class="folder-icon"
+                                    src="/assets/folder-sent.png"
+                                    alt=""
+                                    aria-hidden="true"
+                                />
+                                <span class="folder-label">Sent</span>
+                            </span>
                             <span class="folder-count" id="count-sent">0</span>
                         </button>
                         <button
@@ -131,10 +162,37 @@
                             type="button"
                             data-folder="Trash"
                         >
-                            <span class="folder-label">Trash</span>
+                            <span class="folder-leading">
+                                <img
+                                    class="folder-icon"
+                                    src="/assets/folder-trash.png"
+                                    alt=""
+                                    aria-hidden="true"
+                                />
+                                <span class="folder-label">Trash</span>
+                            </span>
                             <span class="folder-count" id="count-archive"
                                 >0</span
                             >
+                        </button>
+                        <button
+                            class="folder-btn folder-btn-disabled"
+                            type="button"
+                            data-folder="Spam"
+                            disabled
+                            aria-disabled="true"
+                            title="Spam folder support is coming soon"
+                        >
+                            <span class="folder-leading">
+                                <img
+                                    class="folder-icon"
+                                    src="/assets/folder-spam.png"
+                                    alt=""
+                                    aria-hidden="true"
+                                />
+                                <span class="folder-label">Spam</span>
+                            </span>
+                            <span class="folder-status">Soon</span>
                         </button>
                     </div>
                 </aside>
