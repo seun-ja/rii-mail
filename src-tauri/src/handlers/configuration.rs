@@ -56,10 +56,11 @@ pub async fn config_setup(
     };
 
     let config_dir = app.path().app_config_dir()?;
+    let data_dir = app.path().app_data_dir()?;
 
     let provider = provider_from_imap_server(&config.imap_server_url);
 
-    db::init_db(&config_dir, &config.sqlite_db, &provider).await?;
+    db::init_db(&data_dir, &config.sqlite_db, &provider).await?;
     tracing::info!(
         "Database initialized successfully for provider: {}",
         provider.as_ref()
@@ -102,6 +103,7 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
     tracing::debug!("Checking startup status and stored Apple Keychain credentials");
 
     let config_dir = app.path().app_config_dir()?;
+    let data_dir = app.path().app_data_dir()?;
     let config_path = config_dir.join("config.json");
 
     if !try_exists(&config_path).await? {
@@ -130,7 +132,7 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
     if let Ok(password) = apple_keychain_manager.retrieve_password(&username) {
         let imap_client_channel_tx = app.state::<ReturningUserImapClientChannelTx>();
 
-        let sqlite_pool = db::db_pool(&config_dir, &config.sqlite_db).await?;
+        let sqlite_pool = db::db_pool(&data_dir, &config.sqlite_db).await?;
 
         let credential = Credentials::new(username.clone(), password.clone());
         let smtp_transport_client = smtp_transport_client(&config.smtp_relay_url, credential)?;

@@ -30,6 +30,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
 
     let app_service_name = app.config().identifier.clone();
     let config_dir = app.path().app_config_dir()?;
+    let data_dir = app.path().app_data_dir()?;
     let config_path = config_dir.join("config.json");
     let resource_root = app.path().resource_dir()?;
 
@@ -48,7 +49,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
 
     let (initialized_state, provider) = handle_initialization(
         config.clone(),
-        config_dir,
+        data_dir,
         &resource_root,
         &app_service_name,
         &password,
@@ -127,14 +128,14 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
 #[tracing::instrument(name = "app.initialize", skip_all, err)]
 async fn handle_initialization(
     config: Config,
-    config_dir: PathBuf,
+    data_dir: PathBuf,
     resource_root: &Path,
     app_service_name: &str,
     password: &str,
 ) -> Result<(InitializedState, Provider), Error> {
     let provider = provider_from_imap_server(&config.imap_server_url);
 
-    let sqlite_pool = db::db_pool(&config_dir, &config.sqlite_db).await?;
+    let sqlite_pool = db::db_pool(&data_dir, &config.sqlite_db).await?;
 
     let apple_keychain_manager = AppleKeychainManager::new(app_service_name);
 
