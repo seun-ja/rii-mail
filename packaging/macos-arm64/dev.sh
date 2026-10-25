@@ -14,4 +14,4 @@ export DYLD_LIBRARY_PATH="$BUILD_DIR${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
 export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=-Wl,-rpath,$BUILD_DIR"
 
 cd "$PROJECT_ROOT/src-tauri"
-cargo tauri dev --no-watch
+cargo tauri dev --no-watch --config tauri.macos.arm64.conf.json

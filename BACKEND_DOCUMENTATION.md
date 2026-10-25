@@ -1032,17 +1032,17 @@ These are important if you want the docs to reflect reality rather than intent.
 - current code does not fully activate that branch
 - frontend manual refresh is the dependable current behavior
 
-### macOS arm64 local inference is self-contained
+### macOS local inference bundles are self-contained
 
 - the model is not stored in the GitHub repository; builders must download [`seuun/spam-rater-local-model`](https://huggingface.co/seuun/spam-rater-local-model) into the repository-root `local-model/` directory before running or packaging the app
 - use `git clone https://huggingface.co/seuun/spam-rater-local-model local-model` with Git LFS, or `hf download seuun/spam-rater-local-model --local-dir local-model`; verify that `config.json` and `model.safetensors` contain real downloaded data rather than LFS pointers
 - the Python entrypoint is `llm/local_inference.py` and model loading is forced into offline/local-files-only mode
-- `packaging/macos-arm64/runtime.lock.json` pins the standalone Python archive and SHA-256 checksum
-- `packaging/macos-arm64/requirements.txt` pins PyTorch, Transformers, and their complete dependency set
-- `src-tauri/tauri.macos.conf.json` places `libpython3.12.dylib` in `Contents/Frameworks` and the Python home in `Contents/Resources/python`
+- `packaging/macos-arm64/runtime.lock.json` and `packaging/macos-intel/runtime.lock.json` independently pin native standalone Python archives and SHA-256 checksums
+- their matching `requirements.txt` files pin PyTorch, Transformers, and complete dependency sets without permitting source builds
+- `src-tauri/tauri.macos.arm64.conf.json` and `src-tauri/tauri.macos.intel.conf.json` place `libpython3.12.dylib` in `Contents/Frameworks` and the Python home in `Contents/Resources/python`
 - production runtime initialization does not discover Homebrew, virtualenv, home-directory, or `PATH` Python installations
-- local development must use `npm run dev`, which invokes `packaging/macos-arm64/dev.sh` to stage the same runtime and provide PyO3's link/load environment; invoking `cargo tauri dev` directly can link the debug executable to a machine-local Python
-- macOS 14 is the minimum supported release because of the pinned arm64 PyTorch wheel
+- local development must use `npm run dev`, which selects the native Apple Silicon or Intel wrapper to stage the same runtime and provide PyO3's link/load environment; invoking `cargo tauri dev` directly can link the debug executable to a machine-local Python
+- macOS 14 is the minimum supported release because of the pinned PyTorch wheels; native Intel package staging, inference, and audit must pass before publishing an Intel DMG
 
 ### macOS matters for stored credentials
 
@@ -1095,8 +1095,8 @@ These are important if you want the docs to reflect reality rather than intent.
 - `llm/src/providers/local_inference.rs`
 - `llm/local_inference.py`
 - `local-model/`
-- `packaging/macos-arm64/`
-- `src-tauri/tauri.macos.conf.json`
+- `packaging/macos-arm64/` and `packaging/macos-intel/`
+- `src-tauri/tauri.macos.arm64.conf.json` and `src-tauri/tauri.macos.intel.conf.json`
 
 ---
 
