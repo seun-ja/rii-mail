@@ -33,6 +33,10 @@ pub async fn logout_with_state(app: tauri::AppHandle) {
         tracing::error!("Failed to get config directory path during logout: {}", err);
         std::path::PathBuf::from(".")
     });
+    let data_dir = app.path().app_data_dir().unwrap_or_else(|err| {
+        tracing::error!("Failed to get data directory path during logout: {}", err);
+        config_dir.clone()
+    });
     let config_path = config_dir.join("config.json");
 
     if let Err(err) = fs::remove_file(config_path).await {
@@ -47,7 +51,7 @@ pub async fn logout_with_state(app: tauri::AppHandle) {
     tracing::info!("Received logout confirmation from session thread");
 
     // Clean up the database after logout
-    let db_path = config_dir.join("data");
+    let db_path = data_dir.join("data");
     _ = db::cleanup(db_path).await;
 
     app_state.store(Arc::new(AppState::Fresh));

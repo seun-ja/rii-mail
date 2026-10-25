@@ -142,11 +142,13 @@ The backend stores config in the Tauri app config directory as:
 
 - `config.json`
 
-The SQLite database lives under:
+The SQLite database lives under the Tauri app data directory as:
 
 - `data/<sqlite_db>`
 
-Both paths are resolved from `app.path().app_config_dir()`.
+Configuration is resolved from `app.path().app_config_dir()`, while the database is resolved from `app.path().app_data_dir()`. On macOS, both app-scoped directories resolve to `~/Library/Application Support/<bundle-id>/`, so the database path is:
+
+- `~/Library/Application Support/com.seunaminu.riimail/data/<sqlite_db>`
 
 ### `src-tauri/src/config.rs`
 

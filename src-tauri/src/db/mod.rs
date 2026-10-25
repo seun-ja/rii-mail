@@ -17,10 +17,10 @@ use crate::error::Error;
     fields(database = db),
     err
 )]
-pub async fn db_pool(app_dir: &PathBuf, db: &str) -> Result<SqlitePool, sqlx::Error> {
-    fs::create_dir_all(app_dir)?;
+pub async fn db_pool(app_data_dir: &PathBuf, db: &str) -> Result<SqlitePool, sqlx::Error> {
+    fs::create_dir_all(app_data_dir)?;
 
-    let data_dir = app_dir.join("data");
+    let data_dir = app_data_dir.join("data");
     fs::create_dir_all(&data_dir)?;
 
     let db_path = data_dir.join(db);
@@ -39,11 +39,11 @@ pub async fn db_pool(app_dir: &PathBuf, db: &str) -> Result<SqlitePool, sqlx::Er
     err
 )]
 pub async fn init_db(
-    app_dir: &PathBuf,
+    app_data_dir: &PathBuf,
     db: &str,
     provider: &Provider,
 ) -> Result<SqlitePool, Error> {
-    let pool = db_pool(app_dir, db).await?;
+    let pool = db_pool(app_data_dir, db).await?;
 
     sqlx::query("PRAGMA journal_mode = WAL;")
         .execute(&pool)
