@@ -1,0 +1,15 @@
+{
+  "bundle": {
+    "resources": {
+      "../packaging/macos-intel/build/local-model/": "local-model/",
+      "../packaging/macos-intel/build/python/": "python/",
+      "../packaging/macos-intel/build/runtime-manifest.json": "python/runtime-manifest.json"
+    },
+    "macOS": {
+      "minimumSystemVersion": "14.0",
+      "files": {
+        "Frameworks/libpython3.12.dylib": "../packaging/macos-intel/build/libpython3.12.dylib"
+      }
+    }
+  }
+}

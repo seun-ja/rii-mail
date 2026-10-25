@@ -63,7 +63,10 @@ export MACOSX_DEPLOYMENT_TARGET="14.0"
 export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=-Wl,-rpath,@executable_path/../Frameworks"
 
 cd "$PROJECT_ROOT/src-tauri"
-cargo tauri build --target aarch64-apple-darwin --bundles app
+cargo tauri build \
+    --target aarch64-apple-darwin \
+    --bundles app \
+    --config tauri.macos.arm64.conf.json
 
 python3 "$SCRIPT_DIR/scripts/sign-app.py" "$APP"
 python3 "$SCRIPT_DIR/scripts/audit-app.py" "$APP"

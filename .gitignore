@@ -43,3 +43,6 @@ llm/target
 packaging/macos-arm64/.cache/
 packaging/macos-arm64/build/
 packaging/macos-arm64/build.new/
+packaging/macos-intel/.cache/
+packaging/macos-intel/build/
+packaging/macos-intel/build.new/

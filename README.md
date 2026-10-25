@@ -65,7 +65,7 @@ On macOS, ensure Xcode Command Line Tools are installed.
 
 ### Local inference runtime
 
-The macOS arm64 release is self-contained. Its app bundle includes:
+The macOS Apple Silicon and Intel releases are self-contained. Each app bundle includes:
 
 - the classification model from `local-model/`
 - `llm/local_inference.py`
@@ -74,7 +74,7 @@ The macOS arm64 release is self-contained. Its app bundle includes:
 
 Users do **not** need Homebrew, Python, a virtualenv, Python packages, or network access for local spam/phishing inference. At startup, RiiMail replaces inherited Python environment variables, initializes only the bundled runtime, restricts `sys.path` to app resources, enables Hugging Face offline mode, and rejects `torch` or `transformers` imports outside the app bundle.
 
-The release targets Apple Silicon and requires macOS 14 or newer because the pinned PyTorch wheel has a macOS 14 deployment target.
+Separate Apple Silicon (`arm64`) and Intel (`x86_64`) DMGs target macOS 14 or newer because the pinned PyTorch wheels have a macOS 14 deployment target. Each package must be built natively on its target architecture; the embedded Python and PyTorch wheels are not cross-compilable.
 
 #### Download the local model
 
@@ -105,9 +105,9 @@ ls -lh local-model/model.safetensors
 
 Runtime inputs are tracked in:
 
-- `packaging/macos-arm64/runtime.lock.json`
-- `packaging/macos-arm64/requirements.txt`
-- `src-tauri/tauri.macos.conf.json`
+- `packaging/macos-arm64/runtime.lock.json` and `packaging/macos-intel/runtime.lock.json`
+- `packaging/macos-arm64/requirements.txt` and `packaging/macos-intel/requirements.txt`
+- `src-tauri/tauri.macos.arm64.conf.json` and `src-tauri/tauri.macos.intel.conf.json`
 
 ## Environment Variables
 
@@ -139,26 +139,30 @@ From the project root:
 npm run dev
 ```
 
-This runs `packaging/macos-arm64/dev.sh`. The wrapper prepares or reuses the pinned Python runtime, configures PyO3 to link against its `libpython3.12.dylib`, exposes that dylib to the debug executable, and then starts `cargo tauri dev --no-watch`. The first run downloads the runtime and pinned wheels; later runs reuse the staged files.
+This selects `packaging/macos-arm64/dev.sh` on Apple Silicon or `packaging/macos-intel/dev.sh` on an Intel Mac. The wrapper prepares or reuses the matching pinned Python runtime, configures PyO3 to link against its `libpython3.12.dylib`, exposes that dylib to the debug executable, and then starts `cargo tauri dev --no-watch`. The first run downloads the runtime and pinned wheels; later runs reuse the staged files. You can explicitly use `npm run dev:macos-arm64` or `npm run dev:macos-intel` when needed.
 
 Use `npm run dev` rather than invoking `cargo tauri dev` directly. The direct Cargo command does not provide the PyO3 link configuration and can produce a debug executable linked to Homebrew or another machine-local Python installation.
 
-After downloading the model as described above, build the self-contained Apple Silicon DMG from the project root:
+After downloading the model as described above, build the self-contained DMG matching the native Mac architecture from the project root:
 
 ```bash
 npm run build:macos-arm64
+# or, on an Intel Mac:
+npm run build:macos-intel
 ```
 
 Optionally, pass a destination directory after `--`:
 
 ```bash
 npm run build:macos-arm64 -- ~/Desktop
+# or: npm run build:macos-intel -- ~/Desktop
 ```
 
 You can also provide the complete installer filename:
 
 ```bash
 npm run build:macos-arm64 -- ~/Desktop/RiiMail.dmg
+# or: npm run build:macos-intel -- ~/Desktop/RiiMail.dmg
 ```
 
 Relative output paths are resolved from the project root. The first build downloads the checksum-pinned standalone Python archive and pinned wheels. The wrapper stages the runtime, links PyO3 to the bundled dylib, builds and signs the app, audits every Mach-O dependency, runs real offline model inference from the packaged app, and verifies the DMG checksum.
@@ -167,6 +171,7 @@ Default output:
 
 ```text
 src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/RiiMail_0.1.0_aarch64.dmg
+src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/RiiMail_0.1.0_x86_64.dmg
 ```
 
 The generated DMG is ad-hoc signed for local testing. Public distribution still requires your Apple Developer ID signing identity and notarization to avoid Gatekeeper warnings on downloaded builds.
@@ -182,8 +187,13 @@ npm run test:all
 Run Rust backend tests after staging the pinned runtime:
 
 ```bash
+# Apple Silicon
 python3 packaging/macos-arm64/scripts/prepare-runtime.py
-npm run test:backend
+npm run test:backend:macos-arm64
+
+# Intel
+python3 packaging/macos-intel/scripts/prepare-runtime.py
+npm run test:backend:macos-intel
 ```
 
 Run local-provider Rust tests and mocked Python inference tests separately:
