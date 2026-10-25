@@ -15,17 +15,59 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 16px;
     user-select: none;
     -webkit-user-select: none;
 }
 
+.splash-content {
+    display: grid;
+    place-items: center;
+}
+
+.splash-logo-stack {
+    display: grid;
+    justify-items: center;
+    gap: 6px;
+    width: 184px;
+    max-width: calc(100vw - 32px);
+}
+
 .splash-logo {
     display: block;
-    width: 220px;
-    height: 220px;
-    max-width: calc(100vw - 32px);
-    max-height: calc(100vh - 32px);
+    width: 100%;
+    height: auto;
+    max-height: calc(100vh - 72px);
     object-fit: contain;
     pointer-events: none;
     -webkit-user-drag: none;
+}
+
+.splash-loading {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #2edb87;
+    box-shadow: 0 0 0 0 rgba(46, 219, 135, 0.55);
+    animation: splash-status-pulse 1.5s ease-out infinite;
+}
+
+@keyframes splash-status-pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(46, 219, 135, 0.55);
+    }
+
+    70% {
+        box-shadow: 0 0 0 7px rgba(46, 219, 135, 0);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(46, 219, 135, 0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .splash-loading {
+        animation: none;
+    }
 }

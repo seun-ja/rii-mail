@@ -201,6 +201,18 @@ export function createSyncController(
     }
   }
 
+  async function refreshInboxOnStartup() {
+    if (state.activeFolder !== "INBOX") {
+      return;
+    }
+
+    try {
+      await refreshActiveMailbox();
+    } catch (error) {
+      console.warn("Unable to refresh inbox during startup", error);
+    }
+  }
+
   async function runInitialSync() {
     async function syncFolderWithRetries(
       folder,
@@ -322,6 +334,10 @@ export function createSyncController(
     if (inboxSync.aborted) {
       return;
     }
+
+    // The first database page can be stale relative to the IMAP mailbox.
+    // Reconcile it before considering the initial inbox sync complete.
+    await refreshInboxOnStartup();
 
     if (inboxSync.page.length > 0) {
       state.isInitialSyncComplete = true;
