@@ -1,4 +1,6 @@
 export function createLayoutController(state, dom) {
+  let readerResizerPointerId = null;
+
   function setReaderListWidth(nextWidthPx) {
     if (!dom.mailBodyEl) {
       return;
@@ -54,7 +56,11 @@ export function createLayoutController(state, dom) {
   }
 
   function onReaderResizeMove(event) {
-    if (!state.isResizingReader || !dom.mailBodyEl) {
+    if (
+      !state.isResizingReader ||
+      !dom.mailBodyEl ||
+      event.pointerId !== readerResizerPointerId
+    ) {
       return;
     }
 
@@ -65,17 +71,33 @@ export function createLayoutController(state, dom) {
     setReaderListWidth(relativeX);
   }
 
-  function onReaderResizeEnd() {
-    if (!state.isResizingReader) {
+  function onReaderResizeEnd(event) {
+    if (
+      !state.isResizingReader ||
+      (event?.pointerId !== undefined &&
+        event.pointerId !== readerResizerPointerId)
+    ) {
       return;
     }
 
+    const pointerId = readerResizerPointerId;
     state.isResizingReader = false;
+    readerResizerPointerId = null;
     document.body.style.cursor = "";
     dom.readerResizerEl?.classList.remove("is-dragging");
+
+    if (dom.readerResizerEl?.hasPointerCapture?.(pointerId)) {
+      dom.readerResizerEl.releasePointerCapture(pointerId);
+    }
+
     window.removeEventListener("pointermove", onReaderResizeMove);
     window.removeEventListener("pointerup", onReaderResizeEnd);
     window.removeEventListener("pointercancel", onReaderResizeEnd);
+    window.removeEventListener("blur", onReaderResizeEnd);
+    dom.readerResizerEl?.removeEventListener(
+      "lostpointercapture",
+      onReaderResizeEnd,
+    );
   }
 
   function setupLayoutEvents() {
@@ -88,11 +110,17 @@ export function createLayoutController(state, dom) {
 
     if (dom.readerResizerEl) {
       dom.readerResizerEl.addEventListener("pointerdown", (event) => {
-        if (window.innerWidth <= 980) {
+        if (
+          window.innerWidth <= 980 ||
+          (event.pointerType === "mouse" && event.button !== 0)
+        ) {
           return;
         }
 
         event.preventDefault();
+        onReaderResizeEnd();
+        readerResizerPointerId = event.pointerId;
+        dom.readerResizerEl.setPointerCapture?.(event.pointerId);
         state.isResizingReader = true;
         document.body.style.cursor = "col-resize";
         dom.readerResizerEl.classList.add("is-dragging");
@@ -100,6 +128,11 @@ export function createLayoutController(state, dom) {
         window.addEventListener("pointermove", onReaderResizeMove);
         window.addEventListener("pointerup", onReaderResizeEnd);
         window.addEventListener("pointercancel", onReaderResizeEnd);
+        window.addEventListener("blur", onReaderResizeEnd);
+        dom.readerResizerEl.addEventListener(
+          "lostpointercapture",
+          onReaderResizeEnd,
+        );
       });
     }
 

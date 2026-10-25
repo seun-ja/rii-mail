@@ -286,6 +286,20 @@ What is covered now:
 
 Interested in contributing? Check out our [Contributing Guide](CONTRIBUTING.md) for details on how to get started. For reporting security vulnerabilities, please refer to our [Security Policy](SECURITY.md).
 
+## Icon Attribution
+
+The mailbox sidebar includes icons downloaded from [Flaticon](https://www.flaticon.com/). The original file metadata identifies the exact icon records and Flaticon creator IDs below. Usage remains subject to the applicable [Flaticon license and attribution terms](https://www.flaticon.com/legal).
+
+| Asset | Icon | Creator record | Source |
+| --- | --- | --- | --- |
+| `src/assets/mail.png` | RiiMail AI mail mark | Flaticon creator ID `190` | [Mail icon #3329899](https://www.flaticon.com/free-icon/mail_3329899) |
+| `src/assets/folder-inbox.png` | Inbox | Flaticon creator ID `3013` | [Inbox icon #17147125](https://www.flaticon.com/free-icon/inbox_17147125) |
+| `src/assets/folder-sent.png` | Paper plane | Flaticon creator ID `7147` | [Paper icon #15527171](https://www.flaticon.com/free-icon/paper_15527171) |
+| `src/assets/folder-spam.png` | Spam | Flaticon creator ID `1126` | [Spam icon #3945553](https://www.flaticon.com/free-icon/spam_3945553) |
+| `src/assets/folder-trash.png` | Delete | Flaticon creator ID `3891` | [Delete icon #9623228](https://www.flaticon.com/free-icon/delete_9623228) |
+
+> Note: `src/assets/mail.png` is the active logo used by the splash and onboarding screens. `src/assets/icon.png`, the 32px workspace icon, has no embedded source metadata; it visually matches the active logo, but its provenance cannot be independently verified. Flaticon blocked automated access to the public pages while this documentation was updated, so creator display names could not be verified without guessing. The creator IDs and canonical source pages above are taken directly from each downloaded asset’s provenance metadata.
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

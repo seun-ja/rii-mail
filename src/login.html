@@ -9,8 +9,8 @@
     </head>
 
     <body>
-        <div class="login-page">
-            <div class="login-container">
+        <main class="login-page setup-page">
+            <div class="login-container setup-container">
                 <div
                     id="init-loading"
                     class="login-loading"
@@ -28,11 +28,20 @@
                     class="login-content hidden"
                     aria-hidden="true"
                 >
-                    <div class="login-header">
-                        <p class="login-subtitle">
-                            Enter your email credentials to access your inbox
+                    <header class="setup-header login-header">
+                        <div class="setup-brand">
+                            <img
+                                class="setup-brand-img"
+                                src="/assets/mail.png"
+                                alt="RiiMail"
+                            />
+                        </div>
+                        <p class="setup-step">Email account</p>
+                        <h1></h1>Sign in to your inbox</h1>
+                        <p class="setup-subtitle">
+                            Enter the credentials for the email provider you selected.
                         </p>
-                    </div>
+                    </header>
 
                     <form id="login-form" class="login-form">
                         <div class="form-group">
@@ -111,13 +120,39 @@
                         </div>
 
                         <button type="submit" class="login-button">
-                            Sign In
+                            <span></span>Sign in</span>
+                            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <path
+                                    d="m9 18 6-6-6-6"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                />
+                            </svg>
                         </button>
                     </form>
 
-                    <div id="login-msg" class="login-message"></div>
+                    <div
+                        id="login-msg"
+                        class="login-message"
+                        role="status"
+                        aria-live="polite"
+                    ></div>
+
+                    <p class="setup-privacy login-privacy">
+                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path
+                                d="M7 10V8a5 5 0 0 1 10 0v2m-11 0h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1Z"
+                                stroke="currentColor"
+                                stroke-width="1.8"
+                                stroke-linecap="round"
+                            />
+                        </svg>
+                        Your credentials are stored securely on this device.
+                    </p>
                 </div>
             </div>
-        </div>
+        </main>
     </body>
 </html>
