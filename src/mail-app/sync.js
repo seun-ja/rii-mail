@@ -96,9 +96,23 @@ export function createSyncController(
   // TODO: should take it a mailbosx argument to support manual refresh of non-active folders?
   async function loadMoreEmails(
     batchSize,
-    { reset = false, preserveEmptyRetryState = false } = {},
+    { reset = false, preserveEmptyRetryState = false, retryWhenBusy = false } = {},
   ) {
-    if (!state.allowFetch || !state.isAppReady || state.isLoadingEmails) {
+    if (!state.allowFetch || !state.isAppReady) {
+      return;
+    }
+
+    if (state.isLoadingEmails) {
+      if (retryWhenBusy && !state.initialSyncPollTimer) {
+        state.initialSyncPollTimer = setTimeout(() => {
+          state.initialSyncPollTimer = null;
+          void loadMoreEmails(batchSize, {
+            reset,
+            preserveEmptyRetryState,
+            retryWhenBusy: true,
+          });
+        }, 100);
+      }
       return;
     }
 
@@ -144,16 +158,17 @@ export function createSyncController(
       const mailbox = getActiveMailboxLiteral(state);
       const provider = getProviderLiteral(storage);
 
-      const [fetched, totalEmails] = await Promise.all([
-        // Backend reads from database and returns a parsed email page (no IMAP sync).
-        invoke("fetch_emails", {
-          minRange,
-          maxRange,
-          mailbox,
-          provider,
-        }),
-        fetchMailboxEmailCount(mailbox, provider),
-      ]);
+      // The email page is required to render the mailbox. The count is only
+      // metadata, so an unavailable count query must not discard a valid page.
+      const fetched = await invoke("fetch_emails", {
+        minRange,
+        maxRange,
+        mailbox,
+        provider,
+      });
+      const totalEmails = await fetchMailboxEmailCount(mailbox, provider).catch(
+        () => null,
+      );
 
       const payload = normalizeFetchPayload(fetched);
       const page = payload.emails;
@@ -207,7 +222,7 @@ export function createSyncController(
     }
 
     try {
-      await refreshActiveMailbox();
+      await refreshActiveMailbox({ background: true });
     } catch (error) {
       console.warn("Unable to refresh inbox during startup", error);
     }
@@ -241,16 +256,17 @@ export function createSyncController(
         }
 
         try {
-          const [fetched, totalEmails] = await Promise.all([
-            // Backend reads from database and returns a parsed email page (no IMAP sync).
-            invoke("fetch_emails", {
-              minRange: 0,
-              maxRange: INITIAL_BATCH_SIZE,
-              mailbox: folder,
-              provider,
-            }),
-            fetchMailboxEmailCount(folder, provider),
-          ]);
+          // A mailbox count failure must not make an available first page look
+          // empty while the initial import is still running.
+          const fetched = await invoke("fetch_emails", {
+            minRange: 0,
+            maxRange: INITIAL_BATCH_SIZE,
+            mailbox: folder,
+            provider,
+          });
+          const totalEmails = await fetchMailboxEmailCount(folder, provider).catch(
+            () => null,
+          );
           const payload = normalizeFetchPayload(fetched);
           page = payload.emails;
 
@@ -335,14 +351,16 @@ export function createSyncController(
       return;
     }
 
-    // The first database page can be stale relative to the IMAP mailbox.
-    // Reconcile it before considering the initial inbox sync complete.
-    await refreshInboxOnStartup();
+    // `refresh_emails_handler` is serviced by the same serial IMAP worker as the
+    // full initial import. Awaiting it here can leave startup locked until that
+    // import finishes, even though the first database page is already usable.
+    state.isInitialSyncComplete = true;
+    clearInitialSyncPoll();
+    ui.setSyncUiState(false);
 
     if (inboxSync.page.length > 0) {
-      state.isInitialSyncComplete = true;
-      clearInitialSyncPoll();
-      ui.setSyncUiState(false);
+      // A local page is already usable, so reconcile it without blocking UI.
+      void refreshInboxOnStartup();
 
       // Sent sync should not block first render when inbox is already ready.
       void syncFolderWithRetries("Sent", {
@@ -356,10 +374,6 @@ export function createSyncController(
 
     // Do not block app startup for long when backend bootstrap is still filling DB.
     // Keep retrying first-page inbox fetch in the background.
-    state.isInitialSyncComplete = true;
-    clearInitialSyncPoll();
-    ui.setSyncUiState(false);
-
     // Keep warming Sent in the background even when inbox data arrives late.
     void syncFolderWithRetries("Sent", {
       showProgress: false,
@@ -371,7 +385,7 @@ export function createSyncController(
     startBootstrapRefresh();
   }
 
-  async function refreshActiveMailbox() {
+  async function refreshActiveMailbox({ background = false } = {}) {
     if (!state.allowFetch || !state.isAppReady || state.isLoadingEmails) {
       return { newCount: 0, totalEmails: null };
     }
@@ -381,8 +395,10 @@ export function createSyncController(
     const provider = getProviderLiteral(storage);
     const pagination = getFolderPaginationState(state, folderKey);
 
-    state.isLoadingEmails = true;
-    renderer.renderList();
+    if (!background) {
+      state.isLoadingEmails = true;
+      renderer.renderList();
+    }
 
     try {
       const fetched = await invoke("refresh_emails_handler", {
@@ -413,7 +429,9 @@ export function createSyncController(
         provider,
       });
       const refreshedPage = normalizeFetchPayload(refreshed).emails;
-      const storedTotalEmails = await fetchMailboxEmailCount(mailbox, provider);
+      const storedTotalEmails = await fetchMailboxEmailCount(mailbox, provider).catch(
+        () => null,
+      );
       const totalEmails = Number.isInteger(payload.totalEmails)
         ? payload.totalEmails
         : typeof storedTotalEmails === "number"
@@ -437,7 +455,9 @@ export function createSyncController(
 
       return { newCount: reportedNewCount, totalEmails };
     } finally {
-      state.isLoadingEmails = false;
+      if (!background) {
+        state.isLoadingEmails = false;
+      }
       renderer.renderList();
     }
   }

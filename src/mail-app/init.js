@@ -72,14 +72,9 @@ export function initializeMailApp({
   });
 
   const sync = createSyncController(state, renderer, ui, invoke, storage);
-  invoke("inbox_email_populated").catch(console.error);
-  invoke("sent_email_populated").catch(console.error);
-
-  invoke("inbox_intial_email_populated").catch(console.error);
-  invoke("sent_intial_email_populated").catch(console.error);
   const cleanupListeners = [];
 
-  (async () => {
+  void (async () => {
     const inboxProgress = await inboxFolderPopulationListener((progress) => {
       state.folderPopulation.inbox = progress;
       ui.updateDbPopulation(
@@ -101,14 +96,14 @@ export function initializeMailApp({
     cleanupListeners.push(sentProgress);
 
     const inboxReady = await inboxInitialPopulationCompleted(async () => {
-      if (state.isInitialSyncComplete) {
-        return;
-      }
-
-      state.isInitialSyncComplete = true;
+      // The modal may already be dismissed while the first IMAP batch is still
+      // being imported. This event is the authoritative signal that its local
+      // database page can now be read, so it must not be skipped in that case.
+      state.isInitialInboxDbPopulated = true;
 
       await sync.loadMoreEmails(INITIAL_BATCH_SIZE, {
         reset: true,
+        retryWhenBusy: true,
       });
       await loadMoreEmailsIfListEndVisible();
 
@@ -122,7 +117,17 @@ export function initializeMailApp({
     }, listen);
 
     cleanupListeners.push(sentReady);
-  })();
+
+    // The native completion bridges consume one-shot receivers. Register every
+    // frontend listener first so a fast initial import cannot emit its only
+    // readiness event before the UI is listening.
+    invoke("inbox_email_populated").catch(console.error);
+    invoke("sent_email_populated").catch(console.error);
+    invoke("inbox_intial_email_populated").catch(console.error);
+    invoke("sent_intial_email_populated").catch(console.error);
+  })().catch((error) => {
+    console.error("Failed to register mailbox sync listeners", error);
+  });
 
   const haltSyncAndClearCache = () => {
     sync.haltAllSync();
@@ -490,7 +495,13 @@ export function initializeMailApp({
 
     state.isAppReady = true;
 
-    await sync.runInitialSync();
-    ui.setSyncUiState(false);
+    try {
+      await sync.runInitialSync();
+    } catch (error) {
+      console.error("Initial mailbox sync failed", error);
+      ui.showMessage("Unable to sync mailbox. You can retry with Refresh.", true);
+    } finally {
+      ui.setSyncUiState(false);
+    }
   })();
 }

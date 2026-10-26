@@ -74,7 +74,7 @@ test("refresh reconciles the loaded page with newest emails first", async () => 
   assert.ok(calls[1].args.maxRange >= refreshedPage.length);
 });
 
-test("initial sync refreshes the inbox before showing its first database page", async () => {
+test("initial sync refreshes the inbox in the background after loading its first database page", async () => {
   const state = createInitialState();
   state.allowFetch = true;
   state.isAppReady = true;
@@ -119,15 +119,64 @@ test("initial sync refreshes the inbox before showing its first database page", 
   );
 
   await sync.runInitialSync();
+  await new Promise(setImmediate);
 
   assert.deepEqual(
     state.cachedByFolder.INBOX.map((email) => email.id),
     ["db-INBOX-uid-102", "db-INBOX-uid-101"],
   );
-  assert.deepEqual(
-    calls.slice(0, 3).map((call) => call.command),
-    ["fetch_emails", "refresh_emails_handler", "fetch_emails"],
-  );
+  assert.equal(calls[0].command, "fetch_emails");
   assert.equal(calls[0].args.mailbox, "INBOX");
-  assert.equal(calls[2].args.mailbox, "INBOX");
+  assert.equal(calls[1].command, "refresh_emails_handler");
+  assert.ok(
+    calls.some(
+      (call) => call.command === "fetch_emails" && call.args.mailbox === "INBOX",
+    ),
+  );
+});
+
+test("initial sync does not wait for a queued IMAP refresh", async () => {
+  const state = createInitialState();
+  state.allowFetch = true;
+  state.isAppReady = true;
+
+  const uiStates = [];
+  const invoke = (command, args) => {
+    if (command === "refresh_emails_handler") {
+      return new Promise(() => {});
+    }
+
+    if (command === "fetch_emails" && args.mailbox === "INBOX") {
+      return Promise.resolve({
+        emails: [{ id: "db-INBOX-uid-1", folder: "INBOX" }],
+      });
+    }
+
+    if (command === "fetch_emails" && args.mailbox === "Sent") {
+      return Promise.resolve({
+        emails: [{ id: "db-Sent-uid-1", folder: "Sent" }],
+      });
+    }
+
+    throw new Error(`Unexpected command: ${command}`);
+  };
+  const renderer = { renderList() {}, updateCounts() {} };
+  const ui = {
+    setSyncUiState(locked) {
+      uiStates.push(locked);
+    },
+  };
+  const sync = createSyncController(
+    state,
+    renderer,
+    ui,
+    invoke,
+    createStorage(),
+  );
+
+  await sync.runInitialSync();
+
+  assert.equal(state.isInitialSyncComplete, true);
+  assert.equal(state.isLoadingEmails, false);
+  assert.ok(uiStates.includes(false));
 });
