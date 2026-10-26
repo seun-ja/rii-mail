@@ -28,10 +28,10 @@ def main() -> int:
     for metadata in app.rglob(".DS_Store"):
         metadata.unlink()
 
+    executable = app / "Contents/MacOS/riimail"
     native_files = sorted(
         (path for path in app.rglob("*") if is_macho(path)),
-        key=lambda path: len(path.parts),
-        reverse=True,
+        key=lambda path: (path == executable, -len(path.parts), str(path)),
     )
     for path in native_files:
         _ = subprocess.run(
