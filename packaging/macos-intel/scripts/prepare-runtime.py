@@ -55,7 +55,11 @@ def sha256(path: Path) -> str:
 def directory_sha256(root: Path) -> str:
     digest = hashlib.sha256()
     for path in sorted(item for item in root.rglob("*") if item.is_file()):
-        if path.name == ".DS_Store" or "__pycache__" in path.parts:
+        if (
+            path.name == ".DS_Store"
+            or ".git" in path.parts
+            or "__pycache__" in path.parts
+        ):
             continue
         digest.update(path.relative_to(root).as_posix().encode("utf-8"))
         with path.open("rb") as stream:
@@ -112,6 +116,36 @@ def remove_caches(root: Path) -> None:
 def run(command: list[str], *, env: dict[str, str] | None = None) -> None:
     print("+", " ".join(command))
     _ = subprocess.run(command, cwd=PROJECT_ROOT, env=env, check=True)
+
+
+def prepare_intel_native_libraries(site_packages: Path) -> None:
+    relocatable_dylibs = [
+        site_packages / "functorch/.dylibs/libiomp5.dylib",
+        *sorted((site_packages / "numpy/.dylibs").glob("*.dylib")),
+    ]
+    for dylib in relocatable_dylibs:
+        if not dylib.is_file():
+            raise RuntimeError(f"required bundled library is missing: {dylib}")
+        run(["install_name_tool", "-id", f"@rpath/{dylib.name}", str(dylib)])
+        run(["codesign", "--force", "--sign", "-", "--timestamp=none", str(dylib)])
+
+    charset_extensions = sorted((site_packages / "charset_normalizer").glob("*.so"))
+    if not charset_extensions:
+        raise RuntimeError("charset-normalizer wheel does not contain native extensions")
+    for extension in charset_extensions:
+        thinned = extension.with_suffix(extension.suffix + ".x86_64")
+        run(["lipo", str(extension), "-thin", "x86_64", "-output", str(thinned)])
+        _ = thinned.replace(extension)
+        run(
+            [
+                "codesign",
+                "--force",
+                "--sign",
+                "-",
+                "--timestamp=none",
+                str(extension),
+            ]
+        )
 
 
 def verify_staged_runtime(interpreter: Path, python_home: Path) -> None:
@@ -257,18 +291,16 @@ def main() -> int:
         )
 
         remove_caches(python_home)
-        libomp = site_packages / "torch/lib/libomp.dylib"
-        if not libomp.is_file():
-            raise RuntimeError(f"torch wheel does not contain {libomp}")
-        run(["install_name_tool", "-id", "@rpath/libomp.dylib", str(libomp)])
-        run(["codesign", "--force", "--sign", "-", "--timestamp=none", str(libomp)])
+        prepare_intel_native_libraries(site_packages)
         verify_staged_runtime(python_home / "bin/python3.12", python_home)
 
         _ = shutil.copy2(runtime / "lib" / DYLIB_NAME, staged / DYLIB_NAME)
         _ = shutil.copytree(
             model_source,
             staged / "local-model",
-            ignore=shutil.ignore_patterns(".DS_Store", "__pycache__", "*.pyc", "*.pyo"),
+            ignore=shutil.ignore_patterns(
+                ".DS_Store", ".git", "__pycache__", "*.pyc", "*.pyo"
+            ),
         )
         _ = (staged / "runtime-manifest.json").write_text(
             json.dumps(manifest, indent=2) + "\n",
