@@ -264,14 +264,21 @@ export function initializeMailApp({
   });
 
   function openComposerWithDraft(draft, title) {
+    const cc = String(draft.cc ?? "").trim();
+    const bcc = String(draft.bcc ?? "").trim();
+
     document.getElementById("compose-title").textContent = title;
-    dom.composeToInput.value = draft.to;
-    dom.composeCcInput.value = "";
-    dom.composeBccInput.value = "";
-    dom.composeSubjectInput.value = draft.subject;
-    dom.composeBodyInput.value = draft.body;
-    document.getElementById("compose-cc-row")?.classList.add("hidden");
-    document.getElementById("compose-bcc-row")?.classList.add("hidden");
+    dom.composeToInput.value = draft.to ?? "";
+    dom.composeCcInput.value = cc;
+    dom.composeBccInput.value = bcc;
+    dom.composeSubjectInput.value = draft.subject ?? "";
+    dom.composeBodyInput.value = draft.body ?? "";
+    document
+      .getElementById("compose-cc-row")
+      ?.classList.toggle("hidden", !cc);
+    document
+      .getElementById("compose-bcc-row")
+      ?.classList.toggle("hidden", !bcc);
     dom.composeModalEl.classList.remove("hidden");
 
     const inputToFocus = draft.to ? dom.composeBodyInput : dom.composeToInput;
@@ -306,8 +313,10 @@ export function initializeMailApp({
   });
 
   dom.composeBtnEl.addEventListener("click", () => {
-    document.getElementById("compose-title").textContent = "New Message";
-    dom.composeModalEl.classList.remove("hidden");
+    openComposerWithDraft(
+      { to: "", cc: "", bcc: "", subject: "", body: "" },
+      "New Message",
+    );
   });
 
   dom.closeComposeBtnEl.addEventListener("click", () => {
@@ -392,8 +401,12 @@ export function initializeMailApp({
       dom.composeModalEl.classList.add("hidden");
 
       dom.composeToInput.value = "";
+      dom.composeCcInput.value = "";
+      dom.composeBccInput.value = "";
       dom.composeSubjectInput.value = "";
       dom.composeBodyInput.value = "";
+      ccRow?.classList.add("hidden");
+      bccRow?.classList.add("hidden");
 
       state.activeFolder = "INBOX";
       renderer.renderList();
@@ -452,17 +465,11 @@ export function initializeMailApp({
         context: null,
       });
 
-      if (email.to) {
-        document.getElementById("compose-to").value = email.to;
-      }
-
-      if (email.cc) {
-        document.getElementById("compose-cc").value = email.cc;
-      }
-
-      if (email.bcc) {
-        document.getElementById("compose-bcc").value = email.bcc;
-      }
+      dom.composeToInput.value = email.to ?? "";
+      dom.composeCcInput.value = email.cc ?? "";
+      dom.composeBccInput.value = email.bcc ?? "";
+      ccRow?.classList.toggle("hidden", !dom.composeCcInput.value.trim());
+      bccRow?.classList.toggle("hidden", !dom.composeBccInput.value.trim());
 
       document.getElementById("compose-subject").value = email.subject ?? "";
 

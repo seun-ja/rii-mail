@@ -1,4 +1,6 @@
-use crate::email_cache::{map_folder_and_starred, normalize_text, CompleteEmail, EmailContent};
+use crate::email_cache::{
+    map_folder_and_starred, normalize_text, CompleteEmail, EmailContent, StandardEmail,
+};
 
 #[test]
 fn normalize_text_compacts_whitespace() {
@@ -44,6 +46,7 @@ fn into_frontend_uses_text_body_when_available() {
             subject: " Subject ".to_string(),
             sender_name: "Alice".to_string(),
             email_from: "alice@example.com".to_string(),
+            cc: Some(vec![("Bob".to_string(), "bob@example.com".to_string())]),
             preview: "Preview   text".to_string(),
             html_body: "<p>fallback</p>".to_string(),
             text_body: " Hello  world ".to_string(),
@@ -62,8 +65,68 @@ fn into_frontend_uses_text_body_when_available() {
     assert_eq!(frontend.body, "Hello world");
     assert_eq!(frontend.text_body, " Hello  world ");
     assert_eq!(frontend.html_body, "<p>fallback</p>");
+    assert_eq!(
+        frontend.cc,
+        Some(vec![("Bob".to_string(), "bob@example.com".to_string())])
+    );
     assert!(!frontend.starred);
     assert_eq!(frontend.time, "Unknown");
+}
+
+#[test]
+fn email_content_extracts_all_cc_addresses() {
+    let raw_message = concat!(
+        "From: Alice <alice@example.com>\r\n",
+        "Cc: Bob <bob@example.com>, carol@example.com\r\n",
+        "Subject: CC test\r\n",
+        "Content-Type: text/plain; charset=utf-8\r\n",
+        "\r\n",
+        "Hello"
+    );
+    let complete = CompleteEmail::from(StandardEmail {
+        uid: Some(2),
+        date: None,
+        body: Some(raw_message.as_bytes().to_vec()),
+        labels: None,
+    });
+
+    let content = complete.body.expect("message should parse");
+
+    assert_eq!(
+        content.cc,
+        Some(vec![
+            ("Bob".to_string(), "bob@example.com".to_string()),
+            (String::new(), "carol@example.com".to_string()),
+        ])
+    );
+}
+
+#[test]
+fn email_content_flattens_grouped_cc_addresses() {
+    let raw_message = concat!(
+        "From: alice@example.com\r\n",
+        "Cc: Engineering: Bob <bob@example.com>, Carol <carol@example.com>;\r\n",
+        "Subject: Group CC test\r\n",
+        "Content-Type: text/plain; charset=utf-8\r\n",
+        "\r\n",
+        "Hello"
+    );
+    let complete = CompleteEmail::from(StandardEmail {
+        uid: Some(3),
+        date: None,
+        body: Some(raw_message.as_bytes().to_vec()),
+        labels: None,
+    });
+
+    let content = complete.body.expect("message should parse");
+
+    assert_eq!(
+        content.cc,
+        Some(vec![
+            ("Bob".to_string(), "bob@example.com".to_string()),
+            ("Carol".to_string(), "carol@example.com".to_string()),
+        ])
+    );
 }
 
 #[test]

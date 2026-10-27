@@ -69,6 +69,33 @@ export function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+export function formatAddresses(addresses) {
+  if (!Array.isArray(addresses)) {
+    return [];
+  }
+
+  return addresses
+    .map((entry) => {
+      if (!Array.isArray(entry)) {
+        return "";
+      }
+
+      const name = String(entry[0] ?? "").trim();
+      const email = String(entry[1] ?? "").trim();
+
+      if (name && email) {
+        return `${name} <${email}>`;
+      }
+
+      return email || name;
+    })
+    .filter(Boolean);
+}
+
+export function formatAddressList(addresses) {
+  return formatAddresses(addresses).join(", ");
+}
+
 export function prepareEmailHtml(html) {
   const documentHtml = String(html ?? "");
   if (!documentHtml.trim()) {
@@ -201,10 +228,12 @@ export function createForwardDraft(email) {
   const sender = getSenderLabel(email);
   const sentAt = String(email?.time || "Unknown date").trim();
   const subject = String(email?.subject || "(No subject)").trim();
+  const cc = formatAddressList(email?.cc);
+  const ccHeader = cc ? `\nCc: ${cc}` : "";
 
   return {
     to: "",
     subject: prefixedSubject(subject, "Fwd"),
-    body: `\n\n---------- Forwarded message ---------\nFrom: ${sender}\nDate: ${sentAt}\nSubject: ${subject}\n\n${getPlainMessageBody(email)}`,
+    body: `\n\n---------- Forwarded message ---------\nFrom: ${sender}\nDate: ${sentAt}${ccHeader}\nSubject: ${subject}\n\n${getPlainMessageBody(email)}`,
   };
 }
