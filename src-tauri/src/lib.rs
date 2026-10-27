@@ -19,8 +19,9 @@ use crate::workers::{worker, FetchManager};
 use crate::{
     config::{AppState, StartupStatusCache},
     handlers::{
-        check_app_status, config_setup, connect_chatgpt, connect_ollama, fetch_emails,
-        finish_startup, login, logout_with_state, open_main_window, rater,
+        check_app_status, config_setup, connect_chatgpt, connect_ollama,
+        enable_main_window_controls, fetch_emails, finish_startup, login, logout_with_state,
+        open_main_window, rater,
     },
 };
 
@@ -224,6 +225,7 @@ pub async fn run() {
         .invoke_handler(tauri::generate_handler![
             check_app_status,
             email_generator,
+            enable_main_window_controls,
             inbox_email_populated,
             inbox_intial_email_populated,
             is_llm_enabled,

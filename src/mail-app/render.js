@@ -94,7 +94,17 @@ export function createRenderer(state, dom) {
       : "mail-reader";
     dom.mailReaderEl.innerHTML = `
       <header class="reader-head">
-        <h2 class="reader-subject">${subject}</h2>
+        <div class="reader-title-row">
+          <h2 class="reader-subject">${subject}</h2>
+          <div class="reader-actions" aria-label="Message actions">
+            <button class="reader-action-btn" type="button" data-reader-action="reply" aria-label="Reply" title="Reply">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 7-5 5 5 5M4 12h9a5 5 0 0 1 5 5" /></svg>
+            </button>
+            <button class="reader-action-btn" type="button" data-reader-action="forward" aria-label="Forward" title="Forward">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 7 5 5-5 5M20 12h-9a5 5 0 0 0-5 5" /></svg>
+            </button>
+          </div>
+        </div>
         <div class="reader-meta">
           <div class="reader-meta-item reader-meta-sender">
             <span class="reader-meta-label">From</span>
