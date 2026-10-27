@@ -67,6 +67,10 @@ export function initializeMailApp({
     return;
   }
 
+  void invoke("enable_main_window_controls").catch((error) => {
+    console.error("Could not enable main window controls", error);
+  });
+
   void updateAiAssistantAvailability({
     invoke,
     button: dom.openAiAssistantBtnEl,

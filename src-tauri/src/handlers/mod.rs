@@ -6,7 +6,9 @@ mod llm_connections;
 mod login;
 mod menu;
 
-pub use configuration::{check_app_status, config_setup, finish_startup, open_main_window};
+pub use configuration::{
+    check_app_status, config_setup, enable_main_window_controls, finish_startup, open_main_window,
+};
 pub use email::{fetch_emails, refresh_emails_handler, send_email};
 pub use events::{
     inbox_email_populated, inbox_intial_email_populated, sent_email_populated,

@@ -560,8 +560,9 @@ body.home-page {
 
 .mail-reader-panel {
     min-width: 0;
+    min-height: 0;
     padding: 0.85rem;
-    overflow: auto;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
     background: rgba(239, 244, 250, 0.58);
@@ -570,7 +571,9 @@ body.home-page {
 .mail-reader {
     width: 100%;
     min-width: 0;
+    min-height: 0;
     height: 100%;
+    overflow: auto;
     margin: 0;
     padding: clamp(1.25rem, 2vw, 2rem);
     border: 1px solid rgba(174, 190, 207, 0.8);
@@ -582,6 +585,7 @@ body.home-page {
 .mail-reader.reader-html-message {
     display: flex;
     flex-direction: column;
+    overflow: hidden;
 }
 
 .mail-reader.empty-state {
@@ -593,8 +597,8 @@ body.home-page {
 
 .reader-head {
     flex: 0 0 auto;
-    padding-bottom: 1rem;
-    margin-bottom: 1rem;
+    padding-bottom: 0.7rem;
+    margin-bottom: 0.7rem;
     border-bottom: 1px solid #e1e8f0;
 }
 
@@ -619,7 +623,7 @@ body.home-page {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
-    gap: 0.55rem;
+    gap: 0.8rem;
     min-width: 0;
     margin-top: 0.55rem;
     color: var(--mail-subtext);
@@ -629,17 +633,24 @@ body.home-page {
     min-width: 0;
     display: flex;
     align-items: baseline;
-    gap: 0.4rem;
+    gap: 0.3rem;
+    flex: 0 0 auto;
     padding: 0;
     border: 0;
     border-radius: 0;
     background: transparent;
-    font-size: 0.78rem;
+    font-size: 0.76rem;
     line-height: 1.35;
 }
 
 .reader-meta-sender {
-    flex: 1 1 300px;
+    flex: 1 1 auto;
+}
+
+.reader-meta-sender .reader-meta-value {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .reader-meta-cc {
@@ -748,10 +759,11 @@ body.home-page {
 
 .reader-html-frame {
     display: block;
-    flex: 1 1 auto;
+    flex: 1 1 0;
     width: 100%;
     min-width: 0;
-    min-height: 420px;
+    min-height: 0;
+    height: 100%;
     border: 1px solid #e1e8f0;
     border-radius: 12px;
     background: #fff;
