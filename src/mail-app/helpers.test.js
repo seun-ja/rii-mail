@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  createForwardDraft,
+  createReplyDraft,
   escapeHtml,
   getActiveBackendFolderKey,
   getActiveMailboxLiteral,
@@ -32,6 +34,39 @@ test("prepareEmailHtml injects responsive viewer styles into a document head", (
 test("prepareEmailHtml supports fragments and empty values", () => {
   assert.match(prepareEmailHtml("<p>Hello</p>"), /^\s*<meta name="viewport"/);
   assert.equal(prepareEmailHtml("  "), "");
+});
+
+test("createReplyDraft addresses the sender, preserves reply subjects, and quotes plain text", () => {
+  const draft = createReplyDraft({
+    senderName: "Alex Example",
+    emailFrom: "alex@example.com",
+    subject: "Re: Project update",
+    time: "Oct 27 10:30",
+    textBody: "First line\nSecond line",
+  });
+
+  assert.deepEqual(draft, {
+    to: "alex@example.com",
+    subject: "Re: Project update",
+    body: "\n\nOn Oct 27 10:30, Alex Example <alex@example.com> wrote:\n> First line\n> Second line",
+  });
+});
+
+test("createForwardDraft leaves recipients empty and formats HTML-only emails as text", () => {
+  const draft = createForwardDraft({
+    senderName: "Alex Example",
+    emailFrom: "alex@example.com",
+    subject: "Project update",
+    time: "Oct 27 10:30",
+    htmlBody: "<p>Hello<br>team &amp; friends</p>",
+  });
+
+  assert.equal(draft.to, "");
+  assert.equal(draft.subject, "Fwd: Project update");
+  assert.equal(
+    draft.body,
+    "\n\n---------- Forwarded message ---------\nFrom: Alex Example <alex@example.com>\nDate: Oct 27 10:30\nSubject: Project update\n\nHello\nteam & friends",
+  );
 });
 
 test("folder helpers map frontend folder to backend mailbox", () => {

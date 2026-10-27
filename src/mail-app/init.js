@@ -17,6 +17,8 @@ import {
   saveCachedEmails,
 } from "./cache.js";
 import {
+  createForwardDraft,
+  createReplyDraft,
   getActiveBackendFolderKey,
   getFolderPaginationState,
   isMailListNearBottom,
@@ -64,6 +66,10 @@ export function initializeMailApp({
     ui.showMessage("Backend invoke bridge is unavailable.", true);
     return;
   }
+
+  void invoke("enable_main_window_controls").catch((error) => {
+    console.error("Could not enable main window controls", error);
+  });
 
   void updateAiAssistantAvailability({
     invoke,
@@ -257,7 +263,50 @@ export function initializeMailApp({
     }
   });
 
+  function openComposerWithDraft(draft, title) {
+    document.getElementById("compose-title").textContent = title;
+    dom.composeToInput.value = draft.to;
+    dom.composeCcInput.value = "";
+    dom.composeBccInput.value = "";
+    dom.composeSubjectInput.value = draft.subject;
+    dom.composeBodyInput.value = draft.body;
+    document.getElementById("compose-cc-row")?.classList.add("hidden");
+    document.getElementById("compose-bcc-row")?.classList.add("hidden");
+    dom.composeModalEl.classList.remove("hidden");
+
+    const inputToFocus = draft.to ? dom.composeBodyInput : dom.composeToInput;
+    inputToFocus.focus();
+
+    if (inputToFocus === dom.composeBodyInput) {
+      inputToFocus.setSelectionRange(0, 0);
+    }
+  }
+
+  dom.mailReaderEl.addEventListener("click", (event) => {
+    const action = event.target.closest("[data-reader-action]")?.dataset
+      .readerAction;
+
+    if (!action) {
+      return;
+    }
+
+    const selected = getEmails(state).find(
+      (mail) => mail.id === state.selectedId,
+    );
+
+    if (!selected) {
+      return;
+    }
+
+    if (action === "reply") {
+      openComposerWithDraft(createReplyDraft(selected), "Reply");
+    } else if (action === "forward") {
+      openComposerWithDraft(createForwardDraft(selected), "Forward");
+    }
+  });
+
   dom.composeBtnEl.addEventListener("click", () => {
+    document.getElementById("compose-title").textContent = "New Message";
     dom.composeModalEl.classList.remove("hidden");
   });
 

@@ -560,8 +560,9 @@ body.home-page {
 
 .mail-reader-panel {
     min-width: 0;
+    min-height: 0;
     padding: 0.85rem;
-    overflow: auto;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
     background: rgba(239, 244, 250, 0.58);
@@ -570,7 +571,9 @@ body.home-page {
 .mail-reader {
     width: 100%;
     min-width: 0;
+    min-height: 0;
     height: 100%;
+    overflow: auto;
     margin: 0;
     padding: clamp(1.25rem, 2vw, 2rem);
     border: 1px solid rgba(174, 190, 207, 0.8);
@@ -582,6 +585,7 @@ body.home-page {
 .mail-reader.reader-html-message {
     display: flex;
     flex-direction: column;
+    overflow: hidden;
 }
 
 .mail-reader.empty-state {
@@ -593,13 +597,21 @@ body.home-page {
 
 .reader-head {
     flex: 0 0 auto;
-    padding-bottom: 1rem;
-    margin-bottom: 1rem;
+    padding-bottom: 0.7rem;
+    margin-bottom: 0.7rem;
     border-bottom: 1px solid #e1e8f0;
 }
 
+.reader-title-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+}
+
 .reader-subject {
-    margin: 0 0 0.85rem;
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
     color: #17263a;
     font-size: clamp(1.3rem, 2vw, 1.7rem);
     line-height: 1.25;
@@ -609,8 +621,10 @@ body.home-page {
 
 .reader-meta {
     display: flex;
-    flex-wrap: wrap;
-    gap: 0.55rem;
+    align-items: baseline;
+    gap: 0.8rem;
+    min-width: 0;
+    margin-top: 0.55rem;
     color: var(--mail-subtext);
 }
 
@@ -618,17 +632,20 @@ body.home-page {
     min-width: 0;
     display: flex;
     align-items: baseline;
-    gap: 0.4rem;
-    padding: 0.38rem 0.58rem;
-    border: 1px solid #e5ebf2;
-    border-radius: 8px;
-    background: #f7f9fc;
-    font-size: 0.78rem;
+    gap: 0.3rem;
+    flex: 0 0 auto;
+    font-size: 0.76rem;
     line-height: 1.35;
 }
 
 .reader-meta-sender {
-    flex: 1 1 300px;
+    flex: 1 1 auto;
+}
+
+.reader-meta-sender .reader-meta-value {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .reader-meta-label {
@@ -640,6 +657,45 @@ body.home-page {
 .reader-meta-value {
     min-width: 0;
     overflow-wrap: anywhere;
+}
+
+.reader-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 0.1rem;
+}
+
+.reader-action-btn {
+    display: grid;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    place-items: center;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: #52657b;
+    box-shadow: none;
+    cursor: pointer;
+}
+
+.reader-action-btn svg {
+    width: 1.1rem;
+    height: 1.1rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.8;
+}
+
+.reader-action-btn:hover,
+.reader-action-btn:focus-visible,
+.reader-action-btn:active {
+    border-color: transparent;
+    background: #edf7ff;
+    color: #175f99;
+    box-shadow: none;
 }
 
 .reader-body {
@@ -655,10 +711,11 @@ body.home-page {
 
 .reader-html-frame {
     display: block;
-    flex: 1 1 auto;
+    flex: 1 1 0;
     width: 100%;
     min-width: 0;
-    min-height: 420px;
+    min-height: 0;
+    height: 100%;
     border: 1px solid #e1e8f0;
     border-radius: 12px;
     background: #fff;

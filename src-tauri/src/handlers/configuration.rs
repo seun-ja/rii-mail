@@ -280,6 +280,22 @@ fn ensure_compact_startup_window(app: &tauri::AppHandle) -> Result<(), Error> {
     Ok(())
 }
 
+#[tauri::command]
+#[tracing::instrument(name = "command.window.enable_main_controls", skip_all, err)]
+pub fn enable_main_window_controls(current_window: tauri::WebviewWindow) -> Result<(), Error> {
+    // The splash and authentication pages intentionally lock the shared window.
+    // Always clear those constraints when the mail UI is active, regardless of
+    // which navigation path reached it.
+    current_window.set_max_size::<Size>(None)?;
+    current_window.set_resizable(true)?;
+    current_window.set_maximizable(true)?;
+    current_window.set_minimizable(true)?;
+    current_window.set_decorations(true)?;
+    current_window.set_shadow(true)?;
+
+    Ok(())
+}
+
 /// Open a dedicated, larger main app window after successful login
 /// and close the compact auth window.
 #[tauri::command]

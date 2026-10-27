@@ -147,3 +147,64 @@ export function isMailListNearBottom(mailListEl, threshold = 40) {
     mailListEl.scrollHeight - threshold
   );
 }
+
+function prefixedSubject(subject, prefix) {
+  const normalizedSubject = String(subject || "(No subject)").trim();
+  return /^(?:re|fw|fwd)\s*:/i.test(normalizedSubject)
+    ? normalizedSubject
+    : `${prefix}: ${normalizedSubject}`;
+}
+
+function getPlainMessageBody(email) {
+  const body = String(email?.textBody || email?.body || email?.htmlBody || "");
+
+  return body
+    .replace(/<\s*br\s*\/?\s*>/gi, "\n")
+    .replace(/<\/(?:p|div|li|tr|h[1-6])\s*>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#039;/gi, "'")
+    .trim();
+}
+
+function getSenderLabel(email) {
+  const name = String(email?.senderName || "").trim();
+  const address = String(email?.emailFrom || "").trim();
+
+  if (name && address) {
+    return `${name} <${address}>`;
+  }
+
+  return name || address || "Unknown sender";
+}
+
+export function createReplyDraft(email) {
+  const sender = getSenderLabel(email);
+  const sentAt = String(email?.time || "Unknown date").trim();
+  const quotedBody = getPlainMessageBody(email)
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n");
+
+  return {
+    to: String(email?.emailFrom || "").trim(),
+    subject: prefixedSubject(email?.subject, "Re"),
+    body: `\n\nOn ${sentAt}, ${sender} wrote:\n${quotedBody}`,
+  };
+}
+
+export function createForwardDraft(email) {
+  const sender = getSenderLabel(email);
+  const sentAt = String(email?.time || "Unknown date").trim();
+  const subject = String(email?.subject || "(No subject)").trim();
+
+  return {
+    to: "",
+    subject: prefixedSubject(subject, "Fwd"),
+    body: `\n\n---------- Forwarded message ---------\nFrom: ${sender}\nDate: ${sentAt}\nSubject: ${subject}\n\n${getPlainMessageBody(email)}`,
+  };
+}
