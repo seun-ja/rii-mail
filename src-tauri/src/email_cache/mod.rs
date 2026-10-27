@@ -4,7 +4,7 @@ use async_imap::types::Fetch;
 use async_imap::Session;
 use async_native_tls::TlsStream;
 use chrono::{DateTime, FixedOffset};
-use mail_parser::{Address, Message, MessageParser};
+use mail_parser::{Addr, Address, Message, MessageParser};
 use serde::{Deserialize, Serialize};
 use tokio::{net::TcpStream, sync::Mutex};
 
@@ -94,6 +94,8 @@ pub struct EmailContent {
     pub subject: String,
     pub sender_name: String,
     pub email_from: String,
+    #[serde(default)]
+    pub cc: Option<Vec<(String, String)>>,
     pub preview: String,
     pub html_body: String,
     pub text_body: String,
@@ -112,38 +114,46 @@ pub(crate) fn normalize_text(value: &str, max_chars: usize) -> String {
     normalized.chars().take(max_chars).collect::<String>() + "..."
 }
 
-fn extract_first_from(address: Option<&Address<'_>>) -> (String, String) {
-    match address {
-        Some(Address::List(list)) => {
-            if let Some(first) = list.first() {
-                let sender_name = first
-                    .name
-                    .as_ref()
-                    .map(|name| name.to_string())
-                    .filter(|name| !name.trim().is_empty())
-                    .or_else(|| {
-                        first.address.as_ref().map(|addr| {
-                            addr.split('@')
-                                .next()
-                                .unwrap_or("Unknown Sender")
-                                .to_string()
-                        })
-                    })
-                    .unwrap_or_else(|| "Unknown Sender".to_string());
-
-                let email_from = first
-                    .address
-                    .as_ref()
-                    .map(|addr| addr.to_string())
-                    .unwrap_or_else(|| "unknown@local".to_string());
-
-                (sender_name, email_from)
-            } else {
-                ("Unknown Sender".to_string(), "unknown@local".to_string())
-            }
-        }
-        _ => ("Unknown Sender".to_string(), "unknown@local".to_string()),
+fn address_parts(address: &Addr<'_>) -> Option<(String, String)> {
+    let email = address.address.as_deref()?.trim();
+    if email.is_empty() {
+        return None;
     }
+
+    let name = address
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or_default()
+        .to_string();
+
+    Some((name, email.to_string()))
+}
+
+fn extract_sender(address: Option<&Address<'_>>) -> Option<(String, String)> {
+    let (name, email) = address?.iter().find_map(address_parts)?;
+    let sender_name = if name.is_empty() {
+        email
+            .split('@')
+            .next()
+            .filter(|local_part| !local_part.is_empty())
+            .unwrap_or("Unknown Sender")
+            .to_string()
+    } else {
+        name
+    };
+
+    Some((sender_name, email))
+}
+
+fn extract_addresses(address: Option<&Address<'_>>) -> Option<Vec<(String, String)>> {
+    let addresses = address?
+        .iter()
+        .filter_map(address_parts)
+        .collect::<Vec<_>>();
+
+    (!addresses.is_empty()).then_some(addresses)
 }
 
 pub(crate) fn map_folder_and_starred(labels: &[String]) -> (String, bool) {
@@ -174,7 +184,7 @@ impl CompleteEmail {
         let labels = self.labels.unwrap_or_default();
         let (folder, starred) = map_folder_and_starred(&labels);
 
-        let (subject, sender_name, email_from, preview, body, text_body, html_body) =
+        let (subject, sender_name, email_from, cc, preview, body, text_body, html_body) =
             match self.body {
                 Some(content) => {
                     let body = match (
@@ -190,6 +200,7 @@ impl CompleteEmail {
                         normalize_text(&content.subject, 160),
                         content.sender_name,
                         content.email_from,
+                        content.cc,
                         normalize_text(&content.preview, 120),
                         normalize_text(&body, 2000),
                         content.text_body,
@@ -209,6 +220,7 @@ impl CompleteEmail {
             folder,
             sender_name,
             email_from,
+            cc,
             subject,
             preview,
             body,
@@ -224,7 +236,8 @@ impl CompleteEmail {
 impl<'a> From<Message<'a>> for EmailContent {
     fn from(message: Message<'a>) -> Self {
         let subject = message.subject().unwrap_or("No Subject").to_string();
-        let (sender_name, email_from) = extract_first_from(message.from());
+        let (sender_name, email_from) = extract_sender(message.from())
+            .unwrap_or_else(|| ("Unknown Sender".to_string(), "unknown@local".to_string()));
         let preview = message
             .body_preview(120)
             .map(|p| p.to_string())
@@ -244,10 +257,13 @@ impl<'a> From<Message<'a>> for EmailContent {
         let parts = (0..message.parts.len() as u32).collect();
         let raw_message = String::from_utf8_lossy(message.raw_message()).into_owned();
 
+        let cc = extract_addresses(message.cc());
+
         Self {
             subject,
             sender_name,
             email_from,
+            cc,
             preview,
             html_body,
             text_body,
@@ -265,6 +281,7 @@ pub struct FrontendEmail {
     pub folder: String,
     pub sender_name: String,
     pub email_from: String,
+    pub cc: Option<Vec<(String, String)>>,
     pub subject: String,
     pub preview: String,
     pub body: String,

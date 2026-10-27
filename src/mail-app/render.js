@@ -1,5 +1,9 @@
 import { getEmails } from "./cache.js";
-import { escapeHtml, prepareEmailHtml } from "./helpers.js";
+import {
+  escapeHtml,
+  formatAddresses,
+  prepareEmailHtml,
+} from "./helpers.js";
 
 export function createRenderer(state, dom) {
   function getVisibleEmails() {
@@ -86,28 +90,59 @@ export function createRenderer(state, dom) {
     const subject = escapeHtml(selected.subject || "(No subject)");
     const senderName = escapeHtml(selected.senderName || "Unknown sender");
     const emailFrom = escapeHtml(selected.emailFrom);
-    const folder = escapeHtml(selected.folder);
+    const ccRecipients = formatAddresses(selected.cc).map(escapeHtml);
     const receivedAt = escapeHtml(selected.time);
+    const ccMarkup = (() => {
+      if (ccRecipients.length === 0) {
+        return "";
+      }
+
+      if (ccRecipients.length <= 2) {
+        return `<div class="reader-meta-item reader-meta-cc">
+          <span class="reader-meta-label">Cc</span>
+          <span class="reader-meta-value">${ccRecipients.join(", ")}</span>
+        </div>`;
+      }
+
+      const preview = ccRecipients.slice(0, 2).join(", ");
+      const remaining = ccRecipients.length - 2;
+
+      return `<details class="reader-meta-item reader-meta-cc reader-meta-cc-collapsible">
+        <summary class="reader-meta-cc-summary">
+          <span class="reader-meta-label">Cc</span>
+          <span class="reader-meta-value">${preview}</span>
+          <span class="reader-meta-cc-more">+${remaining} more</span>
+          <span class="reader-meta-cc-less">Show less</span>
+        </summary>
+        <div class="reader-meta-cc-expanded">${ccRecipients.join(", ")}</div>
+      </details>`;
+    })();
 
     dom.mailReaderEl.className = hasHtmlBody
       ? "mail-reader reader-html-message"
       : "mail-reader";
     dom.mailReaderEl.innerHTML = `
       <header class="reader-head">
-        <h2 class="reader-subject">${subject}</h2>
+        <div class="reader-title-row">
+          <h2 class="reader-subject">${subject}</h2>
+          <div class="reader-actions" aria-label="Message actions">
+            <button class="reader-action-btn" type="button" data-reader-action="reply" aria-label="Reply" title="Reply">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 7-5 5 5 5M4 12h9a5 5 0 0 1 5 5" /></svg>
+            </button>
+            <button class="reader-action-btn" type="button" data-reader-action="forward" aria-label="Forward" title="Forward">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 7 5 5-5 5M20 12h-9a5 5 0 0 0-5 5" /></svg>
+            </button>
+          </div>
+        </div>
         <div class="reader-meta">
           <div class="reader-meta-item reader-meta-sender">
             <span class="reader-meta-label">From</span>
             <span class="reader-meta-value">${senderName}${emailFrom ? ` &lt;${emailFrom}&gt;` : ""}</span>
           </div>
-          <div class="reader-meta-item">
-            <span class="reader-meta-label">Folder</span>
-            <span class="reader-meta-value">${folder}</span>
-          </div>
-          <div class="reader-meta-item">
-            <span class="reader-meta-label">Received</span>
+          <div class="reader-meta-item reader-meta-time">
             <span class="reader-meta-value">${receivedAt}</span>
           </div>
+          ${ccMarkup}
         </div>
       </header>
       ${
