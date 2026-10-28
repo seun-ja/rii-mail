@@ -240,7 +240,7 @@ What is covered now:
 ## Key Tauri Commands
 
 - `check_app_status()`
-- `config_setup(imap_server, imap_port)`
+- `config_setup(imap_server, imap_port, smtp_relay_url?)`
 - `login(username, password)`
 - `open_main_window()`
 - `fetch_emails(...)`

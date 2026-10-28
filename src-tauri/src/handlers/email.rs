@@ -177,6 +177,10 @@ pub async fn send_email(
         .header(content_type.parse().unwrap_or(ContentType::TEXT_PLAIN))
         .body(body)?;
 
+    tracing::info!(
+        smtp.host = %app_state.state().smtp_relay_url,
+        "Sending email through registered SMTP relay"
+    );
     let response = app_state.state().smtp_transport_client.send(&message)?;
 
     tracing::info!("SMTP response: {:?}", response);

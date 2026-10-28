@@ -208,23 +208,25 @@ This is called from `src/setup.js`.
 
 It:
 
-1. reads environment defaults
+1. reads environment configuration and derives known provider settings
 2. builds `Config`
 3. determines provider from the IMAP server string
 4. initializes the SQLite schema for that provider via `db::init_db(...)`
 5. writes `config.json` into the app config directory
 
-### Environment-backed defaults used by setup
+### Environment-backed setup values
 
 `config_setup` currently reads:
 
 - `SQLITE_DB` default: `emails.db`
-- `SMTP_RELAY_URL` default: `smtp.mail.yahoo.com`
+- `SMTP_RELAY_URL`: optional override for automatic SMTP discovery
 - `MODEL` default: `gemma4:e4b`
 - `LLM_API_KEY` default: `ollama`
-- `LLM_PROVIDER` default: `ollama`
+- `LLM_PROVIDER`: optional
 
-That last value is saved into `Config.provider`, but as noted above it is not part of the active provider-selection path.
+When `SMTP_RELAY_URL` is absent, setup builds SMTP candidates from exact known Yahoo, Gmail, and Outlook endpoints plus common custom-server conventions such as `imap.example.com` → `smtp.example.com` and `mail.example.com` → `mail.example.com`/`smtp.example.com`. Candidates are probed concurrently over TCP port 465, matching the current implicit-TLS SMTP transport. If none are reachable, setup returns an `SmtpDiscovery` error and the custom setup form asks the user for the SMTP hostname. An explicit form or environment value always takes precedence.
+
+`LLM_PROVIDER` is saved into the config but is not part of the email provider-selection path.
 
 ## 4.2 Startup status check
 
@@ -800,9 +802,9 @@ Returns whether the app should:
 
 ### `config_setup`
 
-Used by `src/setup.js`.
+Used by `src/setup.js` with the IMAP host/port and an optional user-supplied SMTP hostname.
 
-Writes config and prepares the DB schema.
+Discovers or accepts the SMTP relay, writes config, and prepares the DB schema.
 
 ### `login`
 

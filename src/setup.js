@@ -39,6 +39,8 @@ window.addEventListener("DOMContentLoaded", () => {
   const customFieldsEl = document.querySelector("#custom-imap-fields");
   const customServerInput = document.querySelector("#custom-imap-server");
   const customPortInput = document.querySelector("#custom-imap-port");
+  const customSmtpFieldEl = document.querySelector("#custom-smtp-field");
+  const customSmtpInput = document.querySelector("#custom-smtp-server");
   const setupContentEl = document.querySelector("#setup-content");
   const setupLoadingEl = document.querySelector("#setup-loading");
   const setupLoadingTextEl = document.querySelector("#setup-loading-text");
@@ -60,6 +62,8 @@ window.addEventListener("DOMContentLoaded", () => {
     !customFieldsEl ||
     !customServerInput ||
     !customPortInput ||
+    !customSmtpFieldEl ||
+    !customSmtpInput ||
     !setupContentEl ||
     !setupLoadingEl ||
     !setupLoadingTextEl ||
@@ -72,6 +76,16 @@ window.addEventListener("DOMContentLoaded", () => {
     setupMsgEl.textContent = "Backend connection is unavailable.";
     return;
   }
+
+  const setCustomSmtpFieldVisible = (visible) => {
+    customSmtpFieldEl.classList.toggle("hidden", !visible);
+    customSmtpFieldEl.setAttribute("aria-hidden", visible ? "false" : "true");
+    customSmtpInput.required = visible;
+
+    if (!visible) {
+      customSmtpInput.value = "";
+    }
+  };
 
   const setSelectedProvider = (providerOption) => {
     // Ignore clicks on disabled options
@@ -112,6 +126,10 @@ window.addEventListener("DOMContentLoaded", () => {
     customServerInput.required = isCustomProvider;
     customPortInput.required = isCustomProvider;
 
+    if (!isCustomProvider) {
+      setCustomSmtpFieldVisible(false);
+    }
+
     // Update hidden inputs for backend submission.
     providerInput.value = provider;
     imapServerInput.value = isCustomProvider
@@ -139,6 +157,8 @@ window.addEventListener("DOMContentLoaded", () => {
 
     imapServerInput.value = customServerInput.value.trim();
     imapPortInput.value = customPortInput.value.trim();
+    setCustomSmtpFieldVisible(false);
+    setupButtonLabel.textContent = "Continue with Custom IMAP server";
     setupMsgEl.textContent = "";
   };
 
@@ -162,6 +182,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
     const imapServer = imapServerInput?.value?.trim() || "";
     const imapPortValue = imapPortInput?.value?.trim() || "";
+    const smtpRelayUrl = customSmtpInput.value.trim() || null;
 
     const imapPort = Number.parseInt(imapPortValue, 10);
 
@@ -181,12 +202,15 @@ window.addEventListener("DOMContentLoaded", () => {
         setupContentEl,
         setupLoadingEl,
         setupLoadingTextEl,
-        "Saving configuration...",
+        smtpRelayUrl
+          ? "Saving configuration..."
+          : "Discovering SMTP server...",
       );
 
       await invoke("config_setup", {
         imapServerUrl: imapServer,
         imapPort: imapPort,
+        smtpRelayUrl,
       });
 
       const normalizedProvider = providerInput?.value?.trim() || "yahoo";
@@ -218,7 +242,21 @@ window.addEventListener("DOMContentLoaded", () => {
         setupLoadingTextEl,
       );
 
-      setupMsgEl.textContent = `Setup failed: ${getErrorMessage(error)}`;
+      const errorMessage = getErrorMessage(error);
+      const needsCustomSmtpServer =
+        providerInput.value === "custom" &&
+        (error?.kind === "SmtpDiscovery" ||
+          errorMessage.includes("No reachable SMTP server"));
+
+      if (needsCustomSmtpServer) {
+        setCustomSmtpFieldVisible(true);
+        setupButtonLabel.textContent = "Continue with SMTP server";
+        setupMsgEl.textContent = errorMessage;
+        customSmtpInput.focus();
+        return;
+      }
+
+      setupMsgEl.textContent = `Setup failed: ${errorMessage}`;
     }
   });
 });

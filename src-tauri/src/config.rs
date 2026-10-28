@@ -82,6 +82,32 @@ impl Config {
             return Err("IMAP Port and Server not set".into());
         }
 
+        if config.smtp_relay_url.trim().is_empty() {
+            return Err("SMTP relay server not set".into());
+        }
+
+        tracing::info!(
+            imap.host = %config.imap_server_url,
+            smtp.host = %config.smtp_relay_url,
+            config.path = %path.display(),
+            "Loaded mail server configuration"
+        );
+
+        if config
+            .smtp_relay_url
+            .eq_ignore_ascii_case("smtp.mail.yahoo.com")
+            && !config
+                .imap_server_url
+                .to_ascii_lowercase()
+                .contains("yahoo")
+        {
+            tracing::warn!(
+                imap.host = %config.imap_server_url,
+                smtp.host = %config.smtp_relay_url,
+                "SMTP relay does not match the IMAP provider; this may be a stale configuration created by the previous Yahoo fallback"
+            );
+        }
+
         Ok(config)
     }
 
@@ -125,6 +151,7 @@ pub struct InitializedState {
     pub local_inference: Agent<Email>,
     pub sqlite_pool: SqlitePool,
     pub apple_keychain_manager: AppleKeychainManager,
+    pub smtp_relay_url: String,
     pub smtp_transport_client: SmtpTransport,
     pub llm_agent: tokio::sync::RwLock<Option<Agent<Email>>>,
     pub accounts: Vec<Account>,
@@ -140,6 +167,12 @@ pub fn smtp_transport_client(
     smtp_server_url: &str,
     creds: Credentials,
 ) -> Result<SmtpTransport, Error> {
+    tracing::info!(
+        smtp.host = smtp_server_url,
+        smtp.port = 465,
+        "Initializing SMTP transport from registered relay"
+    );
+
     let transport = SmtpTransport::relay(smtp_server_url)?
         .credentials(creds)
         .build();

@@ -1,12 +1,15 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use arc_swap::ArcSwap;
+use futures::future::join_all;
 use lettre::transport::smtp::authentication::Credentials;
 use llm::tools::{SearchEmailsTool, ToolWrapper};
 use tauri::{window::Color, LogicalSize, Manager as _, Size};
 use tokio::{
     fs::{create_dir_all, try_exists},
+    net::TcpStream,
     sync::oneshot,
+    time::timeout,
 };
 
 use crate::{
@@ -23,20 +26,130 @@ use crate::{
     ReturningUserImapClientChannelTx,
 };
 
+const SMTP_RELAY_PORT: u16 = 465;
+const SMTP_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
+
+pub(crate) fn smtp_relay_candidates(imap_server_url: &str) -> Vec<String> {
+    let imap_server = imap_server_url
+        .trim()
+        .trim_end_matches('.')
+        .to_ascii_lowercase();
+    let mut candidates = Vec::new();
+
+    let mut add_candidate = |candidate: String| {
+        if !candidate.is_empty() && !candidates.contains(&candidate) {
+            candidates.push(candidate);
+        }
+    };
+
+    match imap_server.as_str() {
+        "imap.mail.yahoo.com" => add_candidate("smtp.mail.yahoo.com".to_string()),
+        "imap.gmail.com" => add_candidate("smtp.gmail.com".to_string()),
+        "outlook.office365.com" => add_candidate("smtp.office365.com".to_string()),
+        "imap-mail.outlook.com" => add_candidate("smtp-mail.outlook.com".to_string()),
+        _ => {}
+    }
+
+    if let Some(domain) = imap_server.strip_prefix("imap.") {
+        add_candidate(format!("smtp.{domain}"));
+        add_candidate(format!("mail.{domain}"));
+    } else if let Some(domain) = imap_server.strip_prefix("imap-") {
+        add_candidate(format!("smtp-{domain}"));
+    } else if let Some(domain) = imap_server.strip_prefix("mail.") {
+        // Many self-hosted mail systems expose IMAP and SMTP on one host.
+        add_candidate(imap_server.clone());
+        add_candidate(format!("smtp.{domain}"));
+    } else if !imap_server.is_empty() && imap_server.split('.').count() == 2 {
+        add_candidate(format!("smtp.{imap_server}"));
+        add_candidate(format!("mail.{imap_server}"));
+    }
+
+    candidates
+}
+
+async fn smtp_relay_is_reachable(smtp_relay_url: &str) -> bool {
+    matches!(
+        timeout(
+            SMTP_PROBE_TIMEOUT,
+            TcpStream::connect((smtp_relay_url, SMTP_RELAY_PORT)),
+        )
+        .await,
+        Ok(Ok(_))
+    )
+}
+
+pub(crate) async fn resolve_smtp_relay_url(
+    imap_server_url: &str,
+    configured_smtp_relay_url: Option<&str>,
+) -> Result<String, Error> {
+    if let Some(configured) = configured_smtp_relay_url {
+        let configured = configured.trim();
+        if configured.is_empty() {
+            return Err(Error::Other(
+                "SMTP relay server is empty; provide a valid SMTP hostname".to_string(),
+            ));
+        }
+
+        tracing::info!(
+            smtp.host = configured,
+            source = "configured",
+            "Selected SMTP relay"
+        );
+        return Ok(configured.to_string());
+    }
+
+    let candidates = smtp_relay_candidates(imap_server_url);
+    let probe_results = join_all(candidates.iter().map(|candidate| async move {
+        let reachable = smtp_relay_is_reachable(candidate).await;
+        tracing::debug!(
+            smtp.host = candidate,
+            smtp.port = SMTP_RELAY_PORT,
+            reachable,
+            "Probed derived SMTP relay candidate"
+        );
+        reachable
+    }))
+    .await;
+
+    let selected_relay = candidates
+        .into_iter()
+        .zip(probe_results)
+        .find_map(|(candidate, reachable)| reachable.then_some(candidate))
+        .ok_or_else(|| {
+            Error::SmtpDiscovery(format!(
+                "No reachable SMTP server could be discovered from '{imap_server_url}'. Enter the SMTP server provided by your email administrator."
+            ))
+        })?;
+
+    tracing::info!(
+        smtp.host = %selected_relay,
+        smtp.port = SMTP_RELAY_PORT,
+        source = "discovered",
+        "Selected reachable SMTP relay"
+    );
+
+    Ok(selected_relay)
+}
+
 #[tauri::command]
 #[tracing::instrument(
     name = "command.config.setup",
-    skip(app, imap_server_url, imap_port),
+    skip(app, imap_server_url, imap_port, smtp_relay_url),
     err
 )]
 pub async fn config_setup(
     app: tauri::AppHandle,
     imap_server_url: String,
     imap_port: u16,
+    smtp_relay_url: Option<String>,
 ) -> Result<(), Error> {
     let sqlite_db = std::env::var("SQLITE_DB").unwrap_or("emails.db".to_string());
+    let environment_smtp_relay_url = std::env::var("SMTP_RELAY_URL").ok();
+    let configured_smtp_relay_url = smtp_relay_url
+        .as_deref()
+        .or(environment_smtp_relay_url.as_deref());
     let smtp_relay_url =
-        std::env::var("SMTP_RELAY_URL").unwrap_or("smtp.mail.yahoo.com".to_string());
+        resolve_smtp_relay_url(&imap_server_url, configured_smtp_relay_url).await?;
     let default_model = std::env::var("MODEL").unwrap_or("gemma4:e4b".to_string());
     let api_key = std::env::var("LLM_API_KEY").unwrap_or("ollama".to_string());
     let llm_provider = std::env::var("LLM_PROVIDER").ok();
@@ -74,6 +187,11 @@ pub async fn config_setup(
         .save(&path)
         .await
         .map_err(|error| Error::Other(format!("Could not save configuration: {error}")))?;
+    tracing::info!(
+        smtp.host = %config.smtp_relay_url,
+        config.path = %path.display(),
+        "Registered SMTP relay in app configuration"
+    );
 
     // The startup check may have cached `Setup` while the configuration file
     // did not exist. Force the next status request to read the new config.
@@ -171,6 +289,7 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
             local_inference: initialize_local_inference(&resource_root).await?,
             sqlite_pool,
             apple_keychain_manager,
+            smtp_relay_url: config.smtp_relay_url.clone(),
             smtp_transport_client,
             accounts: vec![Account {
                 name: None,
