@@ -3,19 +3,39 @@ name: JavaScript
 on:
   push:
     branches: ["main"]
+    paths:
+      - "src/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/javascript.yml"
   pull_request:
     branches: ["main"]
+    paths:
+      - "src/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/javascript.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: javascript-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
       - name: Install dependencies
-        run: npm install
+        run: npm ci
       - name: Run frontend tests
         run: npm run test:frontend
