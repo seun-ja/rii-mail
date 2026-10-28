@@ -98,6 +98,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
         local_inference: initialized_state.local_inference,
         sqlite_pool: initialized_state.sqlite_pool,
         apple_keychain_manager: initialized_state.apple_keychain_manager,
+        smtp_relay_url: initialized_state.smtp_relay_url,
         smtp_transport_client: initialized_state.smtp_transport_client,
         accounts: vec![Account {
             name: None,
@@ -148,6 +149,7 @@ async fn handle_initialization(
         local_inference: initialize_local_inference(resource_root).await?,
         sqlite_pool,
         apple_keychain_manager,
+        smtp_relay_url: config.smtp_relay_url.clone(),
         smtp_transport_client,
         accounts: vec![Account {
             name: None,

@@ -53,6 +53,8 @@ pub enum Error {
     OneShotRecv(#[from] RecvError),
     #[error("Thread cancellation fails")]
     ThreadCancel,
+    #[error("SMTP server discovery failed: {0}")]
+    SmtpDiscovery(String),
     #[error("SMTP Transport Relay Error: {0}")]
     SmtpTransportRelay(#[from] lettre::transport::smtp::Error),
     #[error("Error sending email: {0}")]
@@ -89,6 +91,7 @@ impl Serialize for Error {
             Error::ByteConversion(e) => ("ByteConversion", e.to_string()),
             Error::OneShotRecv(e) => ("OneShotRecv", e.to_string()),
             Error::ThreadCancel => ("ThreadCancel", self.to_string()),
+            Error::SmtpDiscovery(message) => ("SmtpDiscovery", message.clone()),
             Error::SmtpTransportRelay(e) => ("SmtpTransportRelay", e.to_string()),
             Error::SendEmail(e) => ("SendEmail", e.to_string()),
             Error::AddressParse(e) => ("AddressParse", e.to_string()),

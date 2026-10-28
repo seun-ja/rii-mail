@@ -9,6 +9,8 @@ mod menu;
 pub use configuration::{
     check_app_status, config_setup, enable_main_window_controls, finish_startup, open_main_window,
 };
+#[cfg(test)]
+pub(crate) use configuration::{resolve_smtp_relay_url, smtp_relay_candidates};
 pub use email::{fetch_emails, refresh_emails_handler, send_email};
 pub use events::{
     inbox_email_populated, inbox_intial_email_populated, sent_email_populated,
