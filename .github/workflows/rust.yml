@@ -10,6 +10,8 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
   RUSTFLAGS: -C debuginfo=0
+  PYO3_PYTHON: python3
+  PYO3_ENVIRONMENT_SIGNATURE: riimail-python-3.12-linux-x86_64-ci
 
 jobs:
   fmt:
@@ -34,6 +36,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet
@@ -52,9 +57,7 @@ jobs:
             libsoup-3.0-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
-            patchelf \
-            python3 \
-            python3-dev
+            patchelf
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -70,6 +73,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet
@@ -88,15 +94,13 @@ jobs:
             libsoup-3.0-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
-            patchelf \
-            python3 \
-            python3-dev
+            patchelf
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
       - name: Run tests
-        run: PYO3_PYTHON=python3 cargo test
+        run: cargo test
 
   clippy:
     runs-on: ubuntu-latest
@@ -106,6 +110,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet
@@ -124,9 +131,7 @@ jobs:
             libsoup-3.0-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
-            patchelf \
-            python3 \
-            python3-dev
+            patchelf
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
