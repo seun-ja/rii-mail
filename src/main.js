@@ -5,5 +5,7 @@ window.addEventListener("DOMContentLoaded", () => {
   initializeMailApp({
     invoke: tauriInvoke,
     listen: tauriListen,
+    openExternalUrl: (url) =>
+      tauriInvoke("plugin:opener|open_url", { url }),
   });
 });

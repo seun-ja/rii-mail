@@ -69,6 +69,55 @@ export function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+export function getSafeExternalUrl(value) {
+  const rawUrl = String(value ?? "").trim();
+  if (!rawUrl) {
+    return null;
+  }
+
+  try {
+    const url = new URL(rawUrl);
+    return ["http:", "https:", "mailto:"].includes(url.protocol)
+      ? url.href
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function linkifyPlainText(value) {
+  const text = String(value ?? "");
+  const urlPattern = /https?:\/\/[^\s<]+|www\.[^\s<]+/gi;
+  let result = "";
+  let lastIndex = 0;
+
+  for (const matchResult of text.matchAll(urlPattern)) {
+    const [match] = matchResult;
+    const index = matchResult.index;
+    result += escapeHtml(text.slice(lastIndex, index));
+
+    let candidate = match;
+    while (/[.,!?;:)\]}]$/.test(candidate)) {
+      candidate = candidate.slice(0, -1);
+    }
+
+    const href = getSafeExternalUrl(
+      candidate.toLowerCase().startsWith("www.")
+        ? `https://${candidate}`
+        : candidate,
+    );
+    if (!href) {
+      result += escapeHtml(match);
+    } else {
+      result += `<a href="${escapeHtml(href)}" data-email-link>${escapeHtml(candidate)}</a>${escapeHtml(match.slice(candidate.length))}`;
+    }
+
+    lastIndex = index + match.length;
+  }
+
+  return result + escapeHtml(text.slice(lastIndex));
+}
+
 export function formatAddresses(addresses) {
   if (!Array.isArray(addresses)) {
     return [];
@@ -96,7 +145,40 @@ export function formatAddressList(addresses) {
   return formatAddresses(addresses).join(", ");
 }
 
+export const EMAIL_LINK_MESSAGE = "riimail:open-email-link";
+
 export function prepareEmailHtml(html) {
+  const documentHtml = String(html ?? "");
+  if (!documentHtml.trim()) {
+    return "";
+  }
+
+  const nonce = crypto.randomUUID().replaceAll("-", "");
+  // Put the policy and trusted bridge before any untrusted email markup.
+  // An opaque-origin sandbox keeps even navigated email content away from the app.
+  return `<!doctype html>
+<html><head>
+<meta http-equiv="Content-Security-Policy" content="script-src 'nonce-${nonce}'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'" />
+<script nonce="${nonce}">
+  document.addEventListener("click", (event) => {
+    const anchor = event.target?.closest?.("a[href]");
+    if (!anchor) return;
+    const url = anchor.getAttribute("href");
+    event.preventDefault();
+    if (url?.trim().startsWith("#")) {
+      // srcdoc resolves native fragment navigation against the app's URL.
+      try {
+        document.getElementById(decodeURIComponent(url.trim().slice(1)))?.scrollIntoView();
+      } catch (_) {}
+      return;
+    }
+    window.parent.postMessage({ type: ${JSON.stringify(EMAIL_LINK_MESSAGE)}, url }, "*");
+  }, true);
+</script>
+</head><body>${addEmailViewerStyles(documentHtml)}</body></html>`;
+}
+
+function addEmailViewerStyles(html) {
   const documentHtml = String(html ?? "");
   if (!documentHtml.trim()) {
     return "";

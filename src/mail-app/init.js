@@ -22,6 +22,7 @@ import {
   createReplyDraft,
   getActiveBackendFolderKey,
   getFolderPaginationState,
+  getSafeExternalUrl,
   isMailListNearBottom,
   resetFolderPagination,
 } from "./helpers.js";
@@ -35,6 +36,7 @@ import { updateAiAssistantAvailability } from "./ai-assistant.js";
 export function initializeMailApp({
   invoke,
   listen,
+  openExternalUrl,
   storage = window.localStorage,
 }) {
   const dom = getMailAppDom();
@@ -60,7 +62,24 @@ export function initializeMailApp({
     sent: 0,
   };
   const ui = createUiController(dom);
-  const renderer = createRenderer(state, dom);
+  function openEmailLink(rawUrl) {
+    const safeUrl = getSafeExternalUrl(rawUrl);
+    if (!safeUrl) {
+      return;
+    }
+
+    if (typeof openExternalUrl !== "function") {
+      console.error("System link opener is unavailable");
+      return;
+    }
+
+    void openExternalUrl(safeUrl).catch((error) => {
+      console.error("Could not open email link", error);
+      ui.showMessage("Could not open this link in its default application.", true);
+    });
+  }
+
+  const renderer = createRenderer(state, dom, openEmailLink);
   const layout = createLayoutController(state, dom);
 
   if (!invoke) {
@@ -109,6 +128,7 @@ export function initializeMailApp({
     disposed = true;
     state.isAppReady = false;
     notifications.dispose();
+    renderer.dispose();
     cleanupListeners.splice(0).forEach((unlisten) => {
       try {
         unlisten();
@@ -332,7 +352,14 @@ export function initializeMailApp({
   }
 
   dom.mailReaderEl.addEventListener("click", (event) => {
-    const action = event.target.closest("[data-reader-action]")?.dataset
+    const emailLink = event.target?.closest?.("[data-email-link]");
+    if (emailLink) {
+      event.preventDefault();
+      openEmailLink(emailLink.getAttribute("href"));
+      return;
+    }
+
+    const action = event.target?.closest?.("[data-reader-action]")?.dataset
       .readerAction;
 
     if (!action) {
