@@ -107,29 +107,49 @@ pub async fn get_emails(
     .fetch_all(pool)
     .await?;
 
-    let emails = rows
-        .into_iter()
-        .map(|row| {
-            let labels = row.labels.and_then(|s| match serde_json::from_str(&s) {
-                Ok(parsed) => Some(parsed),
-                Err(err) => {
-                    ::tracing::warn!(error = ?err, labels = %s, "Skipping malformed labels for email row");
-                    None
-                }
-            });
+    Ok(rows.into_iter().map(CompleteEmail::from).collect())
+}
 
-            Ok(StandardEmail {
-                uid: u32::try_from(row.uid).ok(),
-                date: row.date,
-                body: row.body,
-                labels,
-            })
-        })
-        .collect::<Result<Vec<_>, serde_json::Error>>()?;
+#[tracing::instrument(
+    name = "db.email.by_uid",
+    skip_all,
+    fields(table = table_name, uid),
+    err
+)]
+pub async fn get_email_by_uid(
+    pool: &SqlitePool,
+    table_name: &str,
+    uid: u32,
+) -> Result<Option<CompleteEmail>, Error> {
+    let row = sqlx::query_as::<_, DbEmail>(&format!(
+        "SELECT uid, date, body, labels FROM {} WHERE uid = ?",
+        table_name
+    ))
+    .bind(i64::from(uid))
+    .fetch_optional(pool)
+    .await?;
 
-    let complete_emails = emails.into_iter().map(CompleteEmail::from).collect();
+    Ok(row.map(CompleteEmail::from))
+}
 
-    Ok(complete_emails)
+impl From<DbEmail> for CompleteEmail {
+    fn from(row: DbEmail) -> Self {
+        let labels = row.labels.and_then(|s| match serde_json::from_str(&s) {
+            Ok(parsed) => Some(parsed),
+            Err(err) => {
+                ::tracing::warn!(error = ?err, labels = %s, "Skipping malformed labels for email row");
+                None
+            }
+        });
+
+        StandardEmail {
+            uid: u32::try_from(row.uid).ok(),
+            date: row.date,
+            body: row.body,
+            labels,
+        }
+        .into()
+    }
 }
 
 #[tracing::instrument(

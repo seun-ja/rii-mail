@@ -16,7 +16,7 @@ pub use events::{
     inbox_email_populated, inbox_intial_email_populated, sent_email_populated,
     sent_intial_email_populated,
 };
-use lettre::Address;
+use lettre::{message::MessageBuilder, Address};
 pub use llm::{email_generator, is_llm_enabled, rater};
 pub use llm_connections::{
     connect_chatgpt, connect_ollama, ensure_chatgpt_agent_fresh, refresh_chatgpt_token_if_needed,
@@ -82,4 +82,34 @@ impl From<MailAddress> for lettre::message::Mailbox {
             email: value.email,
         }
     }
+}
+
+fn populate_to_address(
+    builder: MessageBuilder,
+    addresses: impl IntoIterator<Item = (Option<String>, String)>,
+) -> Result<MessageBuilder, Error> {
+    addresses.into_iter().try_fold(builder, |b, addr| {
+        let mail_addr: crate::handlers::MailAddress = addr.try_into()?;
+        Ok(b.to(mail_addr.into()))
+    })
+}
+
+fn populate_cc_address(
+    builder: MessageBuilder,
+    addresses: impl IntoIterator<Item = (Option<String>, String)>,
+) -> Result<MessageBuilder, Error> {
+    addresses.into_iter().try_fold(builder, |b, addr| {
+        let mail_addr: crate::handlers::MailAddress = addr.try_into()?;
+        Ok(b.cc(mail_addr.into()))
+    })
+}
+
+fn populate_bcc_address(
+    builder: MessageBuilder,
+    addresses: impl IntoIterator<Item = (Option<String>, String)>,
+) -> Result<MessageBuilder, Error> {
+    addresses.into_iter().try_fold(builder, |b, addr| {
+        let mail_addr: crate::handlers::MailAddress = addr.try_into()?;
+        Ok(b.bcc(mail_addr.into()))
+    })
 }

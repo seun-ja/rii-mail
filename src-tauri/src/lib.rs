@@ -34,6 +34,7 @@ mod error;
 mod handlers;
 mod imap;
 mod llm;
+mod notifications;
 pub mod tracing;
 mod workers;
 
@@ -103,19 +104,10 @@ pub async fn run() {
 
     let (sent_intial_email_populated_tx, sent_intial_email_populated_rx) = oneshot::channel::<()>();
 
-    worker(
-        imap_client_channel_rx,
-        imap_client_returning_user_channel_rx,
-        imap_cmd_channel_rx,
-        logout_state_tx,
-        Arc::new(Mutex::new(Some(inbox_intial_email_populated_tx))),
-        Arc::new(Mutex::new(Some(sent_intial_email_populated_tx))),
-    )
-    .await;
-
     tauri::Builder::default()
         .manage(ArcSwap::from_pointee(AppState::Fresh))
         .manage(StartupStatusCache(Mutex::new(None)))
+                .manage(notifications::NotificationClicks::default())
         .manage(ImapClientChannelTx(imap_client_channel_tx))
         .manage(ReturningUserImapClientChannelTx(
             imap_client_returning_user_channel_tx,
@@ -128,7 +120,22 @@ pub async fn run() {
         .manage(InitialDbPopulation::new(inbox_intial_email_populated_rx, sent_intial_email_populated_rx))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                worker(
+                    app_handle,
+                    imap_client_channel_rx,
+                    imap_client_returning_user_channel_rx,
+                    imap_cmd_channel_rx,
+                    logout_state_tx,
+                    Arc::new(Mutex::new(Some(inbox_intial_email_populated_tx))),
+                    Arc::new(Mutex::new(Some(sent_intial_email_populated_tx))),
+                )
+                .await;
+            });
+
             let app_about = PredefinedMenuItem::about(app, None, None)?;
             let app_quit = PredefinedMenuItem::quit(app, None)?;
             let app_separator = PredefinedMenuItem::separator(app)?;
@@ -224,6 +231,7 @@ pub async fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             check_app_status,
+            notifications::take_notification_email,
             email_generator,
             enable_main_window_controls,
             inbox_email_populated,
