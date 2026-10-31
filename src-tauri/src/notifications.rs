@@ -42,7 +42,7 @@ pub(crate) fn current_session(
                 .first()
                 .is_some_and(|account| &account.provider == provider) =>
         {
-            Some(Arc::downgrade(&session))
+            Some(Arc::downgrade(session))
         }
         _ => None,
     }
@@ -50,7 +50,7 @@ pub(crate) fn current_session(
 
 fn is_current_session(app: &tauri::AppHandle, session: &Arc<InitializedState>) -> bool {
     let state = app.state::<ArcSwap<AppState>>();
-    matches!(state.load().as_ref(), AppState::Initialized(current) if Arc::ptr_eq(&current, session))
+    matches!(state.load().as_ref(), AppState::Initialized(current) if Arc::ptr_eq(current, session))
 }
 
 #[tauri::command]
