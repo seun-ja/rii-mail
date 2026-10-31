@@ -1,11 +1,21 @@
 import { getEmails } from "./cache.js";
 import {
+  EMAIL_LINK_MESSAGE,
   escapeHtml,
   formatAddresses,
+  getSafeExternalUrl,
+  linkifyPlainText,
   prepareEmailHtml,
 } from "./helpers.js";
 
-export function createRenderer(state, dom) {
+export function createRenderer(state, dom, openEmailLink) {
+  let removeFrameLinkListener = () => {};
+
+  function dispose() {
+    removeFrameLinkListener();
+    removeFrameLinkListener = () => {};
+  }
+
   function getVisibleEmails() {
     const query = state.query.trim().toLowerCase();
     const inFolder = getEmails(state).filter((mail) => {
@@ -61,6 +71,7 @@ export function createRenderer(state, dom) {
   }
 
   function renderReader() {
+    dispose();
     const selected = getEmails(state).find(
       (mail) => mail.id === state.selectedId,
     );
@@ -147,14 +158,33 @@ export function createRenderer(state, dom) {
       </header>
       ${
         hasHtmlBody
-          ? `<iframe class="reader-html-frame" title="Email content: ${subject}" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe>`
-          : `<div class="reader-body reader-body-text">${escapeHtml(textBody)}</div>`
+          ? `<iframe class="reader-html-frame" title="Email content: ${subject}" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>`
+          : `<div class="reader-body reader-body-text">${linkifyPlainText(textBody)}</div>`
       }
     `;
 
     if (hasHtmlBody) {
       const frame = dom.mailReaderEl.querySelector(".reader-html-frame");
       if (frame) {
+        const hostWindow = dom.mailReaderEl.ownerDocument.defaultView;
+        const onFrameMessage = (event) => {
+          if (
+            event.source !== frame.contentWindow ||
+            event.data?.type !== EMAIL_LINK_MESSAGE ||
+            typeof event.data.url !== "string"
+          ) {
+            return;
+          }
+
+          const safeUrl = getSafeExternalUrl(event.data.url);
+          if (safeUrl) {
+            openEmailLink(safeUrl);
+          }
+        };
+        hostWindow.addEventListener("message", onFrameMessage);
+        removeFrameLinkListener = () => {
+          hostWindow.removeEventListener("message", onFrameMessage);
+        };
         frame.srcdoc = prepareEmailHtml(selected.htmlBody);
       }
     }
@@ -226,6 +256,7 @@ export function createRenderer(state, dom) {
   }
 
   return {
+    dispose,
     getVisibleEmails,
     renderReader,
     renderList,

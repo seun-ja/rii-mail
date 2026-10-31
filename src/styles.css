@@ -757,6 +757,11 @@ body.home-page {
     overflow-wrap: anywhere;
 }
 
+.reader-body-text a {
+    color: #1769aa;
+    text-decoration: underline;
+}
+
 .reader-html-frame {
     display: block;
     flex: 1 1 0;
