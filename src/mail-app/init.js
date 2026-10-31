@@ -10,6 +10,7 @@ import { createUiController } from "./ui.js";
 import { createLayoutController } from "./layout.js";
 import { createRenderer } from "./render.js";
 import { createSyncController } from "./sync.js";
+import { createNotificationController } from "./notifications.js";
 import {
   clearCachedEmails,
   getEmails,
@@ -79,9 +80,46 @@ export function initializeMailApp({
 
   const sync = createSyncController(state, renderer, ui, invoke, storage);
   const cleanupListeners = [];
+  let disposed = false;
+  const notifications = createNotificationController({
+    state,
+    dom,
+    renderer,
+    ui,
+    invoke,
+    listen,
+    storage,
+  });
+  const renderList = renderer.renderList;
+  renderer.renderList = () => {
+    if (disposed) return;
+    // Background startup refresh and population events can replace the page
+    // after initial sync. Keep the exact opened record outside that page.
+    notifications.reconcileCache();
+    renderList();
+  };
+
+  function trackListener(unlisten) {
+    if (disposed) unlisten();
+    else cleanupListeners.push(unlisten);
+  }
+
+  function cleanup() {
+    if (disposed) return;
+    disposed = true;
+    state.isAppReady = false;
+    notifications.dispose();
+    cleanupListeners.splice(0).forEach((unlisten) => {
+      try {
+        unlisten();
+      } catch (_) {}
+    });
+    window.removeEventListener("pagehide", onPageHide);
+  }
 
   void (async () => {
     const inboxProgress = await inboxFolderPopulationListener((progress) => {
+      if (disposed) return;
       state.folderPopulation.inbox = progress;
       ui.updateDbPopulation(
         state.folderPopulation.inbox,
@@ -89,9 +127,11 @@ export function initializeMailApp({
       );
     }, listen);
 
-    cleanupListeners.push(inboxProgress);
+    trackListener(inboxProgress);
+    if (disposed) return;
 
     const sentProgress = await sentFolderPopulationListener((progress) => {
+      if (disposed) return;
       state.folderPopulation.sent = progress;
       ui.updateDbPopulation(
         state.folderPopulation.inbox,
@@ -99,9 +139,11 @@ export function initializeMailApp({
       );
     }, listen);
 
-    cleanupListeners.push(sentProgress);
+    trackListener(sentProgress);
+    if (disposed) return;
 
     const inboxReady = await inboxInitialPopulationCompleted(async () => {
+      if (disposed) return;
       // The modal may already be dismissed while the first IMAP batch is still
       // being imported. This event is the authoritative signal that its local
       // database page can now be read, so it must not be skipped in that case.
@@ -111,18 +153,21 @@ export function initializeMailApp({
         reset: true,
         retryWhenBusy: true,
       });
+      if (disposed) return;
       await loadMoreEmailsIfListEndVisible();
 
-      ui.setSyncUiState(false);
+      if (!disposed) ui.setSyncUiState(false);
     }, listen);
 
-    cleanupListeners.push(inboxReady);
+    trackListener(inboxReady);
+    if (disposed) return;
 
     const sentReady = await sentInitialPopulationCompleted(() => {
       console.log("Initial Sent mailbox population complete");
     }, listen);
 
-    cleanupListeners.push(sentReady);
+    trackListener(sentReady);
+    if (disposed) return;
 
     // The native completion bridges consume one-shot receivers. Register every
     // frontend listener first so a fast initial import cannot emit its only
@@ -158,7 +203,7 @@ export function initializeMailApp({
     const maxAutoLoads = 10;
 
     for (let attempt = 0; attempt < maxAutoLoads; attempt += 1) {
-      if (getActiveBackendFolderKey(state) !== requestedFolderKey) {
+      if (disposed || getActiveBackendFolderKey(state) !== requestedFolderKey) {
         return;
       }
 
@@ -186,23 +231,20 @@ export function initializeMailApp({
 
   if (listen) {
     listen("app://logged-out", () => {
-      state.isAppReady = false;
+      if (disposed) return;
+      cleanup();
       haltSyncAndClearCache();
       window.location.replace("/login.html");
-    }).catch(() => {
+    }).then(trackListener).catch(() => {
       // Ignore listener setup failures in non-Tauri contexts.
     });
   }
 
-  window.addEventListener("pagehide", () => {
-    cleanupListeners.forEach((unlisten) => {
-      try {
-        unlisten();
-      } catch (_) {}
-    });
-
+  function onPageHide() {
+    cleanup();
     haltSyncAndClearCache();
-  });
+  }
+  window.addEventListener("pagehide", onPageHide);
 
   dom.folderButtons.forEach((button) => {
     button.addEventListener("click", () => {
@@ -554,10 +596,15 @@ export function initializeMailApp({
     try {
       await sync.runInitialSync();
     } catch (error) {
-      console.error("Initial mailbox sync failed", error);
-      ui.showMessage("Unable to sync mailbox. You can retry with Refresh.", true);
+      if (!disposed) {
+        console.error("Initial mailbox sync failed", error);
+        ui.showMessage("Unable to sync mailbox. You can retry with Refresh.", true);
+      }
     } finally {
-      ui.setSyncUiState(false);
+      if (!disposed) {
+        ui.setSyncUiState(false);
+        await notifications.initialSyncComplete();
+      }
     }
   })();
 }

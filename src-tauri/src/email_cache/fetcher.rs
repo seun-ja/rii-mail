@@ -16,7 +16,7 @@ use crate::{
         get_last_uid, populate_inbox_folder_count, populate_sent_folder_count, populate_storage,
         set_last_uid, MailBox, Provider,
     },
-    email_cache::{SharedImapSession, StandardEmail},
+    email_cache::{CompleteEmail, SharedImapSession, StandardEmail},
     error::Error,
     INBOX_POPULATE_UPDATE, SENT_POPULATE_UPDATE,
 };
@@ -457,6 +457,7 @@ pub(crate) fn incremental_uid_search_query(last_uid: u32) -> String {
     fields(provider = provider.as_ref(), mailbox = mailbox.as_ref())
 )]
 pub async fn fetch_latest(
+    app: tauri::AppHandle,
     session: SharedImapSession,
     pool: &SqlitePool,
     mailbox: &MailBox,
@@ -464,6 +465,7 @@ pub async fn fetch_latest(
     cancel_token: CancellationToken,
 ) -> Result<FetchResult, Error> {
     let table_name = format!("{}_{}", provider.as_ref(), mailbox.as_ref());
+    let notification_session = crate::notifications::current_session(&app, provider);
 
     let mut session = tokio::select! {
         guard = session.lock() => guard,
@@ -512,7 +514,7 @@ pub async fn fetch_latest(
         }
     };
 
-    let mut emails: Vec<StandardEmail> = Vec::new();
+    let mut emails: Vec<StandardEmail> = vec![];
 
     let mut highest_uid = last_uid;
     let mut inserted_count = 0usize;
@@ -555,6 +557,23 @@ pub async fn fetch_latest(
         emails.push(email);
     }
 
+    let notifications = if *mailbox == MailBox::Inbox {
+        emails
+            .iter()
+            .filter_map(|email| {
+                let uid = email.uid?;
+                let email = CompleteEmail::from(email.clone());
+                let subject = email
+                    .body
+                    .map(|body| body.subject)
+                    .unwrap_or_else(|| "New Mail".to_string());
+                Some((uid, subject))
+            })
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+
     if !emails.is_empty() {
         inserted_count += emails.len();
 
@@ -562,6 +581,22 @@ pub async fn fetch_latest(
     }
 
     set_last_uid(pool, &table_name, highest_uid).await?;
+
+    // A click can arrive immediately: only publish notifications after the
+    // message has committed to the local database.
+    if !cancel_token.is_cancelled() {
+        if let Some(session) = notification_session {
+            for (uid, subject) in notifications {
+                crate::notifications::show_new_mail(
+                    &app,
+                    session.clone(),
+                    provider.clone(),
+                    uid,
+                    subject,
+                );
+            }
+        }
+    }
 
     Ok(FetchResult::Fetched {
         count: inserted_count as u16,

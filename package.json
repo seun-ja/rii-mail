@@ -20,6 +20,7 @@
     "test:all": "npm run test:frontend && npm run test:backend && npm run test:llm && npm run test:python"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.11.0"
+    "@tauri-apps/api": "~2.11.0",
+    "@tauri-apps/plugin-notification": "~2.4.0"
   }
 }

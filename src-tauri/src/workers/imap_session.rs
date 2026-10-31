@@ -26,6 +26,7 @@ pub(crate) fn is_imap_connection_error(error: &Error) -> bool {
 }
 
 pub async fn worker(
+    app: tauri::AppHandle,
     mut imap_client_channel_rx: UnboundedReceiver<ImapClientConfig>,
     mut imap_client_returning_user_channel_rx: UnboundedReceiver<ImapClientConfig>,
     mut imap_cmd_channel_rx: UnboundedReceiver<ImapCommand>,
@@ -269,6 +270,7 @@ pub async fn worker(
                             };
 
                             let refresh_result = crate::email_cache::fetch_latest(
+                                app.clone(),
                                 session,
                                 pool_ref,
                                 &mail_box,
@@ -312,6 +314,7 @@ pub async fn worker(
                                                         .child_token();
 
                                                     crate::email_cache::fetch_latest(
+                                                        app.clone(),
                                                         new_session,
                                                         pool_ref,
                                                         &mail_box,
@@ -371,6 +374,7 @@ pub async fn worker(
 
                         let (inbox_result, sent_result) = tokio::join!(
                             crate::email_cache::fetch_latest(
+                                app.clone(),
                                 session.clone(),
                                 pool_ref,
                                 &MailBox::Inbox,
@@ -378,6 +382,7 @@ pub async fn worker(
                                 refresh_token.clone()
                             ),
                             crate::email_cache::fetch_latest(
+                                app.clone(),
                                 session_background.clone(),
                                 pool_ref,
                                 &MailBox::Sent,

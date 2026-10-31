@@ -1,6 +1,13 @@
 {
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main"],
-  "permissions": ["core:default", "opener:default", "sql:default"]
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "sql:default",
+    "notification:default"
+  ]
 }

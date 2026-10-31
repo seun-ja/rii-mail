@@ -176,6 +176,12 @@ src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/RiiMail_0.1.0_x86_64.dmg
 
 The generated DMG is ad-hoc signed for local testing. Public distribution still requires your Apple Developer ID signing identity and notarization to avoid Gatekeeper warnings on downloaded builds.
 
+### macOS mail notifications
+
+While RiiMail is running, clicking a new-mail notification (or its **Open** action) brings the window forward and opens that exact inbox message from the local cache. Search is cleared and Inbox is selected so the message is visible. Notifications from a previous login session are ignored; opening notifications after quitting or restarting the app is not supported yet.
+
+Development notifications use Terminal's identity; enable notifications for **Terminal** in macOS System Settings when testing with `npm run dev`. To test RiiMail's own notification identity, install and launch the packaged app. After rebuilding/restarting, trigger a new incoming email rather than clicking a notification from the previous process.
+
 ## Testing
 
 Run all tests from one place (project root):

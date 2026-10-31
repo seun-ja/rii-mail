@@ -16,6 +16,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+cc = "1"
 
 [dependencies]
 tauri = { version = "2", features = ["macos-private-api"] }
@@ -63,6 +64,8 @@ arc-swap = "1.7.1"
 llm = { path = "../llm" }
 rig-core = "0.33.0"
 schemars = "1.2.1"
+tauri-plugin-notification = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = "3.7.0"
+mac-notification-sys = "=0.6.15"

@@ -1,8 +1,5 @@
 use arc_swap::ArcSwap;
-use lettre::{
-    message::{header::ContentType, MessageBuilder},
-    Message, Transport,
-};
+use lettre::{message::header::ContentType, Message, Transport};
 use sqlx::SqlitePool;
 use tauri::Manager as _;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
@@ -12,6 +9,7 @@ use crate::{
     db::{get_emails, MailBox, Provider},
     email_cache::{CompleteEmail, FrontendEmail},
     error::Error,
+    handlers::{populate_bcc_address, populate_cc_address, populate_to_address},
     imap::{ImapCommand, RefreshSummary},
 };
 
@@ -186,36 +184,6 @@ pub async fn send_email(
     tracing::info!("SMTP response: {:?}", response);
 
     Ok(())
-}
-
-fn populate_to_address(
-    builder: MessageBuilder,
-    addresses: impl IntoIterator<Item = (Option<String>, String)>,
-) -> Result<MessageBuilder, Error> {
-    addresses.into_iter().try_fold(builder, |b, addr| {
-        let mail_addr: crate::handlers::MailAddress = addr.try_into()?;
-        Ok(b.to(mail_addr.into()))
-    })
-}
-
-fn populate_cc_address(
-    builder: MessageBuilder,
-    addresses: impl IntoIterator<Item = (Option<String>, String)>,
-) -> Result<MessageBuilder, Error> {
-    addresses.into_iter().try_fold(builder, |b, addr| {
-        let mail_addr: crate::handlers::MailAddress = addr.try_into()?;
-        Ok(b.cc(mail_addr.into()))
-    })
-}
-
-fn populate_bcc_address(
-    builder: MessageBuilder,
-    addresses: impl IntoIterator<Item = (Option<String>, String)>,
-) -> Result<MessageBuilder, Error> {
-    addresses.into_iter().try_fold(builder, |b, addr| {
-        let mail_addr: crate::handlers::MailAddress = addr.try_into()?;
-        Ok(b.bcc(mail_addr.into()))
-    })
 }
 
 #[cfg(test)]
