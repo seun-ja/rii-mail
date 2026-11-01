@@ -33,3 +33,11 @@ export async function sentInitialPopulationCompleted(callback, listen) {
 
   return unlisten;
 }
+
+export async function emailsUpdatedListener(callback, listen) {
+  const unlisten = await listen("emails-updated", (event) => {
+    callback(event?.payload);
+  });
+
+  return unlisten;
+}

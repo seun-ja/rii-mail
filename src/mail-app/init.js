@@ -3,6 +3,7 @@ import {
   sentFolderPopulationListener,
   inboxInitialPopulationCompleted,
   sentInitialPopulationCompleted,
+  emailsUpdatedListener,
 } from "./listener.js";
 import { createInitialState } from "./state.js";
 import { getMailAppDom } from "./dom.js";
@@ -138,6 +139,25 @@ export function initializeMailApp({
   }
 
   void (async () => {
+    if (listen) {
+      const emailsUpdated = await emailsUpdatedListener((payload) => {
+        if (
+          disposed ||
+          !payload ||
+          typeof payload !== "object" ||
+          !["INBOX", "Sent"].includes(payload.mailbox) ||
+          payload.provider !== getProviderLiteral(storage)
+        ) {
+          return;
+        }
+
+        void sync.refreshMailbox(payload.mailbox, { background: true });
+      }, listen);
+
+      trackListener(emailsUpdated);
+      if (disposed) return;
+    }
+
     const inboxProgress = await inboxFolderPopulationListener((progress) => {
       if (disposed) return;
       state.folderPopulation.inbox = progress;
