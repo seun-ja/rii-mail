@@ -4,6 +4,7 @@ use async_imap::{types::NameAttribute, Session};
 use async_native_tls::TlsStream;
 use futures::StreamExt;
 use sqlx::SqlitePool;
+use tauri::Emitter as _;
 use tokio::{
     net::TcpStream,
     sync::{oneshot::Sender, Mutex},
@@ -581,6 +582,19 @@ pub async fn fetch_latest(
     }
 
     set_last_uid(pool, &table_name, highest_uid).await?;
+
+    if inserted_count > 0 {
+        if let Err(error) = app.emit(
+            "emails-updated",
+            serde_json::json!({
+                "mailbox": mailbox.as_ref(),
+                "provider": provider.as_ref(),
+                "newEmailsCount": inserted_count,
+            }),
+        ) {
+            tracing::warn!(?error, "Failed to notify frontend about newly saved emails");
+        }
+    }
 
     // A click can arrive immediately: only publish notifications after the
     // message has committed to the local database.

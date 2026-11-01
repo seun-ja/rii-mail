@@ -25,6 +25,8 @@ export function createSyncController(
   storage = window.localStorage,
 ) {
   let syncGeneration = 0;
+  let mailboxRefreshInProgress = false;
+  const pendingMailboxRefreshes = new Set();
   const { fetchMailboxEmailCount } = createMailboxCountClient({ storage });
 
   function normalizeFetchPayload(fetched) {
@@ -66,6 +68,7 @@ export function createSyncController(
 
   function haltAllSync() {
     state.allowFetch = false;
+    pendingMailboxRefreshes.clear();
     stopBootstrapRefresh();
     clearInitialEmptyRetry();
     clearInitialSyncPoll();
@@ -102,7 +105,7 @@ export function createSyncController(
       return;
     }
 
-    if (state.isLoadingEmails) {
+    if (state.isLoadingEmails || mailboxRefreshInProgress) {
       if (retryWhenBusy && !state.initialSyncPollTimer) {
         state.initialSyncPollTimer = setTimeout(() => {
           state.initialSyncPollTimer = null;
@@ -213,7 +216,22 @@ export function createSyncController(
     } finally {
       state.isLoadingEmails = false;
       renderer.renderList();
+      refreshPendingMailbox();
     }
+  }
+
+  function refreshPendingMailbox() {
+    if (
+      state.isLoadingEmails ||
+      mailboxRefreshInProgress ||
+      pendingMailboxRefreshes.size === 0
+    ) {
+      return;
+    }
+
+    const [mailbox] = pendingMailboxRefreshes;
+    pendingMailboxRefreshes.delete(mailbox);
+    void refreshMailbox(mailbox, { background: true });
   }
 
   async function refreshInboxOnStartup() {
@@ -385,15 +403,22 @@ export function createSyncController(
     startBootstrapRefresh();
   }
 
-  async function refreshActiveMailbox({ background = false } = {}) {
-    if (!state.allowFetch || !state.isAppReady || state.isLoadingEmails) {
+  async function refreshMailbox(mailbox, { background = false } = {}) {
+    if (!state.allowFetch || !state.isAppReady) {
       return { newCount: 0, totalEmails: null };
     }
 
-    const folderKey = getActiveBackendFolderKey(state);
-    const mailbox = getActiveMailboxLiteral(state);
+    if (state.isLoadingEmails || mailboxRefreshInProgress) {
+      if (background) {
+        pendingMailboxRefreshes.add(mailbox);
+      }
+      return { newCount: 0, totalEmails: null };
+    }
+
+    const folderKey = mailbox;
     const provider = getProviderLiteral(storage);
     const pagination = getFolderPaginationState(state, folderKey);
+    mailboxRefreshInProgress = true;
 
     if (!background) {
       state.isLoadingEmails = true;
@@ -455,11 +480,17 @@ export function createSyncController(
 
       return { newCount: reportedNewCount, totalEmails };
     } finally {
+      mailboxRefreshInProgress = false;
       if (!background) {
         state.isLoadingEmails = false;
       }
       renderer.renderList();
+      refreshPendingMailbox();
     }
+  }
+
+  function refreshActiveMailbox(options) {
+    return refreshMailbox(getActiveMailboxLiteral(state), options);
   }
 
   return {
@@ -469,6 +500,7 @@ export function createSyncController(
     haltAllSync,
     loadMoreEmails,
     refreshActiveMailbox,
+    refreshMailbox,
     runInitialSync,
     startBootstrapRefresh,
     stopBootstrapRefresh,

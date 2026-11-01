@@ -74,6 +74,53 @@ test("refresh reconciles the loaded page with newest emails first", async () => 
   assert.ok(calls[1].args.maxRange >= refreshedPage.length);
 });
 
+test("refreshing an updated mailbox reconciles its cache even when it is inactive", async () => {
+  const state = createInitialState();
+  state.allowFetch = true;
+  state.isAppReady = true;
+  state.activeFolder = "INBOX";
+  state.cachedByFolder.Sent = [
+    { id: "db-Sent-uid-1", subject: "Old sent mail", folder: "Sent" },
+  ];
+
+  const refreshedSentPage = [
+    { id: "db-Sent-uid-2", subject: "New sent mail", folder: "Sent" },
+    { id: "db-Sent-uid-1", subject: "Old sent mail", folder: "Sent" },
+  ];
+  const calls = [];
+  const invoke = async (command, args) => {
+    calls.push({ command, args });
+
+    if (command === "refresh_emails_handler") {
+      return { emails: [refreshedSentPage[0]], newEmailsCount: 1, totalEmails: 2 };
+    }
+
+    if (command === "fetch_emails") {
+      return { emails: refreshedSentPage };
+    }
+
+    throw new Error(`Unexpected command: ${command}`);
+  };
+  const renderer = { renderList() {} };
+  const sync = createSyncController(
+    state,
+    renderer,
+    {},
+    invoke,
+    createStorage(),
+  );
+
+  await sync.refreshMailbox("Sent", { background: true });
+
+  assert.deepEqual(
+    state.cachedByFolder.Sent.map((email) => email.id),
+    ["db-Sent-uid-2", "db-Sent-uid-1"],
+  );
+  assert.equal(state.cachedByFolder.INBOX.length, 0);
+  assert.equal(calls[0].args.mailbox, "Sent");
+  assert.equal(calls[1].args.mailbox, "Sent");
+});
+
 test("initial sync refreshes the inbox in the background after loading its first database page", async () => {
   const state = createInitialState();
   state.allowFetch = true;
