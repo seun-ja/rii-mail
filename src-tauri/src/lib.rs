@@ -106,7 +106,7 @@ pub async fn run() {
 
     tauri::Builder::default()
         .manage(ArcSwap::from_pointee(AppState::Fresh))
-        .manage(StartupStatusCache(Mutex::new(None)))
+        .manage(StartupStatusCache::default())
                 .manage(notifications::NotificationClicks::default())
         .manage(ImapClientChannelTx(imap_client_channel_tx))
         .manage(ReturningUserImapClientChannelTx(

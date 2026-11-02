@@ -12,6 +12,7 @@ use llm::{
 use rig::tool::Tool;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize, Serializer};
+use tokio::sync::OnceCell;
 
 use crate::{
     error::Error,
@@ -105,6 +106,44 @@ pub(crate) fn resolve_local_inference_paths(
     })?;
 
     Ok((model_path, script_path))
+}
+
+pub struct LocalInference {
+    resource_root: PathBuf,
+    agent: OnceCell<Result<Agent<Email>, String>>,
+}
+
+impl LocalInference {
+    pub fn new(resource_root: PathBuf) -> Self {
+        Self {
+            resource_root,
+            agent: OnceCell::new(),
+        }
+    }
+
+    pub async fn get(&self) -> Result<&Agent<Email>, Error> {
+        let result = self
+            .agent
+            .get_or_init(|| async {
+                let resource_root = self.resource_root.clone();
+                // Python setup is synchronous even though the builder API is async.
+                tokio::task::spawn_blocking(move || {
+                    tauri::async_runtime::block_on(initialize_local_inference(&resource_root))
+                        .map_err(|error| error.to_string())
+                })
+                .await
+                .unwrap_or_else(|error| {
+                    Err(format!(
+                        "local inference initialization worker failed: {error}"
+                    ))
+                })
+            })
+            .await;
+
+        result
+            .as_ref()
+            .map_err(|message| Error::Other(message.clone()))
+    }
 }
 
 #[tracing::instrument(name = "llm.local.initialize", skip_all, err)]

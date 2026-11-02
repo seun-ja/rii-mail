@@ -38,6 +38,7 @@ export function initializeMailApp({
   invoke,
   listen,
   openExternalUrl,
+  startupWarning = null,
   storage = window.localStorage,
 }) {
   const dom = getMailAppDom();
@@ -63,6 +64,9 @@ export function initializeMailApp({
     sent: 0,
   };
   const ui = createUiController(dom);
+  if (startupWarning) {
+    ui.showMessage(startupWarning, true);
+  }
   function openEmailLink(rawUrl) {
     const safeUrl = getSafeExternalUrl(rawUrl);
     if (!safeUrl) {

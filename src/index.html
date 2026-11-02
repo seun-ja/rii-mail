@@ -247,9 +247,25 @@
         <div
             id="result-msg"
             class="status-toast"
-            role="status"
-            aria-live="polite"
-        ></div>
+            inert
+        >
+            <span class="status-toast-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="9"></circle>
+                    <path class="status-toast-info-mark" d="M12 11v5M12 8h.01"></path>
+                    <path class="status-toast-error-mark" d="M12 7v6M12 16h.01"></path>
+                </svg>
+            </span>
+            <div class="status-toast-content" role="status" aria-live="polite" aria-atomic="true">
+                <p class="status-toast-title"></p>
+                <p class="status-toast-message"></p>
+            </div>
+            <button class="status-toast-close" type="button" aria-label="Dismiss notification">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+                    <path d="m6 6 12 12M18 6 6 18"></path>
+                </svg>
+            </button>
+        </div>
         <div id="compose-modal" class="modal hidden">
             <div class="modal-content composer-modal">
                 <!-- Header -->

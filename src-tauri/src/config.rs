@@ -4,7 +4,7 @@ use crate::{
     auth::AppleKeychainManager,
     db::Provider,
     error::{Error, ErrorMessage},
-    llm::Email,
+    llm::{Email, LocalInference},
 };
 use lettre::{transport::smtp::authentication::Credentials, SmtpTransport};
 use llm::Agent;
@@ -68,8 +68,42 @@ pub struct Config {
     pub access_token: Option<String>,
     #[serde(default)]
     pub refresh_token: Option<String>,
-    #[serde(flatten)]
-    pub chatgpt: ChatGptConfig,
+    #[serde(
+        default,
+        flatten,
+        deserialize_with = "deserialize_optional_chatgpt_config"
+    )]
+    pub chatgpt: Option<ChatGptConfig>,
+}
+
+fn deserialize_optional_chatgpt_config<'de, D>(
+    deserializer: D,
+) -> Result<Option<ChatGptConfig>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    let fields = value
+        .as_object()
+        .ok_or_else(|| serde::de::Error::custom("ChatGPT config must be an object"))?;
+    let has_chatgpt_fields = [
+        "chatgpt_client_id",
+        "chatgpt_id_token",
+        "chatgpt_email",
+        "chatgpt_subject",
+        "chatgpt_scopes",
+        "chatgpt_token_expires_at",
+        "chatgpt_host_id",
+    ]
+    .iter()
+    .any(|field| fields.contains_key(*field));
+    if !has_chatgpt_fields {
+        return Ok(None);
+    }
+
+    serde_json::from_value(value)
+        .map(Some)
+        .map_err(serde::de::Error::custom)
 }
 
 impl Config {
@@ -136,7 +170,11 @@ pub enum AppState {
 
 /// Coordinates startup status requests so the Keychain is read at most once
 /// while the app is determining whether a returning user is signed in.
-pub struct StartupStatusCache(pub tokio::sync::Mutex<Option<InitStatus>>);
+#[derive(Default)]
+pub struct StartupStatusCache {
+    pub status: tokio::sync::Mutex<Option<InitStatus>>,
+    pub warning: tokio::sync::Mutex<Option<String>>,
+}
 
 impl AppState {
     pub fn state(&self) -> &InitializedState {
@@ -148,7 +186,7 @@ impl AppState {
 }
 
 pub struct InitializedState {
-    pub local_inference: Agent<Email>,
+    pub local_inference: LocalInference,
     pub sqlite_pool: SqlitePool,
     pub apple_keychain_manager: AppleKeychainManager,
     pub smtp_relay_url: String,

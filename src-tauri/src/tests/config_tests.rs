@@ -33,6 +33,7 @@ async fn config_init_reads_valid_config() {
     assert_eq!(parsed.imap_server_url, "imap.gmail.com");
     assert_eq!(parsed.imap_port, 993);
     assert_eq!(parsed.accounts.len(), 1);
+    assert!(parsed.chatgpt.is_none());
 
     let _ = tokio::fs::remove_file(path).await;
 }
@@ -53,12 +54,35 @@ fn chatgpt_config_is_grouped_without_changing_stored_field_names() {
     }"#;
 
     let parsed: Config = serde_json::from_str(body).expect("flat config should deserialize");
-    assert_eq!(parsed.chatgpt.client_id.as_deref(), Some("oaiapp_test"));
-    assert_eq!(parsed.chatgpt.email.as_deref(), Some("alice@example.com"));
+    let chatgpt = parsed
+        .chatgpt
+        .as_ref()
+        .expect("ChatGPT fields should be present");
+    assert_eq!(chatgpt.client_id.as_deref(), Some("oaiapp_test"));
+    assert_eq!(chatgpt.email.as_deref(), Some("alice@example.com"));
 
     let serialized = serde_json::to_value(parsed).expect("config should serialize");
     assert_eq!(serialized["chatgpt_client_id"], "oaiapp_test");
     assert!(serialized.get("chatgpt").is_none());
+}
+
+#[test]
+fn config_without_chatgpt_fields_has_no_chatgpt_configuration() {
+    let body = r#"{
+        "imap_server_url":"imap.gmail.com",
+        "smtp_relay_url":"smtp.gmail.com",
+        "imap_port":993,
+        "sqlite_db":"emails.db",
+        "accounts":[],
+        "default_model":"model",
+        "api_key":""
+    }"#;
+
+    let parsed: Config = serde_json::from_str(body).expect("config should deserialize");
+    assert!(parsed.chatgpt.is_none());
+
+    let serialized = serde_json::to_value(parsed).expect("config should serialize");
+    assert!(serialized.get("chatgpt_client_id").is_none());
 }
 
 #[tokio::test]
