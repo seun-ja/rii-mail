@@ -16,7 +16,7 @@ use crate::{
     error::Error,
     handlers::{provider_from_imap_server, refresh_chatgpt_token_if_needed},
     imap::ImapCommand,
-    llm::{init_llm_agent, initialize_local_inference},
+    llm::{init_llm_agent, LocalInference},
     workers::SharedFetchManager,
     ImapClientChannelTx, LOGGED_IN, LOGGING_IN,
 };
@@ -146,7 +146,7 @@ async fn handle_initialization(
     let smtp_transport_client = config::smtp_transport_client(&config.smtp_relay_url, credential)?;
 
     let initialized_state = config::InitializedState {
-        local_inference: initialize_local_inference(resource_root).await?,
+        local_inference: LocalInference::new(resource_root.to_path_buf()),
         sqlite_pool,
         apple_keychain_manager,
         smtp_relay_url: config.smtp_relay_url.clone(),

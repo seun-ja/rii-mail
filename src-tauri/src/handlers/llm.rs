@@ -29,7 +29,13 @@ pub async fn rater(
 
     let message = serde_json::to_string(&email).map_err(|e| Error::Other(e.to_string()))?;
 
-    let rating = initialized.local_inference.agent().chat(&message).await?;
+    let rating = initialized
+        .local_inference
+        .get()
+        .await?
+        .agent()
+        .chat(&message)
+        .await?;
     return rating.try_into();
 }
 

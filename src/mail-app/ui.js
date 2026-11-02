@@ -1,12 +1,32 @@
 export function createUiController(dom) {
   let toastTimer = null;
+  const toast = dom.resultMsgEl;
+  const toastTitle = toast?.querySelector(".status-toast-title");
+  const toastMessage = toast?.querySelector(".status-toast-message");
+
+  function dismissMessage() {
+    clearTimeout(toastTimer);
+    toastTimer = null;
+    toast?.classList.remove("show");
+    if (toast) {
+      toast.inert = true;
+    }
+  }
+
+  toast?.querySelector(".status-toast-close")?.addEventListener("click", dismissMessage);
 
   function showMessage(text, isError = false) {
     if (!dom.resultMsgEl) {
       return;
     }
 
-    dom.resultMsgEl.textContent = text;
+    if (toastTitle && toastMessage) {
+      toastTitle.textContent = isError ? "Something went wrong" : "Mailbox update";
+      toastMessage.textContent = text;
+    } else {
+      dom.resultMsgEl.textContent = text;
+    }
+    dom.resultMsgEl.inert = false;
     dom.resultMsgEl.classList.add("show");
     dom.resultMsgEl.classList.toggle("error", isError);
 
@@ -14,9 +34,7 @@ export function createUiController(dom) {
       clearTimeout(toastTimer);
     }
 
-    toastTimer = setTimeout(() => {
-      dom.resultMsgEl?.classList.remove("show");
-    }, 2800);
+    toastTimer = setTimeout(dismissMessage, isError ? 8000 : 2800);
   }
 
   function setSyncUiState(locked, message = "Syncing...", percent = 0) {

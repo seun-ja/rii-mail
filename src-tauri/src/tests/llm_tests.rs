@@ -1,6 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::llm::{resolve_local_inference_paths, Email, Label, SpamRating};
+use crate::llm::{resolve_local_inference_paths, Email, Label, LocalInference, SpamRating};
 use serde_json::json;
 
 fn unique_test_dir(name: &str) -> std::path::PathBuf {
@@ -229,6 +229,97 @@ fn app_error_preserves_the_underlying_llm_message() {
         error.to_string(),
         "LLM error: bundled Python runtime is missing"
     );
+}
+
+#[test]
+fn local_inference_construction_needs_no_resources_or_async_runtime() {
+    let root = unique_test_dir("lazy-construction");
+    assert!(!root.exists());
+
+    let inference = LocalInference::new(root.clone());
+
+    assert!(!root.exists(), "construction must not create resources");
+    drop(inference);
+}
+
+#[tokio::test]
+async fn local_inference_caches_failure_after_missing_resource_is_created() {
+    let root = unique_test_dir("cached-failure");
+    let inference = LocalInference::new(root.clone());
+
+    let first_error = inference
+        .get()
+        .await
+        .err()
+        .expect("missing model should fail initialization");
+    assert!(matches!(&first_error, crate::error::Error::Other(_)));
+    assert!(first_error
+        .to_string()
+        .contains("bundled local model is unavailable"));
+
+    // Leave the script absent so even an accidental retry cannot initialize Python.
+    std::fs::create_dir_all(root.join("local-model")).expect("model directory should be created");
+    let uncached_error =
+        resolve_local_inference_paths(&root).expect_err("the script should still be missing");
+    assert!(uncached_error
+        .to_string()
+        .contains("bundled Python inference script is unavailable"));
+
+    let cached_error = inference
+        .get()
+        .await
+        .err()
+        .expect("initialization failure should remain cached");
+    assert!(matches!(&cached_error, crate::error::Error::Other(_)));
+    assert_eq!(cached_error.to_string(), first_error.to_string());
+
+    std::fs::remove_dir_all(root).expect("test resources should be removed");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn local_inference_concurrent_requests_share_cached_failure() {
+    let root = unique_test_dir("concurrent-failure");
+    let inference = std::sync::Arc::new(LocalInference::new(root.clone()));
+    let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(16));
+    let mut requests = Vec::new();
+
+    for _ in 0..16 {
+        let inference = inference.clone();
+        let barrier = barrier.clone();
+        requests.push(tokio::spawn(async move {
+            barrier.wait().await;
+            inference
+                .get()
+                .await
+                .err()
+                .expect("missing model should fail initialization")
+                .to_string()
+        }));
+    }
+
+    let expected_error = requests.remove(0).await.expect("request should complete");
+    assert!(expected_error.contains("bundled local model is unavailable"));
+    for request in requests {
+        assert_eq!(
+            request.await.expect("request should complete"),
+            expected_error
+        );
+    }
+
+    // A retry would now report a missing script, without reaching Python setup.
+    std::fs::create_dir_all(root.join("local-model")).expect("model directory should be created");
+    let (first, second) = tokio::join!(inference.get(), inference.get());
+    for result in [first, second] {
+        assert_eq!(
+            result
+                .err()
+                .expect("failure should stay cached")
+                .to_string(),
+            expected_error
+        );
+    }
+
+    std::fs::remove_dir_all(root).expect("test resources should be removed");
 }
 
 #[test]

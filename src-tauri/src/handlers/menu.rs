@@ -16,7 +16,9 @@ use tokio::{
 #[tracing::instrument(name = "command.logout.menu", skip(app))]
 pub async fn logout_with_state(app: tauri::AppHandle) {
     // A later visit to the login page must not reuse the prior signed-in result.
-    *app.state::<StartupStatusCache>().0.lock().await = None;
+    let startup_status_cache = app.state::<StartupStatusCache>();
+    *startup_status_cache.status.lock().await = None;
+    *startup_status_cache.warning.lock().await = None;
 
     let imap_cmd_channel_tx = app.state::<UnboundedSender<ImapCommand>>();
     let _ = imap_cmd_channel_tx

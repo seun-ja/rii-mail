@@ -148,13 +148,16 @@ pub async fn connect_chatgpt(app: tauri::AppHandle) -> Result<LlmConnection, Err
     config.default_model = credentials.model.clone();
     config.access_token = Some(credentials.access_token);
     config.refresh_token = Some(credentials.refresh_token);
-    config.chatgpt.client_id = Some(credentials.client_id);
-    config.chatgpt.id_token = Some(credentials.id_token);
-    config.chatgpt.email = credentials.email.clone();
-    config.chatgpt.subject = Some(credentials.subject);
-    config.chatgpt.scopes = credentials.scopes;
-    config.chatgpt.token_expires_at = Some(credentials.expires_at);
-    config.chatgpt.host_id = Some(credentials.host_id);
+    let chatgpt = config
+        .chatgpt
+        .get_or_insert_with(crate::config::ChatGptConfig::default);
+    chatgpt.client_id = Some(credentials.client_id);
+    chatgpt.id_token = Some(credentials.id_token);
+    chatgpt.email = credentials.email.clone();
+    chatgpt.subject = Some(credentials.subject);
+    chatgpt.scopes = credentials.scopes;
+    chatgpt.token_expires_at = Some(credentials.expires_at);
+    chatgpt.host_id = Some(credentials.host_id);
     config.save(&config_path).await.map_err(config_error)?;
     replace_llm_agent(&app, agent).await;
 
@@ -201,12 +204,15 @@ pub async fn refresh_chatgpt_token_if_needed(
         return Ok(());
     }
 
-    let expires_at = config.chatgpt.token_expires_at.unwrap_or_default();
+    let chatgpt = config.chatgpt.as_ref().ok_or_else(|| {
+        Error::Authentication("ChatGPT connection is missing its credentials".to_string())
+    })?;
+    let expires_at = chatgpt.token_expires_at.unwrap_or_default();
     if expires_at > unix_time().saturating_add(60) && config.access_token.is_some() {
         return Ok(());
     }
 
-    let client_id = config.chatgpt.client_id.as_deref().ok_or_else(|| {
+    let client_id = chatgpt.client_id.as_deref().ok_or_else(|| {
         Error::Authentication("ChatGPT connection is missing its client ID".to_string())
     })?;
     let refresh_token = config.refresh_token.as_deref().ok_or_else(|| {
@@ -215,6 +221,8 @@ pub async fn refresh_chatgpt_token_if_needed(
 
     let response = reqwest::Client::new()
         .post(TOKEN_URL)
+        // Credential refresh is optional during startup; bound the full HTTP request.
+        .timeout(std::time::Duration::from_secs(5))
         .form(&[
             ("grant_type", "refresh_token"),
             ("client_id", client_id),
@@ -243,13 +251,16 @@ pub async fn refresh_chatgpt_token_if_needed(
     })?;
     config.access_token = Some(tokens.access_token);
     config.refresh_token = Some(replacement_refresh_token);
+    let chatgpt = config
+        .chatgpt
+        .get_or_insert_with(crate::config::ChatGptConfig::default);
     if let Some(id_token) = tokens.id_token {
-        config.chatgpt.id_token = Some(id_token);
+        chatgpt.id_token = Some(id_token);
     }
     if !tokens.scope.is_empty() {
-        config.chatgpt.scopes = split_scopes(&tokens.scope);
+        chatgpt.scopes = split_scopes(&tokens.scope);
     }
-    config.chatgpt.token_expires_at = Some(unix_time().saturating_add(tokens.expires_in));
+    chatgpt.token_expires_at = Some(unix_time().saturating_add(tokens.expires_in));
     config.save(path).await.map_err(config_error)
 }
 
@@ -283,10 +294,13 @@ async fn authorize_chatgpt(
     let code_challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(code_verifier.as_bytes()));
     let host_id = config
         .chatgpt
-        .host_id
-        .clone()
+        .as_ref()
+        .and_then(|chatgpt| chatgpt.host_id.clone())
         .unwrap_or_else(|| format!("urn:uuid:{}", uuid::Uuid::new_v4()));
-    let existing_client_id = config.chatgpt.client_id.as_deref();
+    let existing_client_id = config
+        .chatgpt
+        .as_ref()
+        .and_then(|chatgpt| chatgpt.client_id.as_deref());
     let requested_client_id = existing_client_id.unwrap_or("dynamic_agent_client");
 
     let mut authorize_url = Url::parse(AUTHORIZE_URL)
@@ -308,10 +322,18 @@ async fn authorize_chatgpt(
         if existing_client_id.is_none() {
             query.append_pair("agent_name_hint", "RiiMail");
         } else {
-            if let Some(id_token) = config.chatgpt.id_token.as_deref() {
+            if let Some(id_token) = config
+                .chatgpt
+                .as_ref()
+                .and_then(|chatgpt| chatgpt.id_token.as_deref())
+            {
                 query.append_pair("id_token_hint", id_token);
             }
-            if let Some(email) = config.chatgpt.email.as_deref() {
+            if let Some(email) = config
+                .chatgpt
+                .as_ref()
+                .and_then(|chatgpt| chatgpt.email.as_deref())
+            {
                 query.append_pair("login_hint", email);
             }
         }
@@ -360,7 +382,11 @@ async fn authorize_chatgpt(
         Error::Authentication("ChatGPT did not return an identity token".to_string())
     })?;
     let claims = validate_id_token(&id_token, &client_id, &nonce).await?;
-    if let Some(expected_subject) = config.chatgpt.subject.as_deref() {
+    if let Some(expected_subject) = config
+        .chatgpt
+        .as_ref()
+        .and_then(|chatgpt| chatgpt.subject.as_deref())
+    {
         if expected_subject != claims.sub {
             return Err(Error::Authentication(
                 "ChatGPT returned a different account than the selected connection".to_string(),

@@ -15,13 +15,13 @@ use tokio::{
 use crate::{
     auth::AppleKeychainManager,
     config::{
-        self, smtp_transport_client, Account, AppState, ChatGptConfig, Config, ImapClientConfig,
-        InitStatus, StartupStatusCache,
+        self, smtp_transport_client, Account, AppState, Config, ImapClientConfig, InitStatus,
+        StartupStatusCache,
     },
     db,
     error::Error,
     handlers::{provider_from_imap_server, refresh_chatgpt_token_if_needed},
-    llm::{init_llm_agent, initialize_local_inference},
+    llm::{init_llm_agent, LocalInference},
     workers::SharedFetchManager,
     ReturningUserImapClientChannelTx,
 };
@@ -165,7 +165,7 @@ pub async fn config_setup(
         api_key,
         access_token: None,
         refresh_token: None,
-        chatgpt: ChatGptConfig::default(),
+        chatgpt: None,
     };
 
     let config_dir = app.path().app_config_dir()?;
@@ -195,7 +195,9 @@ pub async fn config_setup(
 
     // The startup check may have cached `Setup` while the configuration file
     // did not exist. Force the next status request to read the new config.
-    *app.state::<StartupStatusCache>().0.lock().await = None;
+    let startup_status_cache = app.state::<StartupStatusCache>();
+    *startup_status_cache.status.lock().await = None;
+    *startup_status_cache.warning.lock().await = None;
 
     Ok(())
 }
@@ -212,11 +214,12 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
     // Keep the guard for the full initialization so only the first request reads
     // the Keychain and the others reuse its successful result.
     let startup_status_cache = app.state::<StartupStatusCache>();
-    let mut startup_status = startup_status_cache.0.lock().await;
+    let mut startup_status = startup_status_cache.status.lock().await;
     if let Some(status) = startup_status.as_ref() {
         tracing::debug!("Returning cached startup status without reading Apple Keychain");
         return Ok(status.clone());
     }
+    *startup_status_cache.warning.lock().await = None;
 
     tracing::debug!("Checking startup status and stored Apple Keychain credentials");
 
@@ -234,7 +237,24 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
     let Ok(mut config) = Config::init(&config_path).await else {
         return Ok(InitStatus::Setup);
     };
-    refresh_chatgpt_token_if_needed(&mut config, &config_path).await?;
+    let chatgpt_refresh_failed = if config.llm_provider.as_deref() == Some("chatgpt") {
+        if let Err(error) = refresh_chatgpt_token_if_needed(&mut config, &config_path).await {
+            tracing::warn!(
+                error = ?error,
+                "Could not refresh ChatGPT credentials; continuing startup with AI disabled"
+            );
+            *startup_status_cache.warning.lock().await = Some(
+                "ChatGPT could not be refreshed. AI features are disabled; reconnect ChatGPT in AI setup."
+                    .to_string(),
+            );
+            config.chatgpt = None;
+            true
+        } else {
+            false
+        }
+    } else {
+        false
+    };
 
     let app_service_name = app.config().identifier.clone();
     let apple_keychain_manager = AppleKeychainManager::new(&app_service_name);
@@ -286,7 +306,7 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
 
         let resource_root = app.path().resource_dir()?;
         let initialized_state = config::InitializedState {
-            local_inference: initialize_local_inference(&resource_root).await?,
+            local_inference: LocalInference::new(resource_root),
             sqlite_pool,
             apple_keychain_manager,
             smtp_relay_url: config.smtp_relay_url.clone(),
@@ -297,7 +317,11 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
                 provider: provider_from_imap_server(&config.imap_server_url),
             }],
             llm_agent: tokio::sync::RwLock::new(init_llm_agent(
-                config.llm_provider.map(|provider| provider.as_str().into()),
+                if chatgpt_refresh_failed {
+                    None
+                } else {
+                    config.llm_provider.map(|provider| provider.as_str().into())
+                },
                 &config.default_model,
                 config.access_token.as_deref().unwrap_or(&config.api_key),
                 None,
@@ -326,6 +350,12 @@ pub async fn finish_startup(
     startup_window: tauri::WebviewWindow,
 ) -> Result<(), Error> {
     let status = check_app_status(app.clone()).await?;
+    let startup_warning = app
+        .state::<StartupStatusCache>()
+        .warning
+        .lock()
+        .await
+        .clone();
     let destination = match status {
         InitStatus::Setup => {
             ensure_compact_startup_window(&app)?;
@@ -342,7 +372,15 @@ pub async fn finish_startup(
     };
 
     let navigation_script = if destination == "/" {
-        "window.location.replace('/');".to_string()
+        let mut script = String::new();
+        if let Some(warning) = startup_warning {
+            script.push_str(&format!(
+                "window.sessionStorage.setItem('riimail.startupWarning', {}); ",
+                serde_json::to_string(&warning)?
+            ));
+        }
+        script.push_str("window.location.replace('/');");
+        script
     } else {
         format!(
             "window.sessionStorage.setItem('riimail.startupStatusChecked', 'true'); \
