@@ -250,6 +250,62 @@ pub async fn worker(
                             *LOGGED_IN.lock().await = false;
                             let _ = logout_result_tx.send(());
                         }
+                        ImapCommand::SetEmailRead {
+                            mail_box,
+                            provider,
+                            uid,
+                            read,
+                            response_channel,
+                        } => {
+                            let result = async {
+                                let session = initialized_session
+                                    .clone()
+                                    .ok_or_else(|| Error::Other(
+                                        "SetEmailRead failed: IMAP session is not initialized".to_string(),
+                                    ))?;
+                                let pool_ref = pool.as_ref().ok_or_else(|| Error::Other(
+                                    "SetEmailRead failed: sqlite pool is not initialized".to_string(),
+                                ))?;
+
+                                crate::email_cache::set_email_read_on_server(
+                                    session,
+                                    &mail_box,
+                                    uid,
+                                    read,
+                                )
+                                .await?;
+
+                                let table_name = format!(
+                                    "{}_{}",
+                                    provider.as_ref(),
+                                    mail_box.as_ref()
+                                );
+                                crate::db::set_email_read(
+                                    pool_ref,
+                                    &table_name,
+                                    uid,
+                                    read,
+                                )
+                                .await?;
+
+                                Ok::<(), Error>(())
+                            }
+                            .await
+                            .map_err(|error| {
+                                tracing::warn!(
+                                    error = %error,
+                                    mailbox = mail_box.as_ref(),
+                                    uid,
+                                    read,
+                                    "Failed to synchronize email read state"
+                                );
+                                error.to_string()
+                            });
+
+                            if let Err(undelivered) = response_channel.send(result) {
+                                tracing::error!(?undelivered, "Failed sending read-state result");
+                            }
+                        }
                         ImapCommand::RefreshEmails{mail_box, provider, response_channel: login_result_tx, username, keychain_manager} => {
                             let Some(session) = initialized_session.clone() else {
                                 let message = "RefreshEmails failed: IMAP session is not initialized";

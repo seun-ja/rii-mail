@@ -40,6 +40,34 @@ fn imap_command_refresh_emails_variant_preserves_values() {
 }
 
 #[test]
+fn imap_command_set_email_read_variant_preserves_values() {
+    let (tx, _rx) = oneshot::channel::<Result<(), String>>();
+    let cmd = ImapCommand::SetEmailRead {
+        mail_box: MailBox::Inbox,
+        provider: Provider::Gmail,
+        uid: 42,
+        read: true,
+        response_channel: tx,
+    };
+
+    match cmd {
+        ImapCommand::SetEmailRead {
+            mail_box,
+            provider,
+            uid,
+            read,
+            ..
+        } => {
+            assert_eq!(mail_box.as_ref(), "INBOX");
+            assert_eq!(provider.as_ref(), "gmail");
+            assert_eq!(uid, 42);
+            assert!(read);
+        }
+        _ => panic!("expected set email read variant"),
+    }
+}
+
+#[test]
 fn imap_command_logout_variant_matches() {
     let cmd = ImapCommand::Logout;
     assert!(matches!(cmd, ImapCommand::Logout));

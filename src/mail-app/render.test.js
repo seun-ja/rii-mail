@@ -24,7 +24,7 @@ function createReaderElement() {
   };
 }
 
-test("renderReader shows escaped Cc recipients with the reader actions", () => {
+test("renderReader shows escaped Cc recipients without mutating read state", () => {
   const email = {
     id: "message-1",
     folder: "INBOX",
@@ -53,7 +53,7 @@ test("renderReader shows escaped Cc recipients with the reader actions", () => {
     mailReaderEl.innerHTML,
     /Bob &amp; Co &lt;bob@example\.com&gt;, carol@example\.com/,
   );
-  assert.equal(email.read, true);
+  assert.equal(email.read, false);
 });
 
 test("renderReader collapses long Cc recipient lists", () => {

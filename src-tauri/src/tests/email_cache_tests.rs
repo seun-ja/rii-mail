@@ -42,6 +42,7 @@ fn into_frontend_uses_text_body_when_available() {
         uid: Some(1),
         date: None,
         labels: Some(vec!["\\Inbox".to_string()]),
+        read: true,
         body: Some(EmailContent {
             subject: " Subject ".to_string(),
             sender_name: "Alice".to_string(),
@@ -70,6 +71,7 @@ fn into_frontend_uses_text_body_when_available() {
         Some(vec![("Bob".to_string(), "bob@example.com".to_string())])
     );
     assert!(!frontend.starred);
+    assert!(frontend.read);
     assert_eq!(frontend.time, "Unknown");
 }
 
@@ -136,6 +138,7 @@ fn into_frontend_falls_back_when_body_is_missing() {
         date: None,
         labels: None,
         body: None,
+        read: false,
     };
 
     let frontend = complete.into_frontend("id-2".to_string());

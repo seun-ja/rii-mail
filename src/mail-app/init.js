@@ -104,7 +104,57 @@ export function initializeMailApp({
 
   const sync = createSyncController(state, renderer, ui, invoke, storage);
   const cleanupListeners = [];
+  const readSyncRequests = new Map();
   let disposed = false;
+
+  function synchronizeEmailRead(email) {
+    if (!email || email.read) {
+      return Promise.resolve(false);
+    }
+
+    const pendingRequest = readSyncRequests.get(email.id);
+    if (pendingRequest) {
+      return pendingRequest;
+    }
+
+    const uid = Number(email.id.match(/-uid-(\d+)$/)?.[1]);
+    if (!Number.isSafeInteger(uid) || uid <= 0) {
+      return Promise.reject(
+        new Error("This email cannot be synchronized with the server."),
+      );
+    }
+
+    const mailbox =
+      String(email.folder || "").toLowerCase() === "sent" ? "Sent" : "INBOX";
+    const request = invoke("set_email_read", {
+      uid,
+      mailbox,
+      read: true,
+    })
+      .then(() => {
+        if (!disposed) {
+          email.read = true;
+          renderer.renderList();
+          saveCachedEmails(state, storage);
+        }
+        return true;
+      })
+      .finally(() => {
+        readSyncRequests.delete(email.id);
+      });
+
+    readSyncRequests.set(email.id, request);
+    return request;
+  }
+
+  function synchronizeOpenedEmail(email) {
+    void synchronizeEmailRead(email).catch((error) => {
+      if (disposed) return;
+      console.error("Could not synchronize opened email read state", error);
+      ui.showMessage("Could not mark the opened email as read.", true);
+    });
+  }
+
   const notifications = createNotificationController({
     state,
     dom,
@@ -113,6 +163,7 @@ export function initializeMailApp({
     invoke,
     listen,
     storage,
+    onEmailOpened: synchronizeOpenedEmail,
   });
   const renderList = renderer.renderList;
   renderer.renderList = () => {
@@ -329,6 +380,11 @@ export function initializeMailApp({
 
     state.selectedId = target.dataset.id;
     renderer.renderList();
+
+    const selected = getEmails(state).find(
+      (mail) => mail.id === state.selectedId,
+    );
+    synchronizeOpenedEmail(selected);
   });
 
   dom.searchInputEl.addEventListener("input", () => {
@@ -575,7 +631,7 @@ export function initializeMailApp({
     }
   });
 
-  dom.markReadBtnEl.addEventListener("click", () => {
+  dom.markReadBtnEl.addEventListener("click", async () => {
     const selected = getEmails(state).find(
       (mail) => mail.id === state.selectedId,
     );
@@ -585,10 +641,22 @@ export function initializeMailApp({
       return;
     }
 
-    selected.read = true;
-    renderer.renderList();
-    saveCachedEmails(state, storage);
-    ui.showMessage("Marked as read.");
+    if (selected.read) {
+      ui.showMessage("Email is already marked as read.");
+      return;
+    }
+
+    dom.markReadBtnEl.disabled = true;
+
+    try {
+      await synchronizeEmailRead(selected);
+      ui.showMessage("Marked as read and synchronized.");
+    } catch (error) {
+      console.error("Could not synchronize email read state", error);
+      ui.showMessage("Could not mark this email as read.", true);
+    } finally {
+      dom.markReadBtnEl.disabled = false;
+    }
   });
 
   dom.archiveBtnEl.addEventListener("click", () => {

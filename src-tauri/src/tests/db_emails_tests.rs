@@ -1,7 +1,7 @@
 use crate::{
     db::{
-        check_email_db_empty, cleanup, get_email_by_uid, get_emails, get_last_uid, init_db,
-        populate_storage, set_last_uid, Provider,
+        check_email_db_empty, cleanup, db_pool, get_email_by_uid, get_emails, get_last_uid,
+        init_db, populate_storage, set_last_uid, Provider,
     },
     email_cache::StandardEmail,
 };
@@ -18,6 +18,57 @@ fn unique_test_dir(prefix: &str) -> std::path::PathBuf {
 
 fn parse_date(value: &str) -> DateTime<FixedOffset> {
     DateTime::parse_from_rfc3339(value).expect("date should parse")
+}
+
+#[tokio::test]
+async fn init_db_adds_read_column_to_existing_provider_tables() {
+    let app_dir = unique_test_dir("legacy-read-migration");
+    let legacy_pool = db_pool(&app_dir, "emails.db")
+        .await
+        .expect("legacy database should open");
+
+    sqlx::query(
+        r#"
+        CREATE TABLE gmail_INBOX (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid INTEGER NOT NULL UNIQUE,
+            date INTEGER,
+            body BLOB,
+            labels TEXT
+        );
+        CREATE TABLE gmail_Sent (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid INTEGER NOT NULL UNIQUE,
+            date TEXT,
+            body BLOB,
+            labels TEXT
+        );
+        "#,
+    )
+    .execute(&legacy_pool)
+    .await
+    .expect("legacy tables should be created");
+    legacy_pool.close().await;
+
+    let migrated_pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
+        .await
+        .expect("legacy database should migrate");
+
+    for table in ["gmail_INBOX", "gmail_Sent"] {
+        let columns: Vec<(String,)> =
+            sqlx::query_as(&format!("SELECT name FROM pragma_table_info('{table}')"))
+                .fetch_all(&migrated_pool)
+                .await
+                .expect("table columns should be queryable");
+
+        assert!(
+            columns.iter().any(|column| column.0 == "read"),
+            "{table} should have a read column"
+        );
+    }
+
+    migrated_pool.close().await;
+    let _ = std::fs::remove_dir_all(app_dir);
 }
 
 #[tokio::test]

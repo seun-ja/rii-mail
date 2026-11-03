@@ -4,7 +4,8 @@ use std::{fs, path::PathBuf};
 
 pub use emails_db::{
     check_email_db_empty, cleanup, get_email_by_uid, get_emails, get_last_uid,
-    populate_inbox_folder_count, populate_sent_folder_count, populate_storage, set_last_uid,
+    populate_inbox_folder_count, populate_sent_folder_count, populate_storage, set_email_read,
+    set_last_uid,
 };
 
 use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
@@ -82,7 +83,8 @@ async fn create_table_for_provider(
             uid INTEGER NOT NULL UNIQUE,
             date INTEGER,
             body BLOB,
-            labels TEXT
+            labels TEXT,
+            read INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS {sent_table_name} (
@@ -90,10 +92,11 @@ async fn create_table_for_provider(
             uid INTEGER NOT NULL UNIQUE,
             date TEXT,
             body BLOB,
-            labels TEXT
+            labels TEXT,
+            read INTEGER NOT NULL DEFAULT 0
         );
 
-        CREATE TABLE total_emails (
+        CREATE TABLE IF NOT EXISTS total_emails (
             provider TEXT PRIMARY KEY,
             Sent INTEGER NOT NULL DEFAULT 0,
             INBOX INTEGER NOT NULL DEFAULT 0
@@ -118,6 +121,26 @@ async fn create_table_for_provider(
         "#
     );
     sqlx::query(&sql).execute(pool).await?;
+
+    ensure_read_column(pool, &inbox_table_name).await?;
+    ensure_read_column(pool, &sent_table_name).await?;
+
+    Ok(())
+}
+
+async fn ensure_read_column(pool: &SqlitePool, table_name: &str) -> Result<(), sqlx::Error> {
+    let columns: Vec<(i64, String, String, i64, Option<String>, i64)> =
+        sqlx::query_as(&format!("PRAGMA table_info({table_name})"))
+            .fetch_all(pool)
+            .await?;
+
+    if !columns.iter().any(|column| column.1 == "read") {
+        sqlx::query(&format!(
+            "ALTER TABLE {table_name} ADD COLUMN read INTEGER NOT NULL DEFAULT 0"
+        ))
+        .execute(pool)
+        .await?;
+    }
 
     Ok(())
 }

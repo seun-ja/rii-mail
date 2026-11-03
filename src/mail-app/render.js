@@ -87,8 +87,6 @@ export function createRenderer(state, dom, openEmailLink) {
       return;
     }
 
-    selected.read = true;
-
     const hasHtmlBody =
       typeof selected.htmlBody === "string" &&
       selected.htmlBody.trim().length > 0;

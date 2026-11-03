@@ -120,6 +120,35 @@ async fn select_mailbox(
 }
 
 #[tracing::instrument(
+    name = "imap.email.set_read",
+    skip(session),
+    fields(mailbox = mailbox.as_ref(), uid, read),
+    err
+)]
+pub async fn set_email_read_on_server(
+    session: SharedImapSession,
+    mailbox: &MailBox,
+    uid: u32,
+    read: bool,
+) -> Result<(), Error> {
+    let mut session = session.lock().await;
+    select_mailbox(&mut session, mailbox).await?;
+
+    let flag_operation = if read {
+        "+FLAGS.SILENT (\\Seen)"
+    } else {
+        "-FLAGS.SILENT (\\Seen)"
+    };
+    let mut updates = session.uid_store(uid.to_string(), flag_operation).await?;
+
+    while let Some(update) = updates.next().await {
+        update?;
+    }
+
+    Ok(())
+}
+
+#[tracing::instrument(
     name = "imap.sync.initial",
     skip_all,
     fields(provider = provider.as_ref())

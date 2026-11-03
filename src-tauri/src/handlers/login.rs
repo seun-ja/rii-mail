@@ -136,7 +136,7 @@ async fn handle_initialization(
 ) -> Result<(InitializedState, Provider), Error> {
     let provider = provider_from_imap_server(&config.imap_server_url);
 
-    let sqlite_pool = db::db_pool(&data_dir, &config.sqlite_db).await?;
+    let sqlite_pool = db::init_db(&data_dir, &config.sqlite_db, &provider).await?;
 
     let apple_keychain_manager = AppleKeychainManager::new(app_service_name);
 

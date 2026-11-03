@@ -22,6 +22,13 @@ pub enum ImapCommand {
         username: String,
         keychain_manager: AppleKeychainManager,
     },
+    SetEmailRead {
+        mail_box: db::MailBox,
+        provider: db::Provider,
+        uid: u32,
+        read: bool,
+        response_channel: tokio::sync::oneshot::Sender<Result<(), String>>,
+    },
 }
 
 #[tracing::instrument(
