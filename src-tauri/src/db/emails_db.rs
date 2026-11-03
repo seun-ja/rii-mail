@@ -15,6 +15,7 @@ struct DbEmail {
     pub date: Option<DateTime<FixedOffset>>,
     pub body: Option<Vec<u8>>,
     pub labels: Option<String>,
+    pub read: bool,
 }
 
 #[tracing::instrument(
@@ -99,7 +100,7 @@ pub async fn get_emails(
     let offset = i64::from(min_range);
 
     let rows: Vec<DbEmail> = sqlx::query_as::<_, DbEmail>(&format!(
-        "SELECT uid, date, body, labels FROM {} ORDER BY datetime(date) DESC, rowid DESC LIMIT ? OFFSET ?",
+        "SELECT uid, date, body, labels, read FROM {} ORDER BY datetime(date) DESC, rowid DESC LIMIT ? OFFSET ?",
         table_name
     ))
     .bind(limit)
@@ -122,7 +123,7 @@ pub async fn get_email_by_uid(
     uid: u32,
 ) -> Result<Option<CompleteEmail>, Error> {
     let row = sqlx::query_as::<_, DbEmail>(&format!(
-        "SELECT uid, date, body, labels FROM {} WHERE uid = ?",
+        "SELECT uid, date, body, labels, read FROM {} WHERE uid = ?",
         table_name
     ))
     .bind(i64::from(uid))
@@ -132,8 +133,30 @@ pub async fn get_email_by_uid(
     Ok(row.map(CompleteEmail::from))
 }
 
+#[tracing::instrument(
+    name = "db.email.set_read",
+    skip(pool),
+    fields(table = table_name, uid, read),
+    err
+)]
+pub async fn set_email_read(
+    pool: &SqlitePool,
+    table_name: &str,
+    uid: u32,
+    read: bool,
+) -> Result<(), Error> {
+    sqlx::query(&format!("UPDATE {table_name} SET read = ? WHERE uid = ?"))
+        .bind(read)
+        .bind(i64::from(uid))
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
 impl From<DbEmail> for CompleteEmail {
     fn from(row: DbEmail) -> Self {
+        let read = row.read;
         let labels = row.labels.and_then(|s| match serde_json::from_str(&s) {
             Ok(parsed) => Some(parsed),
             Err(err) => {
@@ -142,13 +165,15 @@ impl From<DbEmail> for CompleteEmail {
             }
         });
 
-        StandardEmail {
+        let mut email: CompleteEmail = StandardEmail {
             uid: u32::try_from(row.uid).ok(),
             date: row.date,
             body: row.body,
             labels,
         }
-        .into()
+        .into();
+        email.read = read;
+        email
     }
 }
 

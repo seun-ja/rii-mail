@@ -17,6 +17,7 @@ export function createNotificationController({
   invoke,
   listen,
   storage,
+  onEmailOpened,
 }) {
   let disposed = false;
   let ready = false;
@@ -69,6 +70,7 @@ export function createNotificationController({
     // renderList also renders the reader and updates counts.
     renderer.renderList();
     saveCachedEmails(state, storage);
+    onEmailOpened?.(openedEmail);
   }
 
   async function drain() {

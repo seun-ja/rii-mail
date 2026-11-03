@@ -10,7 +10,7 @@ use tokio::{net::TcpStream, sync::Mutex};
 
 mod fetcher;
 
-pub use fetcher::{fetch_emails, fetch_latest};
+pub use fetcher::{fetch_emails, fetch_latest, set_email_read_on_server};
 #[cfg(test)]
 pub(crate) use fetcher::{
     incremental_uid_search_query, mailbox_name_matches, uid_vec_to_set, FetchResult,
@@ -77,6 +77,7 @@ impl From<StandardEmail> for CompleteEmail {
             date: value.date.or(parsed_date),
             body,
             labels: value.labels,
+            read: false,
         }
     }
 }
@@ -87,6 +88,8 @@ pub struct CompleteEmail {
     pub date: Option<DateTime<FixedOffset>>,
     pub body: Option<EmailContent>,
     pub labels: Option<Vec<String>>,
+    #[serde(default)]
+    pub read: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -228,7 +231,7 @@ impl CompleteEmail {
             html_body,
             time,
             starred,
-            read: false,
+            read: self.read,
         }
     }
 }

@@ -270,7 +270,8 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
     if let Ok(password) = apple_keychain_manager.retrieve_password(&username) {
         let imap_client_channel_tx = app.state::<ReturningUserImapClientChannelTx>();
 
-        let sqlite_pool = db::db_pool(&data_dir, &config.sqlite_db).await?;
+        let provider = provider_from_imap_server(&config.imap_server_url);
+        let sqlite_pool = db::init_db(&data_dir, &config.sqlite_db, &provider).await?;
 
         let credential = Credentials::new(username.clone(), password.clone());
         let smtp_transport_client = smtp_transport_client(&config.smtp_relay_url, credential)?;
@@ -314,7 +315,7 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
             accounts: vec![Account {
                 name: None,
                 email: username,
-                provider: provider_from_imap_server(&config.imap_server_url),
+                provider,
             }],
             llm_agent: tokio::sync::RwLock::new(init_llm_agent(
                 if chatgpt_refresh_failed {

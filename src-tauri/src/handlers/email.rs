@@ -109,6 +109,34 @@ pub async fn refresh_emails_handler(
     }
 }
 
+#[tauri::command]
+#[tracing::instrument(name = "command.email.set_read", skip(app), fields(uid, read), err)]
+pub async fn set_email_read(
+    app: tauri::AppHandle,
+    uid: u32,
+    mailbox: String,
+    read: bool,
+) -> Result<(), Error> {
+    let state = app.state::<ArcSwap<AppState>>();
+    let current_state = state.load();
+    let initialized = current_state.state();
+
+    let imap_cmd_channel_tx = app.state::<UnboundedSender<ImapCommand>>();
+    let (response_tx, response_rx) = oneshot::channel::<Result<(), String>>();
+
+    imap_cmd_channel_tx.send(ImapCommand::SetEmailRead {
+        mail_box: MailBox::from(mailbox),
+        provider: initialized.accounts[0].provider.clone(),
+        uid,
+        read,
+        response_channel: response_tx,
+    })?;
+
+    response_rx
+        .await?
+        .map_err(|message| Error::Other(format!("Failed to synchronize read state: {message}")))
+}
+
 pub(crate) async fn get_emails_as_front_end_from_pool(
     provider: Provider,
     mailbox: MailBox,

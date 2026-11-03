@@ -13,6 +13,7 @@ use crate::config::ImapClientConfig;
 use crate::handlers::{
     email_generator, inbox_email_populated, inbox_intial_email_populated, is_llm_enabled,
     refresh_emails_handler, send_email, sent_email_populated, sent_intial_email_populated,
+    set_email_read,
 };
 use crate::imap::ImapCommand;
 use crate::workers::{worker, FetchManager};
@@ -247,6 +248,7 @@ pub async fn run() {
             rater,
             refresh_emails_handler,
             send_email,
+            set_email_read,
             sent_email_populated,
             sent_intial_email_populated,
         ])
