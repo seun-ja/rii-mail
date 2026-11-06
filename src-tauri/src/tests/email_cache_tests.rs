@@ -90,6 +90,7 @@ fn email_content_extracts_all_cc_addresses() {
         date: None,
         body: Some(raw_message.as_bytes().to_vec()),
         labels: None,
+        read: false,
     });
 
     let content = complete.body.expect("message should parse");
@@ -118,6 +119,7 @@ fn email_content_flattens_grouped_cc_addresses() {
         date: None,
         body: Some(raw_message.as_bytes().to_vec()),
         labels: None,
+        read: false,
     });
 
     let content = complete.body.expect("message should parse");

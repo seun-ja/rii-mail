@@ -192,3 +192,31 @@ test("renderReader only opens safe messages from its isolated HTML frame", () =>
   renderer.dispose();
   assert.equal(listeners.size, 0, "disposing the renderer removes its listener");
 });
+
+test("updateEmailReadState unbolds only the matching list item", () => {
+  const email = { id: "message-target", read: false };
+  const reader = createReaderElement();
+  reader.innerHTML = "reader content must remain mounted";
+  const toggles = [];
+  const item = {
+    dataset: { id: email.id },
+    classList: {
+      toggle(className, force) {
+        toggles.push({ className, force });
+      },
+    },
+  };
+  const renderer = createRenderer(createState(email), {
+    mailReaderEl: reader,
+    mailListEl: {
+      querySelectorAll() {
+        return [{ dataset: { id: "other-message" } }, item];
+      },
+    },
+  });
+
+  assert.equal(renderer.updateEmailReadState(email.id, true), true);
+  assert.deepEqual(toggles, [{ className: "unread", force: false }]);
+  assert.equal(reader.innerHTML, "reader content must remain mounted");
+  assert.equal(renderer.updateEmailReadState("missing-message", true), false);
+});

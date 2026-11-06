@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use async_imap::types::Fetch;
+use async_imap::types::{Fetch, Flag};
 use async_imap::Session;
 use async_native_tls::TlsStream;
 use chrono::{DateTime, FixedOffset};
@@ -39,6 +39,7 @@ pub struct StandardEmail {
     pub date: Option<DateTime<FixedOffset>>,
     pub body: Option<Vec<u8>>,
     pub labels: Option<Vec<String>>,
+    pub read: bool,
 }
 
 impl From<Fetch> for StandardEmail {
@@ -52,12 +53,14 @@ impl From<Fetch> for StandardEmail {
         let labels = fetch
             .gmail_labels()
             .map(|labels| labels.iter().map(|s| s.to_string()).collect());
+        let read = fetch.flags().any(|flag| flag == Flag::Seen);
 
         Self {
             uid: fetch.uid,
             date,
             body,
             labels,
+            read,
         }
     }
 }
@@ -77,7 +80,7 @@ impl From<StandardEmail> for CompleteEmail {
             date: value.date.or(parsed_date),
             body,
             labels: value.labels,
-            read: false,
+            read: value.read,
         }
     }
 }

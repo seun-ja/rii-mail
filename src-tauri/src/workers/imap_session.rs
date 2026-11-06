@@ -25,6 +25,20 @@ pub(crate) fn is_imap_connection_error(error: &Error) -> bool {
     )
 }
 
+async fn reconnect_imap_session(
+    username: &str,
+    keychain_manager: &auth::AppleKeychainManager,
+    imap_endpoint: Option<&(String, u16)>,
+) -> Result<SharedImapSession, Error> {
+    let password = keychain_manager.retrieve_password(username)?;
+    let (server, port) = imap_endpoint
+        .ok_or_else(|| Error::Other("IMAP endpoint is not initialized".to_string()))?;
+    let client = init_imap_client(server, *port).await?;
+    let session = auth::login(username, &password, Some(client)).await?;
+
+    Ok(Arc::new(Mutex::new(session)))
+}
+
 pub async fn worker(
     app: tauri::AppHandle,
     mut imap_client_channel_rx: UnboundedReceiver<ImapClientConfig>,
@@ -256,6 +270,8 @@ pub async fn worker(
                             uid,
                             read,
                             response_channel,
+                            username,
+                            keychain_manager,
                         } => {
                             let result = async {
                                 let session = initialized_session
@@ -267,13 +283,39 @@ pub async fn worker(
                                     "SetEmailRead failed: sqlite pool is not initialized".to_string(),
                                 ))?;
 
-                                crate::email_cache::set_email_read_on_server(
+                                let server_result = crate::email_cache::set_email_read_on_server(
                                     session,
                                     &mail_box,
                                     uid,
                                     read,
                                 )
-                                .await?;
+                                .await;
+
+                                match server_result {
+                                    Err(error) if is_imap_connection_error(&error) => {
+                                        tracing::warn!(
+                                            error = %error,
+                                            mailbox = mail_box.as_ref(),
+                                            uid,
+                                            "Unable to synchronize read state; reconnecting IMAP session"
+                                        );
+                                        let new_session = reconnect_imap_session(
+                                            &username,
+                                            &keychain_manager,
+                                            imap_endpoint.as_ref(),
+                                        )
+                                        .await?;
+                                        initialized_session = Some(new_session.clone());
+                                        crate::email_cache::set_email_read_on_server(
+                                            new_session,
+                                            &mail_box,
+                                            uid,
+                                            read,
+                                        )
+                                        .await?;
+                                    }
+                                    result => result?,
+                                }
 
                                 let table_name = format!(
                                     "{}_{}",
@@ -339,50 +381,33 @@ pub async fn worker(
                                 Err(err) if is_imap_connection_error(&err) => {
                                     tracing::warn!(error = %err, "Unable to fetch latest email; reconnecting IMAP session");
 
-                                    match keychain_manager.retrieve_password(&username) {
-                                        Ok(password) => {
-                                            let reconnect_result = match imap_endpoint.as_ref() {
-                                                Some((server, port)) => {
-                                                    match init_imap_client(server, *port).await {
-                                                        Ok(client) => auth::login(
-                                                            &username,
-                                                            &password,
-                                                            Some(client),
-                                                        )
-                                                        .await,
-                                                        Err(reconnect_err) => Err(reconnect_err),
-                                                    }
-                                                }
-                                                None => Err(Error::Other(
-                                                    "IMAP endpoint is not initialized".to_string(),
-                                                )),
-                                            };
+                                    match reconnect_imap_session(
+                                        &username,
+                                        &keychain_manager,
+                                        imap_endpoint.as_ref(),
+                                    )
+                                    .await
+                                    {
+                                        Ok(new_session) => {
+                                            initialized_session = Some(new_session.clone());
 
-                                            match reconnect_result {
-                                                Ok(new_session) => {
-                                                    let new_session = Arc::new(Mutex::new(new_session));
-                                                    initialized_session = Some(new_session.clone());
+                                            let retry_refresh_token = FETCH_MANAGER
+                                                .refresh_token
+                                                .lock()
+                                                .await
+                                                .child_token();
 
-                                                    let retry_refresh_token = FETCH_MANAGER
-                                                        .refresh_token
-                                                        .lock()
-                                                        .await
-                                                        .child_token();
-
-                                                    crate::email_cache::fetch_latest(
-                                                        app.clone(),
-                                                        new_session,
-                                                        pool_ref,
-                                                        &mail_box,
-                                                        &provider,
-                                                        retry_refresh_token,
-                                                    )
-                                                    .await
-                                                }
-                                                Err(retry_err) => Err(retry_err),
-                                            }
+                                            crate::email_cache::fetch_latest(
+                                                app.clone(),
+                                                new_session,
+                                                pool_ref,
+                                                &mail_box,
+                                                &provider,
+                                                retry_refresh_token,
+                                            )
+                                            .await
                                         }
-                                        Err(keychain_err) => Err(keychain_err),
+                                        Err(retry_err) => Err(retry_err),
                                     }
                                 }
                                 result => result,

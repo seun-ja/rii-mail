@@ -34,6 +34,7 @@ async fn get_emails_as_front_end_from_pool_maps_rows_to_frontend_shape() {
                 b"Subject: Welcome\r\nFrom: alice@example.com\r\n\r\nHello from test".to_vec(),
             ),
             labels: Some(vec!["\\Inbox".to_string()]),
+            read: false,
         }],
         "gmail_INBOX",
     )
@@ -67,6 +68,7 @@ async fn database_email_ids_remain_stable_when_a_newer_email_is_inserted() {
             date: Some(parse_date("2026-01-03T09:00:00+00:00")),
             body: Some(b"Subject: Existing\r\nFrom: old@example.com\r\n\r\nOld".to_vec()),
             labels: Some(vec!["\\Inbox".to_string()]),
+            read: false,
         }],
         "gmail_INBOX",
     )
@@ -84,6 +86,7 @@ async fn database_email_ids_remain_stable_when_a_newer_email_is_inserted() {
             date: Some(parse_date("2026-01-04T09:00:00+00:00")),
             body: Some(b"Subject: New\r\nFrom: new@example.com\r\n\r\nNew".to_vec()),
             labels: Some(vec!["\\Inbox".to_string()]),
+            read: false,
         }],
         "gmail_INBOX",
     )

@@ -28,6 +28,8 @@ pub enum ImapCommand {
         uid: u32,
         read: bool,
         response_channel: tokio::sync::oneshot::Sender<Result<(), String>>,
+        username: String,
+        keychain_manager: AppleKeychainManager,
     },
 }
 

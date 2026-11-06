@@ -130,6 +130,8 @@ pub async fn set_email_read(
         uid,
         read,
         response_channel: response_tx,
+        username: initialized.accounts[0].email.clone(),
+        keychain_manager: initialized.apple_keychain_manager.clone(),
     })?;
 
     response_rx

@@ -54,6 +54,7 @@ pub async fn populate_storage(
                 email.date,
                 email.body,
                 labels,
+                email.read,
             ))
         })
         .collect::<Result<Vec<_>, serde_json::Error>>()?;
@@ -61,16 +62,18 @@ pub async fn populate_storage(
     let mut tx = pool.begin().await?;
 
     let mut query_builder: QueryBuilder<'_, sqlx::Sqlite> = QueryBuilder::new(&format!(
-        "INSERT OR IGNORE INTO {} (uid, date, body, labels) ",
+        "INSERT INTO {} (uid, date, body, labels, read) ",
         table_name
     ));
 
-    query_builder.push_values(emails, |mut b, (uid, date, body, labels)| {
+    query_builder.push_values(emails, |mut b, (uid, date, body, labels, read)| {
         b.push_bind(uid)
             .push_bind(date)
             .push_bind(body)
-            .push_bind(labels);
+            .push_bind(labels)
+            .push_bind(read);
     });
+    query_builder.push(" ON CONFLICT(uid) DO UPDATE SET read = excluded.read");
 
     query_builder.build().execute(&mut *tx).await?;
 
@@ -154,6 +157,41 @@ pub async fn set_email_read(
     Ok(())
 }
 
+#[tracing::instrument(
+    name = "db.email.sync_read_states",
+    skip(pool, read_states),
+    fields(table = table_name, email_count = read_states.len()),
+    err
+)]
+pub async fn set_email_read_states(
+    pool: &SqlitePool,
+    table_name: &str,
+    read_states: &[(u32, bool)],
+) -> Result<Vec<(u32, bool)>, Error> {
+    if read_states.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut tx = pool.begin().await?;
+    let query = format!("UPDATE {table_name} SET read = ? WHERE uid = ? AND read != ?");
+    let mut changed = Vec::new();
+
+    for (uid, read) in read_states {
+        let result = sqlx::query(&query)
+            .bind(read)
+            .bind(i64::from(*uid))
+            .bind(read)
+            .execute(&mut *tx)
+            .await?;
+        if result.rows_affected() > 0 {
+            changed.push((*uid, *read));
+        }
+    }
+
+    tx.commit().await?;
+    Ok(changed)
+}
+
 impl From<DbEmail> for CompleteEmail {
     fn from(row: DbEmail) -> Self {
         let read = row.read;
@@ -165,15 +203,14 @@ impl From<DbEmail> for CompleteEmail {
             }
         });
 
-        let mut email: CompleteEmail = StandardEmail {
+        StandardEmail {
             uid: u32::try_from(row.uid).ok(),
             date: row.date,
             body: row.body,
             labels,
+            read,
         }
-        .into();
-        email.read = read;
-        email
+        .into()
     }
 }
 

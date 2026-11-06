@@ -1,3 +1,4 @@
+import { getErrorMessage } from "../shared/errors.js";
 import {
   AUTO_BOOTSTRAP_REFRESH_INTERVAL_MS,
   AUTO_BOOTSTRAP_REFRESH_MAX,
@@ -23,6 +24,7 @@ export function createSyncController(
   ui,
   invoke,
   storage = window.localStorage,
+  { reconcileEmails = (emails) => emails } = {},
 ) {
   let syncGeneration = 0;
   let mailboxRefreshInProgress = false;
@@ -32,12 +34,14 @@ export function createSyncController(
   function normalizeFetchPayload(fetched) {
     if (fetched && typeof fetched === "object" && !Array.isArray(fetched)) {
       return {
-        emails: Array.isArray(fetched.emails) ? fetched.emails : [],
+        emails: reconcileEmails(
+          Array.isArray(fetched.emails) ? fetched.emails : [],
+        ),
       };
     }
 
     return {
-      emails: Array.isArray(fetched) ? fetched : [],
+      emails: reconcileEmails(Array.isArray(fetched) ? fetched : []),
     };
   }
 
@@ -207,11 +211,13 @@ export function createSyncController(
         pagination.hasMoreEmails = false;
       }
     } catch (error) {
-      const message = error?.message || error?.msg || String(error);
       if (getEmails(state).length > 0) {
         ui.showMessage("Showing cached emails while reconnecting.");
       } else {
-        ui.showMessage(`Failed to load emails: ${message}`, true);
+        ui.showMessage(
+          `Failed to load emails: ${getErrorMessage(error)}`,
+          true,
+        );
       }
     } finally {
       state.isLoadingEmails = false;

@@ -76,13 +76,17 @@ test("uses the raw score for boundaries before formatting it", () => {
   );
 });
 
-test("formats backend errors without changing their string representation", () => {
+test("formats backend errors with a useful message", () => {
   assert.equal(
     formatSpamRatingError(new Error("backend unavailable")),
-    "Failed to check spam rating: Error: backend unavailable",
+    "Failed to check spam rating: backend unavailable",
   );
   assert.equal(
     formatSpamRatingError("request timed out"),
     "Failed to check spam rating: request timed out",
+  );
+  assert.equal(
+    formatSpamRatingError({ kind: "LLM", message: "model failed to load" }),
+    "Failed to check spam rating: model failed to load",
   );
 });

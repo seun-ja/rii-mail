@@ -1,7 +1,7 @@
 use crate::{
     db::{
         check_email_db_empty, cleanup, db_pool, get_email_by_uid, get_emails, get_last_uid,
-        init_db, populate_storage, set_last_uid, Provider,
+        init_db, populate_storage, set_email_read_states, set_last_uid, Provider,
     },
     email_cache::StandardEmail,
 };
@@ -86,18 +86,21 @@ async fn populate_storage_and_get_emails_work_with_pagination() {
             date: Some(parse_date("2026-01-01T09:00:00+00:00")),
             body: Some(b"Subject: Older\r\nFrom: old@example.com\r\n\r\nBody".to_vec()),
             labels: Some(vec!["\\Inbox".to_string()]),
+            read: false,
         },
         StandardEmail {
             uid: Some(3),
             date: Some(parse_date("2026-01-03T09:00:00+00:00")),
             body: Some(b"Subject: Newest\r\nFrom: newest@example.com\r\n\r\nBody".to_vec()),
             labels: Some(vec!["\\Inbox".to_string()]),
+            read: false,
         },
         StandardEmail {
             uid: Some(2),
             date: Some(parse_date("2026-01-02T09:00:00+00:00")),
             body: Some(b"Subject: Middle\r\nFrom: middle@example.com\r\n\r\nBody".to_vec()),
             labels: Some(vec!["\\Inbox".to_string()]),
+            read: false,
         },
     ];
 
@@ -148,12 +151,14 @@ async fn get_email_by_uid_returns_exact_match_not_newest_email() {
                 date: Some(requested_date),
                 body: Some(b"Subject: Requested\r\nFrom: old@example.com\r\n\r\nBody".to_vec()),
                 labels: None,
+                read: false,
             },
             StandardEmail {
                 uid: Some(42),
                 date: Some(parse_date("2026-01-02T09:00:00+00:00")),
                 body: Some(b"Subject: Newest\r\nFrom: new@example.com\r\n\r\nBody".to_vec()),
                 labels: None,
+                read: false,
             },
         ],
         table,
@@ -196,6 +201,7 @@ async fn get_email_by_uid_returns_none_for_missing_uid() {
             date: None,
             body: None,
             labels: None,
+            read: false,
         }],
         "gmail_INBOX",
     )
@@ -225,6 +231,7 @@ async fn get_email_by_uid_roundtrips_u32_max() {
             date: None,
             body: None,
             labels: None,
+            read: false,
         }],
         "gmail_INBOX",
     )
@@ -264,6 +271,7 @@ async fn get_email_by_uid_decodes_valid_labels() {
             date: None,
             body: None,
             labels: Some(labels.clone()),
+            read: false,
         }],
         "gmail_INBOX",
     )
@@ -294,6 +302,7 @@ async fn get_email_by_uid_treats_malformed_labels_as_none() {
             date: None,
             body: Some(b"Subject: Still readable\r\n\r\nBody".to_vec()),
             labels: None,
+            read: false,
         }],
         "gmail_INBOX",
     )
@@ -347,7 +356,55 @@ async fn populate_storage_with_empty_input_is_noop() {
 }
 
 #[tokio::test]
-async fn populate_storage_ignores_duplicate_uids() {
+async fn set_email_read_states_reports_only_changed_existing_rows() {
+    let app_dir = unique_test_dir("emails-read-state-batch");
+    let pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
+        .await
+        .expect("db should initialize");
+    let table = "gmail_INBOX";
+
+    populate_storage(
+        &pool,
+        vec![StandardEmail {
+            uid: Some(10),
+            date: None,
+            body: None,
+            labels: None,
+            read: false,
+        }],
+        table,
+    )
+    .await
+    .expect("email insert should succeed");
+
+    let changed = set_email_read_states(&pool, table, &[(10, true), (999, true)])
+        .await
+        .expect("read-state update should succeed");
+    assert_eq!(changed, vec![(10, true)]);
+    assert!(
+        get_email_by_uid(&pool, table, 10)
+            .await
+            .expect("read-state lookup should succeed")
+            .expect("email should exist")
+            .read
+    );
+
+    let unchanged = set_email_read_states(&pool, table, &[(10, true)])
+        .await
+        .expect("replayed read state should succeed");
+    assert!(unchanged.is_empty());
+
+    let changed = set_email_read_states(&pool, table, &[(10, false)])
+        .await
+        .expect("unread-state update should succeed");
+    assert_eq!(changed, vec![(10, false)]);
+
+    pool.close().await;
+    let _ = std::fs::remove_dir_all(app_dir);
+}
+
+#[tokio::test]
+async fn populate_storage_reconciles_read_state_without_replacing_existing_messages() {
     let app_dir = unique_test_dir("emails-dup-uids");
     let pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
         .await
@@ -360,6 +417,7 @@ async fn populate_storage_ignores_duplicate_uids() {
         date: Some(parse_date("2026-01-10T09:00:00+00:00")),
         body: Some(b"Subject: First\r\nFrom: first@example.com\r\n\r\nBody".to_vec()),
         labels: Some(vec!["\\Inbox".to_string()]),
+        read: false,
     }];
 
     let duplicate_insert = vec![StandardEmail {
@@ -367,6 +425,7 @@ async fn populate_storage_ignores_duplicate_uids() {
         date: Some(parse_date("2026-01-11T09:00:00+00:00")),
         body: Some(b"Subject: Duplicate\r\nFrom: dup@example.com\r\n\r\nBody".to_vec()),
         labels: Some(vec!["\\Inbox".to_string()]),
+        read: true,
     }];
 
     populate_storage(&pool, first_insert, table)
@@ -382,6 +441,40 @@ async fn populate_storage_ignores_duplicate_uids() {
         .expect("count query should succeed");
 
     assert_eq!(count.0, 1);
+
+    let updated = get_email_by_uid(&pool, table, 10)
+        .await
+        .expect("read-state lookup should succeed")
+        .expect("existing email should remain available");
+    assert!(updated.read);
+    assert_eq!(
+        updated.body.expect("body should remain available").subject,
+        "First"
+    );
+
+    populate_storage(
+        &pool,
+        vec![StandardEmail {
+            uid: Some(10),
+            date: None,
+            body: None,
+            labels: None,
+            read: false,
+        }],
+        table,
+    )
+    .await
+    .expect("server unread state should update the existing email");
+
+    let updated = get_email_by_uid(&pool, table, 10)
+        .await
+        .expect("read-state lookup should succeed")
+        .expect("existing email should remain available");
+    assert!(!updated.read);
+    assert_eq!(
+        updated.body.expect("body should remain available").subject,
+        "First"
+    );
 
     pool.close().await;
     let _ = std::fs::remove_dir_all(app_dir);
@@ -402,12 +495,14 @@ async fn populate_storage_keeps_all_unique_uids_when_replayed() {
             date: Some(parse_date("2026-02-01T09:00:00+00:00")),
             body: Some(b"Subject: One\r\nFrom: one@example.com\r\n\r\nBody".to_vec()),
             labels: None,
+            read: false,
         },
         StandardEmail {
             uid: Some(2),
             date: Some(parse_date("2026-02-02T09:00:00+00:00")),
             body: Some(b"Subject: Two\r\nFrom: two@example.com\r\n\r\nBody".to_vec()),
             labels: None,
+            read: false,
         },
     ];
 
@@ -417,18 +512,21 @@ async fn populate_storage_keeps_all_unique_uids_when_replayed() {
             date: Some(parse_date("2026-02-01T09:00:00+00:00")),
             body: Some(b"Subject: One\r\nFrom: one@example.com\r\n\r\nBody".to_vec()),
             labels: None,
+            read: false,
         },
         StandardEmail {
             uid: Some(2),
             date: Some(parse_date("2026-02-02T09:00:00+00:00")),
             body: Some(b"Subject: Two\r\nFrom: two@example.com\r\n\r\nBody".to_vec()),
             labels: None,
+            read: false,
         },
         StandardEmail {
             uid: Some(3),
             date: Some(parse_date("2026-02-03T09:00:00+00:00")),
             body: Some(b"Subject: Three\r\nFrom: three@example.com\r\n\r\nBody".to_vec()),
             labels: None,
+            read: false,
         },
     ];
 
@@ -468,6 +566,7 @@ async fn check_email_db_empty_reflects_table_state() {
             date: Some(parse_date("2026-01-01T09:00:00+00:00")),
             body: Some(b"Subject: One\r\nFrom: one@example.com\r\n\r\nBody".to_vec()),
             labels: None,
+            read: false,
         }],
         "yahoo_INBOX",
     )
@@ -549,6 +648,7 @@ async fn populate_storage_writes_none_labels_as_sql_null_and_reads_them_back_as_
             date: Some(parse_date("2026-03-01T09:00:00+00:00")),
             body: None,
             labels: None,
+            read: false,
         }],
         "gmail_INBOX",
     )
@@ -593,6 +693,7 @@ async fn populate_storage_serializes_special_labels_as_json_and_roundtrips_exact
             date: Some(parse_date("2026-03-02T09:00:00+00:00")),
             body: None,
             labels: Some(labels.clone()),
+            read: false,
         }],
         "gmail_INBOX",
     )
@@ -635,12 +736,14 @@ async fn populate_storage_handles_mixed_labelled_and_unlabelled_batch() {
                 date: Some(parse_date("2026-03-01T09:00:00+00:00")),
                 body: None,
                 labels: Some(labels.clone()),
+                read: false,
             },
             StandardEmail {
                 uid: Some(202),
                 date: Some(parse_date("2026-03-02T09:00:00+00:00")),
                 body: None,
                 labels: None,
+                read: false,
             },
         ],
         "yahoo_INBOX",
@@ -686,6 +789,7 @@ async fn populate_storage_defaults_missing_uid_to_zero() {
             date: Some(parse_date("2026-03-03T09:00:00+00:00")),
             body: None,
             labels: Some(vec!["No UID".to_string()]),
+            read: false,
         }],
         "gmail_INBOX",
     )
@@ -716,6 +820,7 @@ async fn get_emails_treats_malformed_stored_label_json_as_none() {
             date: Some(parse_date("2026-03-04T09:00:00+00:00")),
             body: None,
             labels: Some(vec!["Initially valid".to_string()]),
+            read: false,
         }],
         "gmail_INBOX",
     )
