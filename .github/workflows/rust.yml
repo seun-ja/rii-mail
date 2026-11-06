@@ -44,7 +44,9 @@ jobs:
         run: cargo fmt -- --check
 
   verify:
-    runs-on: ubuntu-latest
+    # Pin the native build image because PyO3 targets Python 3.12 and newer
+    # ubuntu-latest images may no longer package libpython3.12-dev.
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     defaults:
       run:
