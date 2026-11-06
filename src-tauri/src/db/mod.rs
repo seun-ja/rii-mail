@@ -5,7 +5,7 @@ use std::{fs, path::PathBuf};
 pub use emails_db::{
     check_email_db_empty, cleanup, get_email_by_uid, get_emails, get_last_uid,
     populate_inbox_folder_count, populate_sent_folder_count, populate_storage, set_email_read,
-    set_last_uid,
+    set_email_read_states, set_last_uid,
 };
 
 use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};

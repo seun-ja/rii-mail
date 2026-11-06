@@ -48,6 +48,8 @@ fn imap_command_set_email_read_variant_preserves_values() {
         uid: 42,
         read: true,
         response_channel: tx,
+        username: "user@example.com".to_string(),
+        keychain_manager: AppleKeychainManager::new("test"),
     };
 
     match cmd {
@@ -56,12 +58,14 @@ fn imap_command_set_email_read_variant_preserves_values() {
             provider,
             uid,
             read,
+            username,
             ..
         } => {
             assert_eq!(mail_box.as_ref(), "INBOX");
             assert_eq!(provider.as_ref(), "gmail");
             assert_eq!(uid, 42);
             assert!(read);
+            assert_eq!(username, "user@example.com");
         }
         _ => panic!("expected set email read variant"),
     }

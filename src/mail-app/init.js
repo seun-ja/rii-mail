@@ -33,6 +33,8 @@ import {
   formatSpamRatingResponse,
 } from "./spam-rating.js";
 import { updateAiAssistantAvailability } from "./ai-assistant.js";
+import { createReadSyncController } from "./read-sync.js";
+import { getErrorMessage } from "../shared/errors.js";
 
 export function initializeMailApp({
   invoke,
@@ -102,57 +104,22 @@ export function initializeMailApp({
     panel: dom.aiAssistantPanelEl,
   });
 
-  const sync = createSyncController(state, renderer, ui, invoke, storage);
   const cleanupListeners = [];
-  const readSyncRequests = new Map();
   let disposed = false;
-
-  function synchronizeEmailRead(email) {
-    if (!email || email.read) {
-      return Promise.resolve(false);
-    }
-
-    const pendingRequest = readSyncRequests.get(email.id);
-    if (pendingRequest) {
-      return pendingRequest;
-    }
-
-    const uid = Number(email.id.match(/-uid-(\d+)$/)?.[1]);
-    if (!Number.isSafeInteger(uid) || uid <= 0) {
-      return Promise.reject(
-        new Error("This email cannot be synchronized with the server."),
-      );
-    }
-
-    const mailbox =
-      String(email.folder || "").toLowerCase() === "sent" ? "Sent" : "INBOX";
-    const request = invoke("set_email_read", {
-      uid,
-      mailbox,
-      read: true,
-    })
-      .then(() => {
-        if (!disposed) {
-          email.read = true;
-          renderer.renderList();
-          saveCachedEmails(state, storage);
-        }
-        return true;
-      })
-      .finally(() => {
-        readSyncRequests.delete(email.id);
-      });
-
-    readSyncRequests.set(email.id, request);
-    return request;
-  }
+  const readSync = createReadSyncController({
+    state,
+    renderer,
+    ui,
+    invoke,
+    storage,
+    isDisposed: () => disposed,
+  });
+  const sync = createSyncController(state, renderer, ui, invoke, storage, {
+    reconcileEmails: readSync.reconcileEmails,
+  });
 
   function synchronizeOpenedEmail(email) {
-    void synchronizeEmailRead(email).catch((error) => {
-      if (disposed) return;
-      console.error("Could not synchronize opened email read state", error);
-      ui.showMessage("Could not mark the opened email as read.", true);
-    });
+    readSync.markAsRead(email);
   }
 
   const notifications = createNotificationController({
@@ -206,7 +173,11 @@ export function initializeMailApp({
           return;
         }
 
-        void sync.refreshMailbox(payload.mailbox, { background: true });
+        readSync.applyServerUpdates(payload.mailbox, payload.readStateUpdates);
+
+        if (Number(payload.newEmailsCount) > 0) {
+          void sync.refreshMailbox(payload.mailbox, { background: true });
+        }
       }, listen);
 
       trackListener(emailsUpdated);
@@ -559,9 +530,9 @@ export function initializeMailApp({
 
       state.activeFolder = "INBOX";
       renderer.renderList();
-    } catch (err) {
-      console.error(err);
-      ui.showMessage(`Error sending email: ${err?.message ?? err}`, true);
+    } catch (error) {
+      console.error(error);
+      ui.showMessage(`Error sending email: ${getErrorMessage(error)}`, true);
     }
   });
 
@@ -580,8 +551,10 @@ export function initializeMailApp({
         ui.showMessage("Mailbox refreshed. No new emails.");
       }
     } catch (error) {
-      const message = error?.message || error?.msg || String(error);
-      ui.showMessage(`Failed to refresh mailbox: ${message}`, true);
+      ui.showMessage(
+        `Failed to refresh mailbox: ${getErrorMessage(error)}`,
+        true,
+      );
     }
   });
 
@@ -631,7 +604,7 @@ export function initializeMailApp({
     }
   });
 
-  dom.markReadBtnEl.addEventListener("click", async () => {
+  dom.markReadBtnEl.addEventListener("click", () => {
     const selected = getEmails(state).find(
       (mail) => mail.id === state.selectedId,
     );
@@ -646,17 +619,8 @@ export function initializeMailApp({
       return;
     }
 
-    dom.markReadBtnEl.disabled = true;
-
-    try {
-      await synchronizeEmailRead(selected);
-      ui.showMessage("Marked as read and synchronized.");
-    } catch (error) {
-      console.error("Could not synchronize email read state", error);
-      ui.showMessage("Could not mark this email as read.", true);
-    } finally {
-      dom.markReadBtnEl.disabled = false;
-    }
+    readSync.markAsRead(selected);
+    ui.showMessage("Marked as read. Server sync will continue in the background.");
   });
 
   dom.archiveBtnEl.addEventListener("click", () => {

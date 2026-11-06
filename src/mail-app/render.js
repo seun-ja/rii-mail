@@ -188,6 +188,17 @@ export function createRenderer(state, dom, openEmailLink) {
     }
   }
 
+  function updateEmailReadState(emailId, read) {
+    const items = dom.mailListEl?.querySelectorAll?.(".mail-item") ?? [];
+    const item = Array.from(items).find(
+      (candidate) => candidate.dataset?.id === emailId,
+    );
+    if (!item) return false;
+
+    item.classList.toggle("unread", !read);
+    return true;
+  }
+
   function renderList() {
     const visibleEmails = getVisibleEmails();
 
@@ -259,5 +270,6 @@ export function createRenderer(state, dom, openEmailLink) {
     renderReader,
     renderList,
     updateCounts,
+    updateEmailReadState,
   };
 }

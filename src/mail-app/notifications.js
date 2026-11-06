@@ -1,3 +1,4 @@
+import { getErrorMessage } from "../shared/errors.js";
 import { saveCachedEmails } from "./cache.js";
 
 // FrontendEmail already uses the renderer's camelCase fields. Notification
@@ -33,7 +34,7 @@ export function createNotificationController({
   function reportError(error) {
     if (!disposed) {
       ui.showMessage(
-        `Unable to open notification email: ${error?.message || error?.msg || String(error)}`,
+        `Unable to open notification email: ${getErrorMessage(error)}`,
         true,
       );
     }

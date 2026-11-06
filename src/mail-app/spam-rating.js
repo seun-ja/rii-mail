@@ -1,3 +1,5 @@
+import { getErrorMessage } from "../shared/errors.js";
+
 export function formatSpamRatingResponse(rating) {
   const rawScore = rating?.score;
   const hasScore = typeof rawScore === "number";
@@ -23,5 +25,5 @@ export function formatSpamRatingResponse(rating) {
 }
 
 export function formatSpamRatingError(error) {
-  return `Failed to check spam rating: ${error}`;
+  return `Failed to check spam rating: ${getErrorMessage(error)}`;
 }

@@ -15,7 +15,7 @@ use tracing::Instrument as _;
 use crate::{
     db::{
         get_last_uid, populate_inbox_folder_count, populate_sent_folder_count, populate_storage,
-        set_last_uid, MailBox, Provider,
+        set_email_read_states, set_last_uid, MailBox, Provider,
     },
     email_cache::{CompleteEmail, SharedImapSession, StandardEmail},
     error::Error,
@@ -146,6 +146,34 @@ pub async fn set_email_read_on_server(
     }
 
     Ok(())
+}
+
+async fn sync_email_read_states(
+    session: &mut Session<TlsStream<TcpStream>>,
+    pool: &SqlitePool,
+    table_name: &str,
+    cancel_token: &CancellationToken,
+) -> Result<Vec<(u32, bool)>, Error> {
+    let mut stream = tokio::select! {
+        result = session.uid_fetch("1:*", "(UID FLAGS)") => result?,
+        _ = cancel_token.cancelled() => return Err(Error::ThreadCancel),
+    };
+    let mut read_states = Vec::new();
+
+    while let Some(message) = tokio::select! {
+        message = stream.next() => message,
+        _ = cancel_token.cancelled() => return Err(Error::ThreadCancel),
+    } {
+        let message = message?;
+        if let Some(uid) = message.uid {
+            let read = message
+                .flags()
+                .any(|flag| flag == async_imap::types::Flag::Seen);
+            read_states.push((uid, read));
+        }
+    }
+
+    set_email_read_states(pool, table_name, &read_states).await
 }
 
 #[tracing::instrument(
@@ -515,6 +543,9 @@ pub async fn fetch_latest(
 
     let total_emails = mailbox_info.exists;
 
+    let read_state_updates =
+        sync_email_read_states(&mut session, pool, &table_name, &cancel_token).await?;
+
     let last_uid = get_last_uid(pool, &table_name).await?.unwrap_or(0);
 
     let search_query = incremental_uid_search_query(last_uid);
@@ -524,6 +555,23 @@ pub async fn fetch_latest(
 
     if new_uids.is_empty() {
         tracing::info!("Mailbox already up to date");
+
+        if !read_state_updates.is_empty() {
+            if let Err(error) = app.emit(
+                "emails-updated",
+                serde_json::json!({
+                    "mailbox": mailbox.as_ref(),
+                    "provider": provider.as_ref(),
+                    "newEmailsCount": 0,
+                    "readStateUpdates": read_state_updates
+                        .iter()
+                        .map(|(uid, read)| serde_json::json!({ "uid": uid, "read": read }))
+                        .collect::<Vec<_>>(),
+                }),
+            ) {
+                tracing::warn!(?error, "Failed to notify frontend about read-state updates");
+            }
+        }
 
         return Ok(FetchResult::Fetched {
             count: 0,
@@ -612,16 +660,20 @@ pub async fn fetch_latest(
 
     set_last_uid(pool, &table_name, highest_uid).await?;
 
-    if inserted_count > 0 {
+    if inserted_count > 0 || !read_state_updates.is_empty() {
         if let Err(error) = app.emit(
             "emails-updated",
             serde_json::json!({
                 "mailbox": mailbox.as_ref(),
                 "provider": provider.as_ref(),
                 "newEmailsCount": inserted_count,
+                "readStateUpdates": read_state_updates
+                    .iter()
+                    .map(|(uid, read)| serde_json::json!({ "uid": uid, "read": read }))
+                    .collect::<Vec<_>>(),
             }),
         ) {
-            tracing::warn!(?error, "Failed to notify frontend about newly saved emails");
+            tracing::warn!(?error, "Failed to notify frontend about mailbox updates");
         }
     }
 
