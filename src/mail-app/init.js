@@ -240,8 +240,8 @@ export function initializeMailApp({
     // readiness event before the UI is listening.
     invoke("inbox_email_populated").catch(console.error);
     invoke("sent_email_populated").catch(console.error);
-    invoke("inbox_intial_email_populated").catch(console.error);
-    invoke("sent_intial_email_populated").catch(console.error);
+    invoke("inbox_initial_email_populated").catch(console.error);
+    invoke("sent_initial_email_populated").catch(console.error);
   })().catch((error) => {
     console.error("Failed to register mailbox sync listeners", error);
   });

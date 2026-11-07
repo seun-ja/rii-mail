@@ -74,6 +74,20 @@ fn mailbox_name_matches_namespace_qualified_sent_folder() {
 }
 
 #[test]
+fn mailbox_name_matches_namespace_qualified_spam_folder() {
+    assert!(mailbox_name_matches(
+        &MailBox::Spam,
+        "INBOX.Spam",
+        Some(".")
+    ));
+    assert!(mailbox_name_matches(
+        &MailBox::Spam,
+        "Folders/Spam",
+        Some("/")
+    ));
+}
+
+#[test]
 fn mailbox_name_does_not_match_unrelated_namespace_folder() {
     assert!(!mailbox_name_matches(
         &MailBox::Sent,

@@ -54,7 +54,7 @@ async fn init_db_adds_read_column_to_existing_provider_tables() {
         .await
         .expect("legacy database should migrate");
 
-    for table in ["gmail_INBOX", "gmail_Sent"] {
+    for table in ["gmail_INBOX", "gmail_Sent", "gmail_Spam"] {
         let columns: Vec<(String,)> =
             sqlx::query_as(&format!("SELECT name FROM pragma_table_info('{table}')"))
                 .fetch_all(&migrated_pool)

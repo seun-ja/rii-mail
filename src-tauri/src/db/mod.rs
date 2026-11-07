@@ -69,12 +69,15 @@ async fn create_table_for_provider(
 ) -> Result<(), sqlx::Error> {
     let inbox_table_name = format!("{}_{}", provider.as_ref(), MailBox::Inbox.as_ref());
     let sent_table_name = format!("{}_{}", provider.as_ref(), MailBox::Sent.as_ref());
+    let spam_table_name = format!("{}_{}", provider.as_ref(), MailBox::Spam.as_ref());
 
     let inbox_uid_index = format!("idx_{}_{}_uid", provider.as_ref(), MailBox::Inbox.as_ref());
     let inbox_date_index = format!("idx_{}_{}_date", provider.as_ref(), MailBox::Inbox.as_ref());
 
     let sent_uid_index = format!("idx_{}_{}_uid", provider.as_ref(), MailBox::Sent.as_ref());
     let sent_date_index = format!("idx_{}_{}_date", provider.as_ref(), MailBox::Sent.as_ref());
+    let spam_uid_index = format!("idx_{}_{}_uid", provider.as_ref(), MailBox::Spam.as_ref());
+    let spam_date_index = format!("idx_{}_{}_date", provider.as_ref(), MailBox::Spam.as_ref());
 
     let sql = format!(
         r#"
@@ -88,6 +91,15 @@ async fn create_table_for_provider(
         );
 
         CREATE TABLE IF NOT EXISTS {sent_table_name} (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid INTEGER NOT NULL UNIQUE,
+            date TEXT,
+            body BLOB,
+            labels TEXT,
+            read INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS {spam_table_name} (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             uid INTEGER NOT NULL UNIQUE,
             date TEXT,
@@ -118,12 +130,19 @@ async fn create_table_for_provider(
 
         CREATE INDEX IF NOT EXISTS {sent_date_index}
         ON {sent_table_name}(date);
+
+        CREATE INDEX IF NOT EXISTS {spam_uid_index}
+        ON {spam_table_name}(uid);
+
+        CREATE INDEX IF NOT EXISTS {spam_date_index}
+        ON {spam_table_name}(date);
         "#
     );
     sqlx::query(&sql).execute(pool).await?;
 
     ensure_read_column(pool, &inbox_table_name).await?;
     ensure_read_column(pool, &sent_table_name).await?;
+    ensure_read_column(pool, &spam_table_name).await?;
 
     Ok(())
 }
@@ -181,6 +200,7 @@ pub enum MailBox {
     Sent,
     Drafts,
     Trash,
+    Spam,
 }
 
 impl AsRef<str> for MailBox {
@@ -190,6 +210,7 @@ impl AsRef<str> for MailBox {
             MailBox::Sent => "Sent",
             MailBox::Drafts => "Drafts",
             MailBox::Trash => "Trash",
+            MailBox::Spam => "Spam",
         }
     }
 }

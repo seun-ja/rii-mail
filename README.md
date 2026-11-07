@@ -14,9 +14,9 @@ To get started, you will need to configure your local environment:
 ## What It Does
 
 - Connects to an IMAP account (for example Gmail or Yahoo)
-- Syncs and caches mailbox data locally (Inbox/Sent)
+- Syncs and caches Inbox, Sent, and server Spam/Junk mailbox data locally
 - Displays a desktop inbox experience
-- Runs spam/phishing rating locally through PyO3, PyTorch, and Transformers
+- Runs spam/phishing rating locally through PyO3, PyTorch, and Transformers; high-confidence spam found during Inbox refresh is moved to the server Spam/Junk mailbox
 - Persists config and login state between launches
 - Shows a startup loading state on auth pages while initialization status is being resolved
 
@@ -255,9 +255,10 @@ What is covered now:
 ## Mail Sync Model
 
 - The backend worker keeps two IMAP sessions for concurrent mailbox work.
+- Initial population syncs Inbox on the primary session, then syncs Sent and Spam/Junk on the background session. The server Spam/Junk mailbox is resolved through IMAP special-use metadata when available.
 - Initial population batches inserts in chunks (`INITIAL_BATCH_SIZE = 100`) to avoid very large DB writes.
 - Frontend pagination requests emails in pages (`INITIAL_BATCH_SIZE = 50`, `NEXT_BATCH_SIZE = 50`) and loads more on scroll.
-- Ongoing refresh uses incremental UID-based sync via `mailbox_sync_state.last_uid`.
+- Ongoing refresh uses incremental UID-based sync via `mailbox_sync_state.last_uid`. New Inbox messages rated `Spam` with a score greater than `0.8` are moved with IMAP `UID MOVE`, omitted from the Inbox cache, and then collected by the Spam refresh.
 
 ## Config and Data Storage
 

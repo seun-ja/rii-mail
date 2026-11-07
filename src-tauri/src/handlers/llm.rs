@@ -6,7 +6,7 @@ use crate::{
     config::AppState,
     error::Error,
     handlers::ensure_chatgpt_agent_fresh,
-    llm::{Email, SpamRating},
+    llm::{phishing_rater, Email, SpamRating},
 };
 
 #[tauri::command]
@@ -17,26 +17,7 @@ pub async fn rater(
     email_from: String,
     body: String,
 ) -> Result<SpamRating, Error> {
-    let state = app.state::<ArcSwap<AppState>>();
-    let current_state = state.load();
-    let initialized = current_state.state();
-
-    let email = Email {
-        from: email_from,
-        subject,
-        body,
-    };
-
-    let message = serde_json::to_string(&email).map_err(|e| Error::Other(e.to_string()))?;
-
-    let rating = initialized
-        .local_inference
-        .get()
-        .await?
-        .agent()
-        .chat(&message)
-        .await?;
-    return rating.try_into();
+    phishing_rater::rater(app, subject, email_from, body).await
 }
 
 #[tauri::command]

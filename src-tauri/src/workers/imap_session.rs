@@ -39,14 +39,16 @@ async fn reconnect_imap_session(
     Ok(Arc::new(Mutex::new(session)))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn worker(
     app: tauri::AppHandle,
     mut imap_client_channel_rx: UnboundedReceiver<ImapClientConfig>,
     mut imap_client_returning_user_channel_rx: UnboundedReceiver<ImapClientConfig>,
     mut imap_cmd_channel_rx: UnboundedReceiver<ImapCommand>,
     logout_result_tx: UnboundedSender<()>,
-    inbox_intial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
-    sent_intial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
+    inbox_initial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
+    sent_initial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
+    spam_initial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
 ) {
     let worker_span = tracing::info_span!("worker.imap.run");
 
@@ -210,8 +212,9 @@ pub async fn worker(
                                 continue;
                             };
 
-                            let inbox_tx = inbox_intial_email_populated_tx.clone();
-                            let sent_tx = sent_intial_email_populated_tx.clone();
+                            let inbox_tx = inbox_initial_email_populated_tx.clone();
+                            let sent_tx = sent_initial_email_populated_tx.clone();
+                            let spam_tx = spam_initial_email_populated_tx.clone();
 
                             match crate::email_cache::fetch_emails(
                                 session.clone(),
@@ -221,6 +224,7 @@ pub async fn worker(
                                 cancel_token,
                                 inbox_tx,
                                 sent_tx,
+                                spam_tx,
                             )
                             .await
                             {
@@ -452,6 +456,7 @@ pub async fn worker(
                     for provider in &providers {
                         let provider_for_inbox = provider.clone();
                         let provider_for_sent = provider.clone();
+                        let provider_for_spam = provider.clone();
 
                         let (inbox_result, sent_result) = tokio::join!(
                             crate::email_cache::fetch_latest(
@@ -478,6 +483,21 @@ pub async fn worker(
 
                         if let Err(err) = sent_result {
                             tracing::error!(error = ?err, "Failed sent periodic refresh");
+                        }
+
+                        // Reuse the Sent connection after Inbox refresh finishes so messages
+                        // moved by the Inbox spam rater are visible in the local Spam cache.
+                        if let Err(err) = crate::email_cache::fetch_latest(
+                            app.clone(),
+                            session_background.clone(),
+                            pool_ref,
+                            &MailBox::Spam,
+                            &provider_for_spam,
+                            refresh_token.clone(),
+                        )
+                        .await
+                        {
+                            tracing::error!(error = ?err, "Failed spam periodic refresh");
                         }
                     }
                 }

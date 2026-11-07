@@ -2,7 +2,9 @@ use tauri::{AppHandle, Emitter as _, State};
 use tokio::time::{self, Duration};
 
 use crate::error::Error;
-use crate::{InboxPopulateUpdateState, InitialDbPopulation, SentPopulateUpdateState};
+use crate::{
+    InboxPopulateUpdateState, InitialDbPopulation, SentPopulateUpdateState, SpamPopulateUpdateState,
+};
 
 #[tauri::command]
 #[tracing::instrument(name = "command.email.inbox_population", skip_all, err)]
@@ -59,8 +61,35 @@ pub async fn sent_email_populated(
 }
 
 #[tauri::command]
+#[tracing::instrument(name = "command.email.spam_population", skip_all, err)]
+pub async fn spam_email_populated(
+    app: AppHandle,
+    spam_progress_state: tauri::State<'_, SpamPopulateUpdateState>,
+) -> Result<(), Error> {
+    let mut ticker = time::interval(Duration::from_millis(100));
+
+    loop {
+        let progress = spam_progress_state
+            .0
+            .lock()
+            .await
+            .load(std::sync::atomic::Ordering::Acquire);
+
+        app.emit("spam-population-progress", progress)?;
+
+        if progress >= 100 {
+            break;
+        }
+
+        ticker.tick().await;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 #[tracing::instrument(name = "command.email.inbox_initial_population", skip_all, err)]
-pub async fn inbox_intial_email_populated(
+pub async fn inbox_initial_email_populated(
     app: AppHandle,
     state: State<'_, InitialDbPopulation>,
 ) -> Result<(), Error> {
@@ -80,7 +109,7 @@ pub async fn inbox_intial_email_populated(
 
 #[tauri::command]
 #[tracing::instrument(name = "command.email.sent_initial_population", skip_all, err)]
-pub async fn sent_intial_email_populated(
+pub async fn sent_initial_email_populated(
     app: AppHandle,
     state: State<'_, InitialDbPopulation>,
 ) -> Result<(), Error> {
@@ -93,6 +122,26 @@ pub async fn sent_intial_email_populated(
         }
     } else {
         tracing::warn!("Sent receiver was already consumed or is missing");
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+#[tracing::instrument(name = "command.email.spam_initial_population", skip_all, err)]
+pub async fn spam_initial_email_populated(
+    app: AppHandle,
+    state: State<'_, InitialDbPopulation>,
+) -> Result<(), Error> {
+    let mut lock = state.spam_rx.lock().await;
+
+    if let Some(rx) = lock.take() {
+        if let Ok(()) = rx.await {
+            tracing::info!("Spam initial population complete");
+            app.emit("spam-initial-population-complete", ())?;
+        }
+    } else {
+        tracing::warn!("Spam receiver was already consumed or is missing");
     }
 
     Ok(())
