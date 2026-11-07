@@ -30,13 +30,14 @@ test("getEmails flattens folder caches", () => {
     cachedByFolder: {
       INBOX: [{ id: "1" }],
       Sent: [{ id: "2" }],
-      Trash: [{ id: "3" }],
+      Spam: [{ id: "3" }],
+      Trash: [{ id: "4" }],
     },
   };
 
   assert.deepEqual(
     getEmails(state).map((x) => x.id),
-    ["1", "2", "3"],
+    ["1", "2", "3", "4"],
   );
 });
 
@@ -54,6 +55,7 @@ test("saveCachedEmails persists serialized payload", () => {
     cachedByFolder: {
       INBOX: [{ id: "1" }],
       Sent: [{ id: "2" }],
+      Spam: [{ id: "3" }],
       Trash: [],
     },
   };
@@ -63,7 +65,7 @@ test("saveCachedEmails persists serialized payload", () => {
   const raw = storage.getItem(EMAIL_CACHE_KEY);
   assert.ok(raw);
   const parsed = JSON.parse(raw);
-  assert.equal(parsed.length, 2);
+  assert.equal(parsed.length, 3);
 });
 
 test("clearCachedEmails removes cache key", () => {
@@ -76,8 +78,9 @@ test("hydrateFolderCachesFromStorage categorizes folders consistently", () => {
   const storage = createStorage({
     [EMAIL_CACHE_KEY]: JSON.stringify([
       { id: "db-Sent-1", folder: "unknown", subject: "sent" },
-      { id: "x-2", folder: "archive", subject: "archive" },
-      { id: "x-3", folder: "inbox", subject: "inbox" },
+      { id: "x-2", folder: "spam", subject: "spam" },
+      { id: "x-3", folder: "archive", subject: "archive" },
+      { id: "x-4", folder: "inbox", subject: "inbox" },
     ]),
   });
 
@@ -85,6 +88,7 @@ test("hydrateFolderCachesFromStorage categorizes folders consistently", () => {
     cachedByFolder: {
       INBOX: [{ id: "old" }],
       Sent: [{ id: "old" }],
+      Spam: [{ id: "old" }],
       Trash: [{ id: "old" }],
     },
   };
@@ -93,6 +97,8 @@ test("hydrateFolderCachesFromStorage categorizes folders consistently", () => {
 
   assert.equal(state.cachedByFolder.Sent.length, 1);
   assert.equal(state.cachedByFolder.Sent[0].folder, "Sent");
+  assert.equal(state.cachedByFolder.Spam.length, 1);
+  assert.equal(state.cachedByFolder.Spam[0].folder, "Spam");
   assert.equal(state.cachedByFolder.Trash.length, 1);
   assert.equal(state.cachedByFolder.Trash[0].folder, "Trash");
   assert.equal(state.cachedByFolder.INBOX.length, 1);

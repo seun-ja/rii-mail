@@ -52,6 +52,10 @@ export function createRenderer(state, dom, openEmailLink) {
         typeof state.totalEmailsByFolder?.Sent === "number"
           ? state.totalEmailsByFolder.Sent
           : null,
+      spam:
+        typeof state.totalEmailsByFolder?.Spam === "number"
+          ? state.totalEmailsByFolder.Spam
+          : null,
       archive: allEmails.filter((mail) => {
         const folder = String(mail.folder || "").toLowerCase();
         return folder === "trash" || folder === "archive";
@@ -65,6 +69,8 @@ export function createRenderer(state, dom, openEmailLink) {
     );
     document.querySelector("#count-sent").textContent =
       typeof counts.sent === "number" ? String(counts.sent) : "";
+    document.querySelector("#count-spam").textContent =
+      typeof counts.spam === "number" ? String(counts.spam) : "";
     document.querySelector("#count-archive").textContent = String(
       counts.archive,
     );

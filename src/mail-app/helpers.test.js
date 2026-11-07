@@ -170,6 +170,7 @@ test("createForwardDraft leaves recipients empty and formats HTML-only emails as
 test("folder helpers map frontend folder to backend mailbox", () => {
   assert.equal(getActiveBackendFolderKey({ activeFolder: "INBOX" }), "INBOX");
   assert.equal(getActiveBackendFolderKey({ activeFolder: "Sent" }), "Sent");
+  assert.equal(getActiveBackendFolderKey({ activeFolder: "Spam" }), "Spam");
   assert.equal(getActiveBackendFolderKey({ activeFolder: "Trash" }), "Trash");
   assert.equal(getActiveMailboxLiteral({ activeFolder: "INBOX" }), "INBOX");
 });

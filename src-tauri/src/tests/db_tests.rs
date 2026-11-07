@@ -38,6 +38,7 @@ fn mailbox_as_ref_and_from_string() {
     assert_eq!(MailBox::Sent.as_ref(), "Sent");
     assert_eq!(MailBox::Drafts.as_ref(), "Drafts");
     assert_eq!(MailBox::Trash.as_ref(), "Trash");
+    assert_eq!(MailBox::Spam.as_ref(), "Spam");
 
     assert!(matches!(MailBox::from("INBOX".to_string()), MailBox::Inbox));
     assert!(matches!(MailBox::from("Sent".to_string()), MailBox::Sent));
@@ -46,6 +47,7 @@ fn mailbox_as_ref_and_from_string() {
         MailBox::Drafts
     ));
     assert!(matches!(MailBox::from("Trash".to_string()), MailBox::Trash));
+    assert!(matches!(MailBox::from("Spam".to_string()), MailBox::Spam));
     assert!(matches!(MailBox::from("other".to_string()), MailBox::Inbox));
 }
 
@@ -58,13 +60,13 @@ async fn init_db_creates_provider_tables_and_state_table() {
         .expect("db should initialize");
 
     let count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('yahoo_INBOX', 'yahoo_Sent', 'mailbox_sync_state')",
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('yahoo_INBOX', 'yahoo_Sent', 'yahoo_Spam', 'mailbox_sync_state')",
     )
     .fetch_one(&pool)
     .await
     .expect("table listing should work");
 
-    assert_eq!(count.0, 3);
+    assert_eq!(count.0, 4);
 
     pool.close().await;
 

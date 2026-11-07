@@ -56,7 +56,7 @@ export function createUiController(dom) {
       ?.classList.toggle("sync-locked", locked);
   }
 
-  function updateDbPopulation(inbox, sent) {
+  function updateDbPopulation(inbox, sent, spam = 100) {
     const container = document.getElementById("db-population");
     const bar = document.getElementById("db-population-bar");
     const text = document.getElementById("db-population-text");
@@ -65,12 +65,12 @@ export function createUiController(dom) {
       return;
     }
 
-    const value = Math.max(inbox, sent);
+    const value = Math.max(inbox, sent, spam);
 
     bar.style.width = `${value}%`;
     text.textContent = `Building local mailbox... ${value}%`;
 
-    if (inbox >= 100 && sent >= 100) {
+    if (inbox >= 100 && sent >= 100 && spam >= 100) {
       container.classList.add("hidden");
     } else {
       container.classList.remove("hidden");

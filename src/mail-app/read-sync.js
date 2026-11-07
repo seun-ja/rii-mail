@@ -13,8 +13,9 @@ function getServerLocation(email) {
     throw new Error("This email cannot be synchronized with the server.");
   }
 
+  const folder = String(email.folder || "").toLowerCase();
   const mailbox =
-    String(email.folder || "").toLowerCase() === "sent" ? "Sent" : "INBOX";
+    folder === "sent" ? "Sent" : folder === "spam" ? "Spam" : "INBOX";
 
   return { uid, mailbox };
 }

@@ -10,10 +10,12 @@ test("createInitialState returns expected defaults", () => {
   assert.deepEqual(Object.keys(state.cachedByFolder), [
     "INBOX",
     "Sent",
+    "Spam",
     "Trash",
   ]);
   assert.equal(state.paginationByFolder.INBOX.nextOffset, 0);
   assert.equal(state.paginationByFolder.Sent.hasMoreEmails, true);
+  assert.equal(state.paginationByFolder.Spam.hasMoreEmails, true);
   assert.equal(state.paginationByFolder.Trash.lastFetchSignature, null);
   assert.equal(state.allowFetch, true);
   assert.equal(state.isInitialSyncComplete, false);

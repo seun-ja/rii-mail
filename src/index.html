@@ -45,7 +45,6 @@
 
                     <div>
                         <h1>RiiMail</h1>
-                        <p>Unified Inbox</p>
                     </div>
                 </div>
 
@@ -176,12 +175,9 @@
                             >
                         </button>
                         <button
-                            class="folder-btn folder-btn-disabled"
+                            class="folder-btn"
                             type="button"
                             data-folder="Spam"
-                            disabled
-                            aria-disabled="true"
-                            title="Spam folder support is coming soon"
                         >
                             <span class="folder-leading">
                                 <img
@@ -192,7 +188,7 @@
                                 />
                                 <span class="folder-label">Spam</span>
                             </span>
-                            <span class="folder-status">Soon</span>
+                            <span class="folder-count" id="count-spam">0</span>
                         </button>
                     </div>
                 </aside>

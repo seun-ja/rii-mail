@@ -3,8 +3,9 @@ import { EMAIL_CACHE_KEY, MAX_CACHED_EMAILS } from "./constants.js";
 export function getEmails(state) {
   return [
     ...state.cachedByFolder.INBOX,
-    ...state.cachedByFolder.Sent,
-    ...state.cachedByFolder.Trash,
+    ...(state.cachedByFolder.Sent ?? []),
+    ...(state.cachedByFolder.Spam ?? []),
+    ...(state.cachedByFolder.Trash ?? []),
   ];
 }
 
@@ -47,6 +48,7 @@ export function hydrateFolderCachesFromStorage(
 
   state.cachedByFolder.INBOX = [];
   state.cachedByFolder.Sent = [];
+  state.cachedByFolder.Spam = [];
   state.cachedByFolder.Trash = [];
 
   cached.forEach((mail) => {
@@ -57,6 +59,11 @@ export function hydrateFolderCachesFromStorage(
       (typeof mail?.id === "string" && mail.id.startsWith("db-Sent-"))
     ) {
       state.cachedByFolder.Sent.push({ ...mail, folder: "Sent" });
+    } else if (
+      folder === "spam" ||
+      (typeof mail?.id === "string" && mail.id.startsWith("db-Spam-"))
+    ) {
+      state.cachedByFolder.Spam.push({ ...mail, folder: "Spam" });
     } else if (folder === "trash" || folder === "archive") {
       state.cachedByFolder.Trash.push({ ...mail, folder: "Trash" });
     } else {
