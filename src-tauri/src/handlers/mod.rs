@@ -13,8 +13,8 @@ pub use configuration::{
 pub(crate) use configuration::{resolve_smtp_relay_url, smtp_relay_candidates};
 pub use email::{fetch_emails, refresh_emails_handler, send_email, set_email_read};
 pub use events::{
-    inbox_email_populated, inbox_intial_email_populated, sent_email_populated,
-    sent_intial_email_populated,
+    inbox_email_populated, inbox_initial_email_populated, sent_email_populated,
+    sent_initial_email_populated, spam_email_populated, spam_initial_email_populated,
 };
 use lettre::{message::MessageBuilder, Address};
 pub use llm::{email_generator, is_llm_enabled, rater};

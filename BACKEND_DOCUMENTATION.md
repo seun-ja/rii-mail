@@ -23,7 +23,7 @@ This documentation covers the backend paths that are **currently wired into the 
 This document intentionally **does not treat dormant or not-currently-wired code as active backend behavior**. In particular:
 
 - the deleted external RPC spam-rating path is no longer part of the active backend; spam rating now uses the local-inference provider in `llm/`
-- `Drafts` and `Trash` exist in enums, but the active backend mailbox sync flow only uses `INBOX` and `Sent`
+- `Drafts` and `Trash` exist in enums, but the active backend mailbox sync flow only uses `INBOX`, `Sent`, and `Spam`
 - `InitStatus::ReturningSigned` exists, but the current auto-login path returns `SignedIn`
 
 View the high-level diagram here: `high_level.puml`
@@ -62,8 +62,10 @@ The frontend currently invokes these Tauri commands:
 - `open_main_window`
 - `inbox_email_populated`
 - `sent_email_populated`
-- `inbox_intial_email_populated`
-- `sent_intial_email_populated`
+- `spam_email_populated`
+- `inbox_initial_email_populated`
+- `sent_initial_email_populated`
+- `spam_initial_email_populated`
 - `fetch_emails`
 - `refresh_emails_handler`
 - `send_email`
@@ -119,6 +121,7 @@ Logout is currently driven through the **native menu event** in `src-tauri/src/l
   - shared cancellation-token holder
 - `InboxPopulateUpdateState`
 - `SentPopulateUpdateState`
+- `SpamPopulateUpdateState`
 - `InitialDbPopulation`
   - stores oneshot receivers used to notify the frontend when the first usable page has landed in SQLite
 
@@ -354,11 +357,12 @@ The active backend sync path currently supports:
 
 - `INBOX`
 - `Sent`
+- `Spam` (resolved to the server's `\\Junk` special-use mailbox when advertised, otherwise `Spam`)
 
 `Drafts` and `Trash` exist in the `MailBox` enum, but they are not part of the active sync implementation:
 
 - initial population for those variants is `unimplemented!("Coming soon")`
-- current frontend sync calls only `INBOX` and `Sent`
+- current frontend sync uses `INBOX`, `Sent`, and `Spam`
 
 ## 5.4 Initial sync behavior
 
@@ -373,12 +377,14 @@ After login, the frontend/backend flow only sends one explicit initial fetch com
 In `email_cache::fetch_emails(...)`:
 
 - the requested mailbox is fetched on the primary session
-- if the requested mailbox is `Inbox` and a background session exists, the backend also spawns a background task to fetch `Sent`
+- the requested Inbox is fetched on the primary session
+- if a background session exists, the backend spawns a task that fetches `Sent` and then `Spam` on that session
 
 So in the current app:
 
 - login triggers an Inbox fetch command
-- that Inbox fetch also starts a concurrent Sent fetch in the background
+- that Inbox fetch starts a concurrent Sent bootstrap in the background
+- the same background session then bootstraps Spam after Sent, avoiding a third IMAP connection
 
 ### Skip behavior when data already exists
 
@@ -437,9 +443,11 @@ The backend:
 2. reads `last_uid` from `mailbox_sync_state`
 3. searches IMAP using `last_uid + 1:*`
 4. fetches only new UIDs
-5. inserts only those messages into SQLite
-6. updates `last_uid`
-7. returns:
+5. for Inbox only, rates newly fetched messages with the local spam rater; messages labelled `Spam` with a score greater than `0.8` are collected
+6. moves those high-confidence messages atomically with IMAP `UID MOVE` to the resolved Spam/Junk mailbox and omits them from the local Inbox cache
+7. inserts the remaining messages into SQLite
+8. updates `last_uid`
+9. returns:
    - count of new emails
    - total mailbox size reported by IMAP
 
@@ -516,6 +524,7 @@ That allows current active behavior such as:
 
 - fetching `INBOX` on one session
 - fetching `Sent` at the same time on the second session
+- subsequently selecting `Spam` on the background session after Sent has completed
 
 without the two mailbox selections stepping on each other.
 
@@ -527,7 +536,7 @@ Inside `fetch_emails(...)`:
 
 - the Inbox fetch runs on the primary session
 - a background task is spawned with `tokio::spawn(...)`
-- that background task fetches `Sent` on the second IMAP session
+- that background task fetches `Sent`, then `Spam`, on the second IMAP session
 
 So current startup concurrency looks like this:
 
@@ -535,8 +544,9 @@ So current startup concurrency looks like this:
 2. worker already has two authenticated IMAP sessions
 3. Inbox bootstrap starts
 4. Sent bootstrap starts in a spawned async task
-5. both write into SQLite concurrently
-6. frontend receives progress and first-page-ready notifications
+5. Inbox and Sent write into SQLite concurrently
+6. Spam bootstrap begins on the background session after Sent completes
+7. frontend receives progress and first-page-ready notifications
 
 ## 6.5 Current concurrency during manual refresh
 
@@ -558,7 +568,7 @@ Progress tracking uses:
 - `AtomicU8` values wrapped in shared state
 - polling commands that emit frontend events every 100ms
 
-### How Inbox/Sent progress works
+### How Inbox/Sent/Spam progress works
 
 During initial population:
 
@@ -566,11 +576,13 @@ During initial population:
 - that percentage is stored into:
   - `INBOX_POPULATE_UPDATE`
   - `SENT_POPULATE_UPDATE`
+  - `SPAM_POPULATE_UPDATE`
 
 Meanwhile, the commands:
 
 - `inbox_email_populated`
 - `sent_email_populated`
+- `spam_email_populated`
 
 run their own loop:
 
@@ -578,28 +590,32 @@ run their own loop:
 - emit Tauri events:
   - `inbox-population-progress`
   - `sent-population-progress`
+  - `spam-population-progress`
 - stop when progress reaches 100
 
 So the UI gets progress updates by **polling shared progress state and re-emitting events**, not by direct push from the IMAP fetch loop.
 
 ## 6.7 First-page-ready notifications use oneshot channels
 
-`InitialDbPopulation` stores two oneshot receivers:
+`InitialDbPopulation` stores three oneshot receivers:
 
 - one for Inbox
 - one for Sent
+- one for Spam
 
-The fetcher sends these exactly once when the first usable batch is stored.
+The fetcher sends these when the first usable batch is stored; an empty or unavailable Spam mailbox also completes its receiver so startup is not blocked.
 
 The commands:
 
-- `inbox_intial_email_populated`
-- `sent_intial_email_populated`
+- `inbox_initial_email_populated`
+- `sent_initial_email_populated`
+- `spam_initial_email_populated`
 
 await those receivers and then emit:
 
 - `inbox-initial-population-complete`
 - `sent-initial-population-complete`
+- `spam-initial-population-complete`
 
 This is how the frontend knows when it can start rendering data from SQLite without waiting for the full mailbox import to finish.
 
@@ -646,7 +662,7 @@ So cancellation is cooperative and explicit throughout long-running mail operati
 
 ## 6.9 Automatic periodic refresh: present in code, not active in the current flow
 
-The worker contains a 60-second ticker and code intended to periodically refresh mailboxes.
+The worker contains a 60-second ticker and code intended to periodically refresh mailboxes. When that ticker branch is enabled, it refreshes Inbox and Sent concurrently, then refreshes Spam on the background session so Inbox messages moved by the spam rater can enter the Spam cache in the same cycle.
 
 However, in the current implementation shown in `src-tauri/src/workers/imap_session.rs`:
 
@@ -680,13 +696,16 @@ For each provider, the current schema creates:
 
 - `<provider>_INBOX`
 - `<provider>_Sent`
+- `<provider>_Spam`
 
 Examples:
 
 - `gmail_INBOX`
 - `gmail_Sent`
+- `gmail_Spam`
 - `yahoo_INBOX`
 - `yahoo_Sent`
+- `yahoo_Spam`
 
 It also creates:
 
@@ -780,7 +799,7 @@ From parsed email bodies, the backend derives:
 
 ### Important current limitation
 
-The backend only actively syncs `INBOX` and `Sent`.
+The backend actively syncs `INBOX`, `Sent`, and `Spam`; `Drafts` and `Trash` are still not server-synced.
 
 The frontend does show a `Trash`/archive-style folder, but that is currently derived from cached/frontend state and label mapping rather than from a real backend Trash mailbox sync API.
 
@@ -839,13 +858,13 @@ Used by `src/mail-app/sync.js`.
 
 Requests incremental IMAP refresh, then returns the newly added rows plus summary counts.
 
-### `inbox_email_populated` / `sent_email_populated`
+### `inbox_email_populated` / `sent_email_populated` / `spam_email_populated`
 
 Used by `src/mail-app/init.js`.
 
 Continuously emit progress events during initial bootstrap.
 
-### `inbox_intial_email_populated` / `sent_intial_email_populated`
+### `inbox_initial_email_populated` / `sent_initial_email_populated` / `spam_initial_email_populated`
 
 Used by `src/mail-app/init.js`.
 
@@ -990,11 +1009,11 @@ The frontend listens for that event and redirects to `/login.html`.
 3. worker authenticates two IMAP sessions
 4. backend stores password in Apple Keychain
 5. backend sends initial Inbox fetch command
-6. fetcher starts Inbox + concurrent Sent bootstrap
-7. first page lands in SQLite
-8. frontend receives initial-complete event and renders mail
+6. fetcher starts Inbox + concurrent Sent bootstrap, followed by Spam bootstrap on the background session
+7. first pages land in SQLite
+8. frontend receives initial-complete events and renders mail
 9. user can paginate with `fetch_emails`
-10. user can manually refresh with `refresh_emails_handler`
+10. user can manually refresh with `refresh_emails_handler`; new high-confidence spam found in Inbox is moved to Spam/Junk and stored in the Spam cache
 
 ### Returning user
 
@@ -1020,9 +1039,10 @@ The frontend listens for that event and redirects to `/login.html`.
 
 These are important if you want the docs to reflect reality rather than intent.
 
-### Only `INBOX` and `Sent` are active backend mailboxes
+### `INBOX`, `Sent`, and `Spam` are active backend mailboxes
 
-- current sync code is built around those two mailboxes
+- current sync code populates and incrementally refreshes these three mailboxes
+- the Spam logical mailbox resolves to the IMAP `\\Junk` special-use mailbox when available
 - `Drafts` and `Trash` are not active backend sync targets
 
 ### Current app is effectively single-account

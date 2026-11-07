@@ -19,7 +19,8 @@ use crate::{
     },
     email_cache::{CompleteEmail, SharedImapSession, StandardEmail},
     error::Error,
-    INBOX_POPULATE_UPDATE, SENT_POPULATE_UPDATE,
+    llm::{phishing_rater, Label},
+    INBOX_POPULATE_UPDATE, SENT_POPULATE_UPDATE, SPAM_POPULATE_UPDATE,
 };
 
 pub enum FetchResult {
@@ -68,6 +69,7 @@ fn has_special_use_attribute(attributes: &[NameAttribute<'_>], mailbox: &MailBox
             (MailBox::Sent, NameAttribute::Sent)
                 | (MailBox::Drafts, NameAttribute::Drafts)
                 | (MailBox::Trash, NameAttribute::Trash)
+                | (MailBox::Spam, NameAttribute::Junk)
         )
     })
 }
@@ -188,8 +190,9 @@ pub async fn fetch_emails(
     pool: &SqlitePool,
     provider: Provider,
     cancel_token: CancellationToken,
-    inbox_intial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
-    sent_intial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
+    inbox_initial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
+    sent_initial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
+    spam_initial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
 ) -> Result<FetchResult, Error> {
     if cancel_token.is_cancelled() {
         return Err(Error::ThreadCancel);
@@ -202,13 +205,15 @@ pub async fn fetch_emails(
         return Ok(FetchResult::Populated);
     }
 
-    let inbox_tx = inbox_intial_email_populated_tx.clone();
-    let sent_tx = sent_intial_email_populated_tx.clone();
+    let inbox_tx = inbox_initial_email_populated_tx.clone();
+    let sent_tx = sent_initial_email_populated_tx.clone();
+    let spam_tx = spam_initial_email_populated_tx.clone();
 
     let background_task = if let Some(background_session) = background_session {
         let pool = pool.clone();
         let provider = provider.clone();
         let token = cancel_token.child_token();
+        let spam_token = token.child_token();
         let background_span = tracing::info_span!(
             "imap.sync.initial.background",
             provider = provider.as_ref(),
@@ -217,25 +222,54 @@ pub async fn fetch_emails(
 
         Some(tokio::spawn(
             async move {
-                let table_name = format!("{}_{}", provider.as_ref(), MailBox::Sent.as_ref());
+                let sent_table_name = format!("{}_{}", provider.as_ref(), MailBox::Sent.as_ref());
+                let spam_table_name = format!("{}_{}", provider.as_ref(), MailBox::Spam.as_ref());
 
-                let mailbox_info = {
-                    let mut session = background_session.lock().await;
-                    select_mailbox(&mut session, &MailBox::Sent).await?
-                };
+                let sent_result = async {
+                    let mailbox_info = {
+                        let mut session = background_session.lock().await;
+                        select_mailbox(&mut session, &MailBox::Sent).await?
+                    };
+                    populate_sent_folder_count(&pool, provider.as_ref(), mailbox_info.exists)
+                        .await?;
 
-                populate_sent_folder_count(&pool, provider.as_ref(), mailbox_info.exists).await?;
+                    handle_email_population_locked(
+                        background_session.clone(),
+                        &pool,
+                        &MailBox::Sent,
+                        sent_table_name,
+                        token,
+                        inbox_initial_email_populated_tx.clone(),
+                        sent_initial_email_populated_tx.clone(),
+                        spam_initial_email_populated_tx.clone(),
+                    )
+                    .await
+                }
+                .await;
 
-                _ = handle_email_population_locked(
+                if let Err(error) = sent_result {
+                    tracing::error!(?error, "Initial Sent mailbox sync failed");
+                }
+
+                let spam_result = handle_email_population_locked(
                     background_session,
                     &pool,
-                    &MailBox::Sent,
-                    table_name,
-                    token,
-                    inbox_intial_email_populated_tx,
-                    sent_intial_email_populated_tx,
+                    &MailBox::Spam,
+                    spam_table_name,
+                    spam_token,
+                    inbox_initial_email_populated_tx,
+                    sent_initial_email_populated_tx,
+                    spam_initial_email_populated_tx.clone(),
                 )
-                .await?;
+                .await;
+
+                if let Err(error) = spam_result {
+                    tracing::error!(?error, "Initial Spam mailbox sync failed");
+                }
+
+                if let Some(tx) = spam_initial_email_populated_tx.lock().await.take() {
+                    _ = tx.send(());
+                }
 
                 Ok::<_, Error>(())
             }
@@ -260,6 +294,7 @@ pub async fn fetch_emails(
         cancel_token.clone(),
         inbox_tx,
         sent_tx,
+        spam_tx,
     )
     .await?;
 
@@ -285,14 +320,16 @@ pub async fn fetch_emails(
     skip_all,
     fields(mailbox = mailbox.as_ref(), table = table_name)
 )]
+#[allow(clippy::too_many_arguments)]
 async fn handle_email_population_locked(
     session: SharedImapSession,
     pool: &SqlitePool,
     mailbox: &MailBox,
     table_name: String,
     cancel_token: CancellationToken,
-    inbox_intial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
-    sent_intial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
+    inbox_initial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
+    sent_initial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
+    spam_initial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
 ) -> Result<FetchResult, Error> {
     if cancel_token.is_cancelled() {
         return Err(Error::ThreadCancel);
@@ -312,20 +349,23 @@ async fn handle_email_population_locked(
         mailbox,
         table_name,
         cancel_token,
-        inbox_intial_email_populated_tx,
-        sent_intial_email_populated_tx,
+        inbox_initial_email_populated_tx,
+        sent_initial_email_populated_tx,
+        spam_initial_email_populated_tx,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_email_population(
     session: &mut Session<TlsStream<TcpStream>>,
     pool: &SqlitePool,
     mailbox: &MailBox,
     table_name: String,
     cancel_token: CancellationToken,
-    inbox_intial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
-    sent_intial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
+    inbox_initial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
+    sent_initial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
+    spam_initial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
 ) -> Result<FetchResult, Error> {
     if cancel_token.is_cancelled() {
         return Err(Error::ThreadCancel);
@@ -340,6 +380,18 @@ async fn handle_email_population(
     };
 
     if mailbox_info.exists == 0 {
+        if mailbox == &MailBox::Spam {
+            SPAM_POPULATE_UPDATE
+                .0
+                .lock()
+                .await
+                .store(100, std::sync::atomic::Ordering::Release);
+
+            if let Some(tx) = spam_initial_email_populated_tx.lock().await.take() {
+                _ = tx.send(());
+            }
+        }
+
         return Ok(FetchResult::EmptyMailbox);
     }
 
@@ -365,8 +417,9 @@ async fn handle_email_population(
 
     let mut email_count: u32 = 0;
 
-    let sent_tx = sent_intial_email_populated_tx.clone();
-    let inbox_tx = inbox_intial_email_populated_tx.clone();
+    let sent_tx = sent_initial_email_populated_tx.clone();
+    let inbox_tx = inbox_initial_email_populated_tx.clone();
+    let spam_tx = spam_initial_email_populated_tx.clone();
 
     tracing::info!(
         mailbox = ?mailbox,
@@ -397,6 +450,12 @@ async fn handle_email_population(
                 .store(percentage, std::sync::atomic::Ordering::Release);
         } else if mailbox == &MailBox::Sent {
             SENT_POPULATE_UPDATE
+                .0
+                .lock()
+                .await
+                .store(percentage, std::sync::atomic::Ordering::Release);
+        } else if mailbox == &MailBox::Spam {
+            SPAM_POPULATE_UPDATE
                 .0
                 .lock()
                 .await
@@ -459,6 +518,12 @@ async fn handle_email_population(
                     if let Some(tx) = sent_tx.lock().await.take() {
                         tracing::info!(mailbox = ?mailbox, "Sent initial population complete, notifying UI");
                         _ = tx.send(())
+                    }
+                }
+                MailBox::Spam => {
+                    if let Some(tx) = spam_tx.lock().await.take() {
+                        tracing::info!(mailbox = ?mailbox, "Spam initial population complete, notifying UI");
+                        _ = tx.send(());
                     }
                 }
                 MailBox::Drafts => unimplemented!("Coming soon"),
@@ -593,6 +658,7 @@ pub async fn fetch_latest(
     };
 
     let mut emails: Vec<StandardEmail> = vec![];
+    let mut spam_uids = HashSet::new();
 
     let mut highest_uid = last_uid;
     let mut inserted_count = 0usize;
@@ -632,7 +698,42 @@ pub async fn fetch_latest(
 
         let email: StandardEmail = message.into();
 
+        if let Some(body) = CompleteEmail::from(email.clone()).body {
+            let rating =
+                phishing_rater::rater(app.clone(), body.subject, body.email_from, body.text_body)
+                    .await?;
+
+            if *mailbox == MailBox::Inbox && rating.label == Label::Spam && rating.score > 0.8 {
+                // make this configurable
+                if let Some(uid) = email.uid {
+                    spam_uids.insert(uid);
+                    continue;
+                }
+
+                tracing::warn!(
+                    score = rating.score,
+                    "Cannot move spam-classified message without a UID"
+                );
+            }
+        }
+
         emails.push(email);
+    }
+
+    // The fetch stream holds a mutable borrow of the IMAP session, so it must
+    // be released before issuing the UID MOVE command.
+    drop(stream);
+
+    if !spam_uids.is_empty() {
+        let spam_mailbox = resolve_imap_mailbox_name(&mut session, &MailBox::Spam).await?;
+        let spam_uid_set = uid_vec_to_set(&spam_uids);
+
+        session.uid_mv(spam_uid_set, &spam_mailbox).await?;
+        tracing::info!(
+            count = spam_uids.len(),
+            destination = spam_mailbox,
+            "Moved high-confidence spam messages out of Inbox"
+        );
     }
 
     let notifications = if *mailbox == MailBox::Inbox {

@@ -19,6 +19,7 @@ use crate::{
     llm::system_messages::{EMAIL_LLM_SYSTEM_MESSAGE, SPAM_RATER_SYSTEM_MESSAGE},
 };
 
+pub mod phishing_rater;
 mod system_messages;
 
 #[derive(Deserialize, Debug, Serialize, JsonSchema)]

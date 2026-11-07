@@ -11,9 +11,9 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::config::ImapClientConfig;
 use crate::handlers::{
-    email_generator, inbox_email_populated, inbox_intial_email_populated, is_llm_enabled,
-    refresh_emails_handler, send_email, sent_email_populated, sent_intial_email_populated,
-    set_email_read,
+    email_generator, inbox_email_populated, inbox_initial_email_populated, is_llm_enabled,
+    refresh_emails_handler, send_email, sent_email_populated, sent_initial_email_populated,
+    set_email_read, spam_email_populated, spam_initial_email_populated,
 };
 use crate::imap::ImapCommand;
 use crate::workers::{worker, FetchManager};
@@ -51,6 +51,9 @@ pub struct InboxPopulateUpdateState(pub Arc<Mutex<AtomicU8>>);
 #[derive(Clone)]
 pub struct SentPopulateUpdateState(pub Arc<Mutex<AtomicU8>>);
 
+#[derive(Clone)]
+pub struct SpamPopulateUpdateState(pub Arc<Mutex<AtomicU8>>);
+
 pub static LOGGED_IN: LazyLock<Arc<Mutex<bool>>> = LazyLock::new(|| Arc::new(Mutex::new(false)));
 pub static LOGGING_IN: LazyLock<Arc<Mutex<bool>>> = LazyLock::new(|| Arc::new(Mutex::new(false)));
 pub static FETCH_MANAGER: LazyLock<Arc<FetchManager>> =
@@ -59,20 +62,25 @@ pub static INBOX_POPULATE_UPDATE: LazyLock<InboxPopulateUpdateState> =
     LazyLock::new(|| InboxPopulateUpdateState(Arc::new(Mutex::new(AtomicU8::new(0)))));
 pub static SENT_POPULATE_UPDATE: LazyLock<SentPopulateUpdateState> =
     LazyLock::new(|| SentPopulateUpdateState(Arc::new(Mutex::new(AtomicU8::new(0)))));
+pub static SPAM_POPULATE_UPDATE: LazyLock<SpamPopulateUpdateState> =
+    LazyLock::new(|| SpamPopulateUpdateState(Arc::new(Mutex::new(AtomicU8::new(0)))));
 
 pub struct InitialDbPopulation {
     inbox_rx: Mutex<Option<oneshot::Receiver<()>>>,
     sent_rx: Mutex<Option<oneshot::Receiver<()>>>,
+    spam_rx: Mutex<Option<oneshot::Receiver<()>>>,
 }
 
 impl InitialDbPopulation {
     fn new(
-        inbox_intial_email_populated_rx: oneshot::Receiver<()>,
-        sent_intial_email_populated_rx: oneshot::Receiver<()>,
+        inbox_initial_email_populated_rx: oneshot::Receiver<()>,
+        sent_initial_email_populated_rx: oneshot::Receiver<()>,
+        spam_initial_email_populated_rx: oneshot::Receiver<()>,
     ) -> Self {
         Self {
-            inbox_rx: Mutex::new(Some(inbox_intial_email_populated_rx)),
-            sent_rx: Mutex::new(Some(sent_intial_email_populated_rx)),
+            inbox_rx: Mutex::new(Some(inbox_initial_email_populated_rx)),
+            sent_rx: Mutex::new(Some(sent_initial_email_populated_rx)),
+            spam_rx: Mutex::new(Some(spam_initial_email_populated_rx)),
         }
     }
 }
@@ -100,10 +108,14 @@ pub async fn run() {
 
     let (logout_state_tx, logout_state_rx) = mpsc::unbounded_channel::<()>();
 
-    let (inbox_intial_email_populated_tx, inbox_intial_email_populated_rx) =
+    let (inbox_initial_email_populated_tx, inbox_initial_email_populated_rx) =
         oneshot::channel::<()>();
 
-    let (sent_intial_email_populated_tx, sent_intial_email_populated_rx) = oneshot::channel::<()>();
+    let (sent_initial_email_populated_tx, sent_initial_email_populated_rx) =
+        oneshot::channel::<()>();
+
+    let (spam_initial_email_populated_tx, spam_initial_email_populated_rx) =
+        oneshot::channel::<()>();
 
     tauri::Builder::default()
         .manage(ArcSwap::from_pointee(AppState::Fresh))
@@ -118,7 +130,8 @@ pub async fn run() {
         .manage(FETCH_MANAGER.clone())
         .manage(INBOX_POPULATE_UPDATE.clone())
         .manage(SENT_POPULATE_UPDATE.clone())
-        .manage(InitialDbPopulation::new(inbox_intial_email_populated_rx, sent_intial_email_populated_rx))
+        .manage(SPAM_POPULATE_UPDATE.clone())
+        .manage(InitialDbPopulation::new(inbox_initial_email_populated_rx, sent_initial_email_populated_rx, spam_initial_email_populated_rx))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_notification::init())
@@ -131,8 +144,9 @@ pub async fn run() {
                     imap_client_returning_user_channel_rx,
                     imap_cmd_channel_rx,
                     logout_state_tx,
-                    Arc::new(Mutex::new(Some(inbox_intial_email_populated_tx))),
-                    Arc::new(Mutex::new(Some(sent_intial_email_populated_tx))),
+                    Arc::new(Mutex::new(Some(inbox_initial_email_populated_tx))),
+                    Arc::new(Mutex::new(Some(sent_initial_email_populated_tx))),
+                    Arc::new(Mutex::new(Some(spam_initial_email_populated_tx)))
                 )
                 .await;
             });
@@ -236,7 +250,7 @@ pub async fn run() {
             email_generator,
             enable_main_window_controls,
             inbox_email_populated,
-            inbox_intial_email_populated,
+            inbox_initial_email_populated,
             is_llm_enabled,
             config_setup,
             connect_chatgpt,
@@ -250,7 +264,9 @@ pub async fn run() {
             send_email,
             set_email_read,
             sent_email_populated,
-            sent_intial_email_populated,
+            sent_initial_email_populated,
+            spam_email_populated,
+            spam_initial_email_populated,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
