@@ -18,6 +18,16 @@ export async function sentFolderPopulationListener(onProgress, listen) {
   return unlisten;
 }
 
+export async function spamFolderPopulationListener(onProgress, listen) {
+  const unlisten = await listen("spam-population-progress", (event) => {
+    const payload = Number(event.payload);
+    const progress = Number.isFinite(payload) ? payload : 0;
+    onProgress(progress);
+  });
+
+  return unlisten;
+}
+
 export async function inboxInitialPopulationCompleted(callback, listen) {
   const unlisten = await listen("inbox-initial-population-complete", () => {
     callback();
@@ -28,6 +38,14 @@ export async function inboxInitialPopulationCompleted(callback, listen) {
 
 export async function sentInitialPopulationCompleted(callback, listen) {
   const unlisten = await listen("sent-initial-population-complete", () => {
+    callback();
+  });
+
+  return unlisten;
+}
+
+export async function spamInitialPopulationCompleted(callback, listen) {
+  const unlisten = await listen("spam-initial-population-complete", () => {
     callback();
   });
 

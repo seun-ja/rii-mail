@@ -10,7 +10,7 @@ function createHarness({ invoke = async () => {}, retryDelaysMs = [] } = {}) {
     read: false,
   };
   const state = {
-    cachedByFolder: { INBOX: [email], Sent: [], Trash: [] },
+    cachedByFolder: { INBOX: [email], Sent: [], Spam: [], Trash: [] },
   };
   const updates = [];
   const messages = [];
@@ -69,6 +69,23 @@ test("markAsRead updates local state immediately while backend sync continues", 
   finishSync();
   await h.controller.whenIdle(h.email.id);
   assert.deepEqual(h.messages, []);
+});
+
+test("markAsRead sends Spam messages to the Spam mailbox", async () => {
+  const calls = [];
+  const h = createHarness({
+    invoke(command, args) {
+      calls.push({ command, args });
+      return Promise.resolve();
+    },
+  });
+  const spam = { id: "db-Spam-uid-77", folder: "Spam", read: false };
+  h.controller.markAsRead(spam);
+  await h.controller.whenIdle(spam.id);
+
+  assert.deepEqual(calls, [
+    { command: "set_email_read", args: { uid: 77, mailbox: "Spam", read: true } },
+  ]);
 });
 
 test("markAsRead deduplicates repeat interactions for an optimistically read email", async () => {

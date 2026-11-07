@@ -222,6 +222,7 @@ impl From<String> for MailBox {
             "Sent" => MailBox::Sent,
             "Drafts" => MailBox::Drafts,
             "Trash" => MailBox::Trash,
+            "Spam" => MailBox::Spam,
             _ => MailBox::Inbox, // Default to Inbox if unknown
         }
     }

@@ -216,6 +216,10 @@ export function getActiveBackendFolderKey(state) {
     return "Sent";
   }
 
+  if (state.activeFolder === "Spam") {
+    return "Spam";
+  }
+
   if (state.activeFolder === "Trash") {
     return "Trash";
   }

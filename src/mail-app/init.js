@@ -1,8 +1,10 @@
 import {
   inboxFolderPopulationListener,
   sentFolderPopulationListener,
+  spamFolderPopulationListener,
   inboxInitialPopulationCompleted,
   sentInitialPopulationCompleted,
+  spamInitialPopulationCompleted,
   emailsUpdatedListener,
 } from "./listener.js";
 import { createInitialState } from "./state.js";
@@ -64,6 +66,7 @@ export function initializeMailApp({
   state.folderPopulation = {
     inbox: 0,
     sent: 0,
+    spam: 0,
   };
   const ui = createUiController(dom);
   if (startupWarning) {
@@ -167,7 +170,7 @@ export function initializeMailApp({
           disposed ||
           !payload ||
           typeof payload !== "object" ||
-          !["INBOX", "Sent"].includes(payload.mailbox) ||
+          !["INBOX", "Sent", "Spam"].includes(payload.mailbox) ||
           payload.provider !== getProviderLiteral(storage)
         ) {
           return;
@@ -190,6 +193,7 @@ export function initializeMailApp({
       ui.updateDbPopulation(
         state.folderPopulation.inbox,
         state.folderPopulation.sent,
+        state.folderPopulation.spam,
       );
     }, listen);
 
@@ -202,10 +206,24 @@ export function initializeMailApp({
       ui.updateDbPopulation(
         state.folderPopulation.inbox,
         state.folderPopulation.sent,
+        state.folderPopulation.spam,
       );
     }, listen);
 
     trackListener(sentProgress);
+    if (disposed) return;
+
+    const spamProgress = await spamFolderPopulationListener((progress) => {
+      if (disposed) return;
+      state.folderPopulation.spam = progress;
+      ui.updateDbPopulation(
+        state.folderPopulation.inbox,
+        state.folderPopulation.sent,
+        state.folderPopulation.spam,
+      );
+    }, listen);
+
+    trackListener(spamProgress);
     if (disposed) return;
 
     const inboxReady = await inboxInitialPopulationCompleted(async () => {
@@ -235,13 +253,23 @@ export function initializeMailApp({
     trackListener(sentReady);
     if (disposed) return;
 
+    const spamReady = await spamInitialPopulationCompleted(() => {
+      state.isInitialSpamDbPopulated = true;
+      console.log("Initial Spam mailbox population complete");
+    }, listen);
+
+    trackListener(spamReady);
+    if (disposed) return;
+
     // The native completion bridges consume one-shot receivers. Register every
     // frontend listener first so a fast initial import cannot emit its only
     // readiness event before the UI is listening.
     invoke("inbox_email_populated").catch(console.error);
     invoke("sent_email_populated").catch(console.error);
+    invoke("spam_email_populated").catch(console.error);
     invoke("inbox_initial_email_populated").catch(console.error);
     invoke("sent_initial_email_populated").catch(console.error);
+    invoke("spam_initial_email_populated").catch(console.error);
   })().catch((error) => {
     console.error("Failed to register mailbox sync listeners", error);
   });
@@ -251,12 +279,15 @@ export function initializeMailApp({
     clearCachedEmails(storage);
     state.cachedByFolder.INBOX = [];
     state.cachedByFolder.Sent = [];
+    state.cachedByFolder.Spam = [];
     state.cachedByFolder.Trash = [];
     state.totalEmailsByFolder.INBOX = null;
     state.totalEmailsByFolder.Sent = null;
+    state.totalEmailsByFolder.Spam = null;
     state.totalEmailsByFolder.Trash = null;
     resetFolderPagination(state, "INBOX");
     resetFolderPagination(state, "Sent");
+    resetFolderPagination(state, "Spam");
     resetFolderPagination(state, "Trash");
   };
 
@@ -324,7 +355,9 @@ export function initializeMailApp({
       button.classList.add("active");
       renderer.renderList();
 
-      if (state.activeFolder !== "INBOX" && state.activeFolder !== "Sent") {
+      if (
+        !["INBOX", "Sent", "Spam"].includes(state.activeFolder)
+      ) {
         return;
       }
 

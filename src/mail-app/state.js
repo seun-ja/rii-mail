@@ -4,11 +4,13 @@ export function createInitialState() {
     cachedByFolder: {
       INBOX: [],
       Sent: [],
+      Spam: [],
       Trash: [],
     },
     totalEmailsByFolder: {
       INBOX: null,
       Sent: null,
+      Spam: null,
       Trash: null,
     },
     activeFolder: "INBOX",
@@ -20,9 +22,11 @@ export function createInitialState() {
     isEmailPopulationComplete: false,
     isInitialInboxDbPopulated: false,
     isInitialSentDbPopulated: false,
+    isInitialSpamDbPopulated: false,
     folderPopulation: {
       inbox: 0,
       sent: 0,
+      spam: 0,
     },
     paginationByFolder: {
       INBOX: {
@@ -32,6 +36,12 @@ export function createInitialState() {
         lastFetchAt: 0,
       },
       Sent: {
+        nextOffset: 0,
+        hasMoreEmails: true,
+        lastFetchSignature: null,
+        lastFetchAt: 0,
+      },
+      Spam: {
         nextOffset: 0,
         hasMoreEmails: true,
         lastFetchSignature: null,
