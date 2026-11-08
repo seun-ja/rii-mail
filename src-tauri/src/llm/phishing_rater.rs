@@ -30,7 +30,7 @@ pub async fn rater(
         .get()
         .await?
         .agent()
-        .chat(&message)
+        .chat(&message, None)
         .await?;
 
     rating.try_into()

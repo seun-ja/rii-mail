@@ -2,10 +2,13 @@
   "identifier": "default",
   "description": "Capability for the main window",
   "windows": [
-    "main"
+    "main",
+    "composer-*"
   ],
   "permissions": [
     "core:default",
+    "core:webview:allow-create-webview-window",
+    "core:window:allow-close",
     "opener:default",
     "sql:default",
     "notification:default"

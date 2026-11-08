@@ -417,7 +417,7 @@ impl<J: JsonSchema + serde::de::DeserializeOwned> CompletionProvider<J> for Loca
         feature = "tracing",
         tracing::instrument(name = "local_inference.chat", skip(self, prompt))
     )]
-    async fn chat(&self, prompt: &str) -> Result<String, Error> {
+    async fn chat(&self, prompt: &str, _context: Option<&str>) -> Result<String, Error> {
         self.invoke(prompt)
     }
 
@@ -425,7 +425,7 @@ impl<J: JsonSchema + serde::de::DeserializeOwned> CompletionProvider<J> for Loca
         feature = "tracing",
         tracing::instrument(name = "local_inference.schema_chat", skip(self, prompt))
     )]
-    async fn schema_chat(&self, _prompt: &str) -> Result<J, Error> {
-        todo!()
+    async fn schema_chat(&self, _prompt: &str, _context: Option<&str>) -> Result<J, Error> {
+        unimplemented!("Doesn't support Schema Chat")
     }
 }

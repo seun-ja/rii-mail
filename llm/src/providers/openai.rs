@@ -1,7 +1,7 @@
 use rig::{
     agent::{Agent, AgentBuilder, WithBuilderTools},
     client::CompletionClient as _,
-    completion::Prompt,
+    completion::{Chat as _, Message},
     providers::openai::{self, responses_api::ResponsesCompletionModel},
     tool::Tool,
 };
@@ -108,8 +108,8 @@ impl<J: JsonSchema + serde::de::DeserializeOwned> CompletionProvider<J> for Open
         feature = "tracing",
         tracing::instrument(name = "openai.chat", skip(self, prompt))
     )]
-    async fn chat(&self, prompt: &str) -> Result<String, Error> {
-        let response = self.agent.prompt(prompt).await?;
+    async fn chat(&self, prompt: &str, context: Option<&str>) -> Result<String, Error> {
+        let response = self.agent.chat(prompt, context_history(context)).await?;
         Ok(response)
     }
 
@@ -117,11 +117,19 @@ impl<J: JsonSchema + serde::de::DeserializeOwned> CompletionProvider<J> for Open
         feature = "tracing",
         tracing::instrument(name = "openai.schema_chat", skip(self, prompt))
     )]
-    async fn schema_chat(&self, prompt: &str) -> Result<J, Error> {
-        let response = self.agent.prompt(prompt).await?;
+    async fn schema_chat(&self, prompt: &str, context: Option<&str>) -> Result<J, Error> {
+        let response = self.agent.chat(prompt, context_history(context)).await?;
         let res = serde_json::from_str(&response)?;
         Ok(res)
     }
+}
+
+fn context_history(context: Option<&str>) -> Vec<Message> {
+    context
+        .filter(|context| !context.trim().is_empty())
+        .map(Message::user)
+        .into_iter()
+        .collect()
 }
 
 fn builder(

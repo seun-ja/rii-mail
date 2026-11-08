@@ -17,8 +17,8 @@ pub use local_inference::LocalInferenceAI;
 #[async_trait::async_trait]
 pub trait CompletionProvider<J: JsonSchema + serde::de::DeserializeOwned>: Send + Sync {
     /// Returns a chat response for the given prompt.
-    async fn chat(&self, prompt: &str) -> Result<String, Error>;
-    async fn schema_chat(&self, prompt: &str) -> Result<J, Error>;
+    async fn chat(&self, prompt: &str, context: Option<&str>) -> Result<String, Error>;
+    async fn schema_chat(&self, prompt: &str, context: Option<&str>) -> Result<J, Error>;
 }
 
 /// Supported AI providers for the agent server.

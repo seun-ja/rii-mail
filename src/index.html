@@ -5,7 +5,7 @@
         <link rel="stylesheet" href="styles.css" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>RiiMail</title>
-        <script type="module" src="/main.js" defer></script>
+        <script type="module" src="/main.js?v=2" defer></script>
     </head>
 
     <body class="home-page">
@@ -218,58 +218,116 @@
             </div>
         </div>
 
-        <output id="link-preview" class="link-preview" aria-live="polite"></output>
+        <output
+            id="link-preview"
+            class="link-preview"
+            aria-live="polite"
+        ></output>
 
-        <div
-            id="result-msg"
-            class="status-toast"
-            inert
-        >
+        <div id="result-msg" class="status-toast" inert>
             <span class="status-toast-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.7"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                >
                     <circle cx="12" cy="12" r="9"></circle>
-                    <path class="status-toast-info-mark" d="M12 11v5M12 8h.01"></path>
-                    <path class="status-toast-error-mark" d="M12 7v6M12 16h.01"></path>
+                    <path
+                        class="status-toast-info-mark"
+                        d="M12 11v5M12 8h.01"
+                    ></path>
+                    <path
+                        class="status-toast-error-mark"
+                        d="M12 7v6M12 16h.01"
+                    ></path>
                 </svg>
             </span>
-            <div class="status-toast-content" role="status" aria-live="polite" aria-atomic="true">
+            <div
+                class="status-toast-content"
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+            >
                 <p class="status-toast-title"></p>
                 <p class="status-toast-message"></p>
             </div>
-            <button class="status-toast-close" type="button" aria-label="Dismiss notification">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+            <button
+                class="status-toast-close"
+                type="button"
+                aria-label="Dismiss notification"
+            >
+                <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.7"
+                    stroke-linecap="round"
+                    aria-hidden="true"
+                >
                     <path d="m6 6 12 12M18 6 6 18"></path>
                 </svg>
             </button>
         </div>
         <div id="compose-modal" class="modal hidden">
             <div class="modal-content composer-modal">
-                <!-- Header -->
-                <div class="modal-header">
-                    <div style="display: flex; align-items: center; gap: 12px">
-                        <h2 id="compose-title" class="modal-title">New Message</h2>
+                <div class="modal-header composer-window-header">
+                    <div class="composer-window-title">
+                        <h2 id="compose-title" class="modal-title">
+                            New Message
+                        </h2>
+                    </div>
 
+                    <div class="composer-window-actions">
                         <button
                             id="open-ai-assistant-btn"
                             class="ai-toggle-btn hidden"
                             type="button"
+                            aria-label="Open AI assistant"
+                            title="Ask AI"
                         >
-                            ✨ AI
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path
+                                    d="m12 3 .9 5.1L18 9l-5.1.9L12 15l-.9-5.1L6 9l5.1-.9L12 3Zm6.5 11 .5 2.5 2.5.5-2.5.5-.5 2.5-.5-2.5-2.5-.5 2.5-.5.5-2.5Z"
+                                />
+                            </svg>
+                            <span>Write with AI</span>
+                        </button>
+                        <button
+                            id="expand-compose-btn"
+                            class="composer-expand-btn"
+                            type="button"
+                            aria-label="Open composer in a new window"
+                            title="Open in new window"
+                        >
+                            <svg
+                                class="composer-expand-icon"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                aria-hidden="true"
+                            >
+                                <path d="M14 4h6v6M20 4l-8 8"></path>
+                                <path
+                                    d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"
+                                ></path>
+                            </svg>
+                        </button>
+                        <button
+                            id="close-compose-btn"
+                            class="composer-close-btn"
+                            type="button"
+                            aria-label="Close composer"
+                            title="Close"
+                        >
+                            ✕
                         </button>
                     </div>
-
-                    <button
-                        id="close-compose-btn"
-                        class="composer-close-btn"
-                        type="button"
-                    >
-                        ✕
-                    </button>
                 </div>
 
-                <!-- Fields -->
                 <div class="composer-fields">
-                    <div class="composer-row">
+                    <div class="composer-row composer-recipient-row">
                         <span class="composer-label">To</span>
 
                         <input
@@ -278,6 +336,30 @@
                             type="email"
                             placeholder="recipient@example.com"
                         />
+
+                        <div
+                            class="recipient-actions"
+                            aria-label="Additional recipients"
+                        >
+                            <button
+                                id="toggle-cc-btn"
+                                class="composer-recipient-btn"
+                                type="button"
+                                aria-controls="compose-cc-row"
+                                aria-expanded="false"
+                            >
+                                Cc
+                            </button>
+                            <button
+                                id="toggle-bcc-btn"
+                                class="composer-recipient-btn"
+                                type="button"
+                                aria-controls="compose-bcc-row"
+                                aria-expanded="false"
+                            >
+                                Bcc
+                            </button>
+                        </div>
                     </div>
 
                     <div
@@ -320,9 +402,7 @@
                     </div>
                 </div>
 
-                <!-- Main Content -->
                 <div class="composer-main">
-                    <!-- Email Editor -->
                     <div class="composer-editor-wrapper">
                         <textarea
                             id="compose-body"
@@ -331,72 +411,91 @@
                         ></textarea>
                     </div>
 
-                    <!-- AI Assistant -->
                     <aside
                         id="ai-assistant-panel"
                         class="ai-assistant-panel hidden"
+                        aria-label="AI writing assistant"
                     >
                         <div class="ai-panel-header">
-                            <h3>AI Assistant</h3>
-
+                            <div class="ai-panel-heading">
+                                <h3>Draft with AI</h3>
+                            </div>
                             <button
                                 id="close-ai-assistant-btn"
                                 class="ai-close-btn"
                                 type="button"
+                                aria-label="Close AI assistant"
                             >
                                 ✕
                             </button>
                         </div>
 
                         <p class="ai-helper-text">
-                            Describe the email you'd like to create.
+                            Share the idea or tone you have in mind. AI will
+                            turn it into an editable draft.
                         </p>
 
-                        <textarea
-                            id="ai-email-prompt"
-                            class="ai-prompt"
-                            placeholder="let's create magic"
-                        ></textarea>
+                        <div class="ai-prompt-composer">
+                            <textarea
+                                id="ai-email-prompt"
+                                class="ai-prompt"
+                                placeholder="What would you like to say?"
+                            ></textarea>
+                            <button
+                                id="generate-email-btn"
+                                class="ai-generate-btn"
+                                type="button"
+                                aria-label="Generate draft"
+                                title="Generate draft"
+                            >
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M5 12h12M13 6l6 6-6 6" />
+                                </svg>
+                            </button>
+                        </div>
 
-                        <button
-                            id="generate-email-btn"
-                            class="action-btn primary"
-                            type="button"
+                        <div
+                            id="ai-context-section"
+                            class="ai-context-section hidden"
                         >
-                            Generate Draft
-                        </button>
+                            <label class="ai-context-option">
+                                <input
+                                    id="ai-use-selected-email-context"
+                                    type="checkbox"
+                                />
+                                <span>Use the original email as context</span>
+                            </label>
+                            <p class="ai-context-caveat">
+                                When enabled, the original email's content is sent
+                                to your configured external AI (LLM) provider to
+                                help generate a reply. Only enable this if you're
+                                comfortable sharing that email with the provider.
+                            </p>
+                        </div>
 
-                        <div id="generate-email-status" class="ai-status"></div>
+                        <div
+                            id="generate-email-status"
+                            class="ai-status"
+                            role="status"
+                        ></div>
                     </aside>
                 </div>
 
-                <!-- Footer -->
                 <div class="composer-footer">
-                    <div class="composer-footer-left">
-                        <button
-                            id="toggle-cc-btn"
-                            class="composer-link-btn"
-                            type="button"
-                        >
-                            CC
-                        </button>
-
-                        <button
-                            id="toggle-bcc-btn"
-                            class="composer-link-btn"
-                            type="button"
-                        >
-                            BCC
-                        </button>
-                    </div>
-
                     <div class="composer-footer-right">
                         <button
                             id="send-compose-btn"
                             class="action-btn primary composer-send-btn"
                             type="button"
                         >
-                            Send Email
+                            <span>Send</span>
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                aria-hidden="true"
+                            >
+                                <path d="m5 12 14-7-4 14-3-6-7-1Z"></path>
+                            </svg>
                         </button>
                     </div>
                 </div>
