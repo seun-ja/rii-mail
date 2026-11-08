@@ -55,9 +55,7 @@ export function initializeMailApp({
     !dom.searchInputEl ||
     !dom.composeBtnEl ||
     !dom.refreshBtnEl ||
-    !dom.spamCheckBtnEl ||
-    !dom.markReadBtnEl ||
-    !dom.archiveBtnEl
+    !dom.spamCheckBtnEl
   ) {
     return;
   }
@@ -435,6 +433,14 @@ export function initializeMailApp({
     }
   }
 
+  function moveEmailToTrash(email) {
+    email.folder = "Trash";
+    state.selectedId = null;
+    renderer.renderList();
+    saveCachedEmails(state, storage);
+    ui.showMessage("Email moved to Trash.");
+  }
+
   dom.mailReaderEl.addEventListener("click", (event) => {
     const emailLink = event.target?.closest?.("[data-email-link]");
     if (emailLink) {
@@ -462,6 +468,8 @@ export function initializeMailApp({
       openComposerWithDraft(createReplyDraft(selected), "Reply");
     } else if (action === "forward") {
       openComposerWithDraft(createForwardDraft(selected), "Forward");
+    } else if (action === "trash") {
+      moveEmailToTrash(selected);
     }
   });
 
@@ -540,7 +548,7 @@ export function initializeMailApp({
     try {
       ui.showMessage("Sending email...");
 
-      await invoke("send_email", {
+      const sentEmail = await invoke("send_email", {
         to: toEmails.map((email) => ["", email]),
         cc: ccEmails.map((ccEmail) => ["", ccEmail]),
         bcc: bccEmails.map((bccEmail) => ["", bccEmail]),
@@ -548,6 +556,16 @@ export function initializeMailApp({
         body,
         contentType: "text/plain",
       });
+
+      if (sentEmail && typeof sentEmail === "object" && sentEmail.id) {
+        state.cachedByFolder.Sent = [
+          { ...sentEmail, folder: "Sent" },
+          ...state.cachedByFolder.Sent.filter((mail) => mail.id !== sentEmail.id),
+        ];
+        state.totalEmailsByFolder.Sent =
+          (state.totalEmailsByFolder.Sent || 0) + 1;
+        saveCachedEmails(state, storage);
+      }
 
       ui.showMessage("Email sent successfully!");
 
@@ -561,7 +579,10 @@ export function initializeMailApp({
       ccRow?.classList.add("hidden");
       bccRow?.classList.add("hidden");
 
-      state.activeFolder = "INBOX";
+      state.activeFolder = "Sent";
+      dom.folderButtons.forEach((button) =>
+        button.classList.toggle("active", button.dataset.folder === "Sent"),
+      );
       renderer.renderList();
     } catch (error) {
       console.error(error);
@@ -637,41 +658,7 @@ export function initializeMailApp({
     }
   });
 
-  dom.markReadBtnEl.addEventListener("click", () => {
-    const selected = getEmails(state).find(
-      (mail) => mail.id === state.selectedId,
-    );
 
-    if (!selected) {
-      ui.showMessage("Select an email first.", true);
-      return;
-    }
-
-    if (selected.read) {
-      ui.showMessage("Email is already marked as read.");
-      return;
-    }
-
-    readSync.markAsRead(selected);
-    ui.showMessage("Marked as read. Server sync will continue in the background.");
-  });
-
-  dom.archiveBtnEl.addEventListener("click", () => {
-    const selected = getEmails(state).find(
-      (mail) => mail.id === state.selectedId,
-    );
-
-    if (!selected) {
-      ui.showMessage("Select an email first.", true);
-      return;
-    }
-
-    selected.folder = "Trash";
-    state.selectedId = null;
-    renderer.renderList();
-    saveCachedEmails(state, storage);
-    ui.showMessage("Email moved to archive.");
-  });
 
   dom.spamCheckBtnEl.addEventListener("click", async () => {
     const selected = getEmails(state).find(

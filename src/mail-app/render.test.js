@@ -48,6 +48,7 @@ test("renderReader shows escaped Cc recipients without mutating read state", () 
 
   assert.match(mailReaderEl.innerHTML, /data-reader-action="reply"/);
   assert.match(mailReaderEl.innerHTML, /data-reader-action="forward"/);
+  assert.match(mailReaderEl.innerHTML, /data-reader-action="trash"/);
   assert.match(mailReaderEl.innerHTML, /class="reader-meta-item reader-meta-cc"/);
   assert.match(
     mailReaderEl.innerHTML,

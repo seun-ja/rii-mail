@@ -93,14 +93,18 @@ test("email bridge cancels navigation, forwards links, and scrolls local fragmen
   const html = prepareEmailHtml("<p>Message</p>");
   const script = html.match(/<script nonce="[a-f0-9]+">([\s\S]*?)<\/script>/)[1];
   let onClick;
+  let onMouseOver;
+  let onMouseOut;
   const messages = [];
   const scrolledIds = [];
   runInNewContext(script, {
     document: {
       addEventListener(type, callback, capture) {
-        assert.equal(type, "click");
         assert.equal(capture, true);
-        onClick = callback;
+        if (type === "click") onClick = callback;
+        else if (type === "mouseover") onMouseOver = callback;
+        else if (type === "mouseout") onMouseOut = callback;
+        else assert.fail(`Unexpected event type: ${type}`);
       },
       getElementById(id) {
         return { scrollIntoView: () => scrolledIds.push(id) };
@@ -108,6 +112,13 @@ test("email bridge cancels navigation, forwards links, and scrolls local fragmen
     },
     window: { parent: { postMessage: (data, origin) => messages.push({ ...data, origin }) } },
   });
+
+  const previewLink = {
+    getAttribute: () => "https://preview.example/path",
+    contains: () => false,
+  };
+  onMouseOver({ target: { closest: () => previewLink } });
+  onMouseOut({ target: { closest: () => previewLink }, relatedTarget: null });
 
   const click = (url) => {
     let prevented = false;
@@ -124,6 +135,8 @@ test("email bridge cancels navigation, forwards links, and scrolls local fragmen
   click("#malformed%fragment");
   onClick({ target: { closest: () => null } });
   assert.deepEqual(messages, [
+    { type: "riimail:preview-email-link", url: "https://preview.example/path", origin: "*" },
+    { type: "riimail:preview-email-link", url: null, origin: "*" },
     { type: "riimail:open-email-link", url: "https://example.com", origin: "*" },
     { type: "riimail:open-email-link", url: "mailto:user@example.com", origin: "*" },
   ]);
