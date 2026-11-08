@@ -49,7 +49,10 @@ pub async fn email_generator(
         .ok_or(Error::Llm(llm::error::Error::ProviderError(
             "Uninitialized Provider".to_string(),
         )))?;
-    let message = agent.agent().schema_chat(&thoughts, context.as_deref()).await?;
+    let message = agent
+        .agent()
+        .schema_chat(&thoughts, context.as_deref())
+        .await?;
 
     Ok(message)
 }
