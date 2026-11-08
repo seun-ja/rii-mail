@@ -22,7 +22,9 @@ import {
 } from "./cache.js";
 import {
   createForwardDraft,
+  createQuotedEmailContext,
   createReplyDraft,
+  insertResponseBeforeQuote,
   getActiveBackendFolderKey,
   getFolderPaginationState,
   getSafeExternalUrl,
@@ -42,6 +44,7 @@ export function initializeMailApp({
   invoke,
   listen,
   openExternalUrl,
+  createComposerWindow,
   startupWarning = null,
   storage = window.localStorage,
 }) {
@@ -333,6 +336,28 @@ export function initializeMailApp({
     }).then(trackListener).catch(() => {
       // Ignore listener setup failures in non-Tauri contexts.
     });
+
+    listen("composer://sent", (event) => {
+      const sentEmail = event?.payload;
+      if (!sentEmail || typeof sentEmail !== "object" || !sentEmail.id) {
+        return;
+      }
+
+      state.cachedByFolder.Sent = [
+        { ...sentEmail, folder: "Sent" },
+        ...state.cachedByFolder.Sent.filter((mail) => mail.id !== sentEmail.id),
+      ];
+      state.totalEmailsByFolder.Sent =
+        (state.totalEmailsByFolder.Sent || 0) + 1;
+      saveCachedEmails(state, storage);
+
+      if (state.activeFolder === "Sent") {
+        renderer.renderList();
+      }
+      ui.showMessage("Email sent successfully!");
+    }).then(trackListener).catch(() => {
+      // Ignore listener setup failures in non-Tauri contexts.
+    });
   }
 
   function onPageHide() {
@@ -407,9 +432,16 @@ export function initializeMailApp({
     }
   });
 
+  const expandComposerBtn = document.getElementById("expand-compose-btn");
+  const aiContextSection = document.getElementById("ai-context-section");
+  const aiContextCheckbox = document.getElementById(
+    "ai-use-selected-email-context",
+  );
+
   function openComposerWithDraft(draft, title) {
     const cc = String(draft.cc ?? "").trim();
     const bcc = String(draft.bcc ?? "").trim();
+    const isReply = title === "Reply";
 
     document.getElementById("compose-title").textContent = title;
     dom.composeToInput.value = draft.to ?? "";
@@ -417,12 +449,14 @@ export function initializeMailApp({
     dom.composeBccInput.value = bcc;
     dom.composeSubjectInput.value = draft.subject ?? "";
     dom.composeBodyInput.value = draft.body ?? "";
-    document
-      .getElementById("compose-cc-row")
-      ?.classList.toggle("hidden", !cc);
-    document
-      .getElementById("compose-bcc-row")
-      ?.classList.toggle("hidden", !bcc);
+    ccRow?.classList.toggle("hidden", !cc);
+    bccRow?.classList.toggle("hidden", !bcc);
+    toggleCcBtn?.setAttribute("aria-expanded", String(Boolean(cc)));
+    toggleBccBtn?.setAttribute("aria-expanded", String(Boolean(bcc)));
+    aiContextSection?.classList.toggle("hidden", !isReply);
+    if (!isReply && aiContextCheckbox) {
+      aiContextCheckbox.checked = false;
+    }
     dom.composeModalEl.classList.remove("hidden");
 
     const inputToFocus = draft.to ? dom.composeBodyInput : dom.composeToInput;
@@ -484,6 +518,58 @@ export function initializeMailApp({
     dom.composeModalEl.classList.add("hidden");
   });
 
+  expandComposerBtn?.addEventListener("click", async () => {
+    if (typeof createComposerWindow !== "function") {
+      ui.showMessage("The separate composer window is unavailable.", true);
+      return;
+    }
+
+    const title = document.getElementById("compose-title").textContent;
+    const selected = getEmails(state).find(
+      (mail) => mail.id === state.selectedId,
+    );
+    const storageKey = `riimail.detachedComposer.${Date.now()}`;
+    const windowLabel = `composer-${Date.now()}`;
+    const draft = {
+      title,
+      to: dom.composeToInput.value,
+      cc: dom.composeCcInput.value,
+      bcc: dom.composeBccInput.value,
+      subject: dom.composeSubjectInput.value,
+      body: dom.composeBodyInput.value,
+      isReply: title === "Reply",
+      replyContext:
+        title === "Reply" && selected
+          ? createQuotedEmailContext(selected)
+          : null,
+    };
+
+    storage.setItem(storageKey, JSON.stringify(draft));
+
+    try {
+      await createComposerWindow({
+        label: windowLabel,
+        options: {
+          url: `/index.html?composerWindow=1#${encodeURIComponent(storageKey)}`,
+          title: title || "New Message",
+          width: 900,
+          height: 720,
+          minWidth: 680,
+          minHeight: 520,
+          center: true,
+          focus: true,
+          resizable: true,
+          decorations: true,
+        },
+      });
+      dom.composeModalEl.classList.add("hidden");
+    } catch (error) {
+      storage.removeItem(storageKey);
+      console.error("Could not open composer window", error);
+      ui.showMessage("Could not open the composer in a new window.", true);
+    }
+  });
+
   dom.composeModalEl.addEventListener("click", (e) => {
     if (e.target === dom.composeModalEl) {
       dom.composeModalEl.classList.add("hidden");
@@ -504,16 +590,20 @@ export function initializeMailApp({
 
   toggleCcBtn?.addEventListener("click", () => {
     ccRow.classList.toggle("hidden");
+    const isExpanded = !ccRow.classList.contains("hidden");
+    toggleCcBtn.setAttribute("aria-expanded", String(isExpanded));
 
-    if (!ccRow.classList.contains("hidden")) {
+    if (isExpanded) {
       document.getElementById("compose-cc").focus();
     }
   });
 
   toggleBccBtn?.addEventListener("click", () => {
     bccRow.classList.toggle("hidden");
+    const isExpanded = !bccRow.classList.contains("hidden");
+    toggleBccBtn.setAttribute("aria-expanded", String(isExpanded));
 
-    if (!bccRow.classList.contains("hidden")) {
+    if (isExpanded) {
       document.getElementById("compose-bcc").focus();
     }
   });
@@ -578,6 +668,8 @@ export function initializeMailApp({
       dom.composeBodyInput.value = "";
       ccRow?.classList.add("hidden");
       bccRow?.classList.add("hidden");
+      toggleCcBtn?.setAttribute("aria-expanded", "false");
+      toggleBccBtn?.setAttribute("aria-expanded", "false");
 
       state.activeFolder = "Sent";
       dom.folderButtons.forEach((button) =>
@@ -634,11 +726,27 @@ export function initializeMailApp({
     const status = document.getElementById("generate-email-status");
 
     try {
+      const useSelectedEmailContext = document.getElementById(
+        "ai-use-selected-email-context",
+      )?.checked;
+      const selected = getEmails(state).find(
+        (mail) => mail.id === state.selectedId,
+      );
+
+      if (useSelectedEmailContext && !selected) {
+        status.textContent = "Select an email to use it as reply context.";
+        return;
+      }
+
+      const quotedEmailContext = useSelectedEmailContext
+        ? createQuotedEmailContext(selected)
+        : null;
+
       status.textContent = "Generating draft...";
 
       const email = await invoke("email_generator", {
         thoughts: prompt,
-        context: null,
+        context: quotedEmailContext,
       });
 
       dom.composeToInput.value = email.to ?? "";
@@ -649,7 +757,13 @@ export function initializeMailApp({
 
       document.getElementById("compose-subject").value = email.subject ?? "";
 
-      document.getElementById("compose-body").value = email.body ?? "";
+      document.getElementById("compose-body").value = quotedEmailContext
+        ? insertResponseBeforeQuote(
+            email.body,
+            quotedEmailContext,
+            document.getElementById("compose-body").value,
+          )
+        : (email.body ?? "");
 
       status.textContent = "Draft inserted into composer";
     } catch (err) {

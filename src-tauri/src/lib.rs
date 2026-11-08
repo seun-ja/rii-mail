@@ -91,7 +91,7 @@ pub async fn self_test_bundled_inference(resource_root: &Path) -> Result<String,
         .map_err(|error| error.to_string())?;
     agent
         .agent()
-        .chat("RiiMail bundled runtime self-test")
+        .chat("RiiMail bundled runtime self-test", None)
         .await
         .map_err(|error| error.to_string())
 }

@@ -4,7 +4,9 @@ import { runInNewContext } from "node:vm";
 
 import {
   createForwardDraft,
+  createQuotedEmailContext,
   createReplyDraft,
+  insertResponseBeforeQuote,
   escapeHtml,
   formatAddressList,
   formatAddresses,
@@ -141,6 +143,33 @@ test("email bridge cancels navigation, forwards links, and scrolls local fragmen
     { type: "riimail:open-email-link", url: "mailto:user@example.com", origin: "*" },
   ]);
   assert.deepEqual(scrolledIds, ["section 1", "section2"]);
+});
+
+test("createQuotedEmailContext formats an email as reply-style quoted text", () => {
+  const context = createQuotedEmailContext({
+    senderName: "Alex Example",
+    emailFrom: "alex@example.com",
+    time: "Oct 27 10:30",
+    htmlBody: "<p>First line<br>Second line &amp; more</p>",
+  });
+
+  assert.equal(
+    context,
+    "On Oct 27 10:30, Alex Example <alex@example.com> wrote:\n> First line\n> Second line & more",
+  );
+});
+
+test("insertResponseBeforeQuote replaces a draft response while preserving its quote", () => {
+  const quote = "On Oct 27, Alex wrote:\n> Original email";
+
+  assert.equal(
+    insertResponseBeforeQuote("New response", quote, `Previous response\n\n${quote}`),
+    `New response\n\n${quote}`,
+  );
+  assert.equal(
+    insertResponseBeforeQuote("New response", quote),
+    `New response\n\n${quote}`,
+  );
 });
 
 test("createReplyDraft addresses the sender, preserves reply subjects, and quotes plain text", () => {

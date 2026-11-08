@@ -40,14 +40,28 @@ impl ChatGPT {
         })
     }
 
-    async fn response_text(&self, prompt: &str, schema: Option<Value>) -> Result<String, Error> {
+    async fn response_text(
+        &self,
+        prompt: &str,
+        context: Option<&str>,
+        schema: Option<Value>,
+    ) -> Result<String, Error> {
+        let mut input = Vec::with_capacity(2);
+        if let Some(context) = context.filter(|context| !context.trim().is_empty()) {
+            input.push(json!({
+                "role": "user",
+                "content": context,
+            }));
+        }
+        input.push(json!({
+            "role": "user",
+            "content": prompt,
+        }));
+
         let mut payload = json!({
             "model": self.model,
             "instructions": self.system_message,
-            "input": [{
-                "role": "user",
-                "content": prompt,
-            }],
+            "input": input,
             "store": false,
             "stream": true,
         });
@@ -96,20 +110,22 @@ impl ChatGPT {
 
 #[async_trait::async_trait]
 impl<J: JsonSchema + serde::de::DeserializeOwned> CompletionProvider<J> for ChatGPT {
-    async fn chat(&self, prompt: &str) -> Result<String, Error> {
-        self.response_text(prompt, None).await
+    async fn chat(&self, prompt: &str, context: Option<&str>) -> Result<String, Error> {
+        self.response_text(prompt, context, None).await
     }
 
-    async fn schema_chat(&self, prompt: &str) -> Result<J, Error> {
-        let mut schema = serde_json::to_value(schemars::schema_for!(J))?;
-        make_strict_json_schema(&mut schema);
-        let response = self.response_text(prompt, Some(schema)).await?;
+    async fn schema_chat(&self, prompt: &str, context: Option<&str>) -> Result<J, Error> {
+        let mut json_value = serde_json::to_value(schemars::schema_for!(J))?;
+        make_strict_json_schema(&mut json_value);
+        let response = self
+            .response_text(prompt, context, Some(json_value))
+            .await?;
         Ok(serde_json::from_str(&response)?)
     }
 }
 
-fn make_strict_json_schema(schema: &mut Value) {
-    match schema {
+fn make_strict_json_schema(value: &mut Value) {
+    match value {
         Value::Object(object) => {
             let property_names = object
                 .get("properties")

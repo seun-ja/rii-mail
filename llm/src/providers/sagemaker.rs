@@ -67,7 +67,7 @@ impl<J: JsonSchema + serde::de::DeserializeOwned> CompletionProvider<J> for Cust
         feature = "tracing",
         tracing::instrument(name = "sagemaker.chat", skip(self, prompt))
     )]
-    async fn chat(&self, prompt: &str) -> Result<String, Error> {
+    async fn chat(&self, prompt: &str, _context: Option<&str>) -> Result<String, Error> {
         self.invoke(prompt).await
     }
 
@@ -75,7 +75,7 @@ impl<J: JsonSchema + serde::de::DeserializeOwned> CompletionProvider<J> for Cust
         feature = "tracing",
         tracing::instrument(name = "sagemaker.schema_chat", skip(self, prompt))
     )]
-    async fn schema_chat(&self, prompt: &str) -> Result<J, Error> {
+    async fn schema_chat(&self, prompt: &str, _context: Option<&str>) -> Result<J, Error> {
         let response = self.invoke(prompt).await?;
         let res = serde_json::from_str(&response)?;
         Ok(res)

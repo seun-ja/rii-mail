@@ -309,7 +309,7 @@ function getSenderLabel(email) {
   return name || address || "Unknown sender";
 }
 
-export function createReplyDraft(email) {
+export function createQuotedEmailContext(email) {
   const sender = getSenderLabel(email);
   const sentAt = String(email?.time || "Unknown date").trim();
   const quotedBody = getPlainMessageBody(email)
@@ -317,10 +317,25 @@ export function createReplyDraft(email) {
     .map((line) => `> ${line}`)
     .join("\n");
 
+  return `On ${sentAt}, ${sender} wrote:\n${quotedBody}`;
+}
+
+export function insertResponseBeforeQuote(response, quote, currentBody = "") {
+  const generatedResponse = String(response || "").trim();
+  const quotedEmail = String(quote || "").trim();
+  const existingBody = String(currentBody || "");
+  const quoteOffset = quotedEmail ? existingBody.indexOf(quotedEmail) : -1;
+  const preservedQuote =
+    quoteOffset >= 0 ? existingBody.slice(quoteOffset).trim() : quotedEmail;
+
+  return [generatedResponse, preservedQuote].filter(Boolean).join("\n\n");
+}
+
+export function createReplyDraft(email) {
   return {
     to: String(email?.emailFrom || "").trim(),
     subject: prefixedSubject(email?.subject, "Re"),
-    body: `\n\nOn ${sentAt}, ${sender} wrote:\n${quotedBody}`,
+    body: `\n\n${createQuotedEmailContext(email)}`,
   };
 }
 
