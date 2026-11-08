@@ -1,6 +1,7 @@
 import { getEmails } from "./cache.js";
 import {
   EMAIL_LINK_MESSAGE,
+  EMAIL_LINK_PREVIEW_MESSAGE,
   escapeHtml,
   formatAddresses,
   getSafeExternalUrl,
@@ -10,10 +11,20 @@ import {
 
 export function createRenderer(state, dom, openEmailLink) {
   let removeFrameLinkListener = () => {};
+  let removeLinkPreviewListener = () => {};
+
+  function setLinkPreview(url) {
+    if (!dom.linkPreviewEl) return;
+    dom.linkPreviewEl.textContent = url || "";
+    dom.linkPreviewEl.classList.toggle("visible", Boolean(url));
+  }
 
   function dispose() {
     removeFrameLinkListener();
     removeFrameLinkListener = () => {};
+    removeLinkPreviewListener();
+    removeLinkPreviewListener = () => {};
+    setLinkPreview("");
   }
 
   function getVisibleEmails() {
@@ -147,6 +158,9 @@ export function createRenderer(state, dom, openEmailLink) {
             <button class="reader-action-btn" type="button" data-reader-action="forward" aria-label="Forward" title="Forward">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 7 5 5-5 5M20 12h-9a5 5 0 0 0-5 5" /></svg>
             </button>
+            <button class="reader-action-btn reader-action-btn-danger" type="button" data-reader-action="trash" aria-label="Move to Trash" title="Move to Trash">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M9 7l1-3h4l1 3M6 7l1 13h10l1-13" /></svg>
+            </button>
           </div>
         </div>
         <div class="reader-meta">
@@ -172,8 +186,15 @@ export function createRenderer(state, dom, openEmailLink) {
       if (frame) {
         const hostWindow = dom.mailReaderEl.ownerDocument.defaultView;
         const onFrameMessage = (event) => {
+          if (event.source !== frame.contentWindow) return;
+
+          if (event.data?.type === EMAIL_LINK_PREVIEW_MESSAGE) {
+            const safeUrl = getSafeExternalUrl(event.data.url);
+            setLinkPreview(safeUrl || "");
+            return;
+          }
+
           if (
-            event.source !== frame.contentWindow ||
             event.data?.type !== EMAIL_LINK_MESSAGE ||
             typeof event.data.url !== "string"
           ) {
@@ -190,6 +211,24 @@ export function createRenderer(state, dom, openEmailLink) {
           hostWindow.removeEventListener("message", onFrameMessage);
         };
         frame.srcdoc = prepareEmailHtml(selected.htmlBody);
+      }
+    } else {
+      const textBodyEl = dom.mailReaderEl.querySelector(".reader-body-text");
+      if (textBodyEl?.addEventListener) {
+        const onPointerOver = (event) => {
+          const anchor = event.target?.closest?.("a[href]");
+          setLinkPreview(getSafeExternalUrl(anchor?.getAttribute("href")) || "");
+        };
+        const onPointerOut = (event) => {
+          const anchor = event.target?.closest?.("a[href]");
+          if (anchor && !anchor.contains(event.relatedTarget)) setLinkPreview("");
+        };
+        textBodyEl.addEventListener("pointerover", onPointerOver);
+        textBodyEl.addEventListener("pointerout", onPointerOut);
+        removeLinkPreviewListener = () => {
+          textBodyEl.removeEventListener("pointerover", onPointerOver);
+          textBodyEl.removeEventListener("pointerout", onPointerOut);
+        };
       }
     }
   }

@@ -55,18 +55,15 @@ body.home-page {
 
 .mail-app {
     position: relative;
-    width: min(1800px, calc(100vw - 1.5rem));
-    height: calc(100vh - 1.5rem);
-    margin: 0.75rem auto;
-    border-radius: 18px;
-    border: 1px solid var(--mail-border);
+    width: 100vw;
+    height: 100vh;
+    margin: 0;
+    overflow: hidden;
     background: linear-gradient(
         145deg,
         rgba(255, 255, 255, 0.88),
         rgba(241, 246, 252, 0.94)
     );
-    box-shadow: 0 18px 50px rgba(42, 72, 104, 0.22);
-    backdrop-filter: blur(6px);
     display: flex;
     flex-direction: column;
     animation: fadeIn 0.25s ease-out;
@@ -735,6 +732,13 @@ body.home-page {
     box-shadow: none;
 }
 
+.reader-action-btn-danger:hover,
+.reader-action-btn-danger:focus-visible,
+.reader-action-btn-danger:active {
+    background: #fceeee;
+    color: var(--mail-danger);
+}
+
 .reader-meta-label {
     flex: 0 0 auto;
     color: #40536a;
@@ -772,6 +776,36 @@ body.home-page {
     border: 1px solid #e1e8f0;
     border-radius: 12px;
     background: #fff;
+}
+
+.link-preview {
+    position: fixed;
+    z-index: 2001;
+    bottom: 0.3rem;
+    left: 0.3rem;
+    display: block;
+    max-width: min(50vw, 560px);
+    overflow: hidden;
+    padding: 0.3rem 0.55rem;
+    border: 1px solid rgba(151, 169, 190, 0.7);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 2px 8px rgba(31, 52, 78, 0.16);
+    color: #26384d;
+    font-family: inherit;
+    font-size: 0.80rem;
+    line-height: 1.35;
+    opacity: 0;
+    pointer-events: none;
+    text-overflow: ellipsis;
+    transform: translateY(0.35rem);
+    transition: opacity 0.12s ease, transform 0.12s ease;
+    white-space: nowrap;
+}
+
+.link-preview.visible {
+    opacity: 1;
+    transform: translateY(0);
 }
 
 .status-toast {
@@ -3115,22 +3149,20 @@ body.home-page {
 }
 
 .mail-app {
-    width: min(1800px, calc(100vw - 20px));
-    height: calc(100vh - 20px);
-    height: calc(100dvh - 20px);
-    margin: 10px auto;
-    border: 1px solid rgba(149, 173, 199, 0.38);
-    border-radius: 24px;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
     background: rgba(255, 255, 255, 0.78);
-    box-shadow:
-        0 28px 70px rgba(40, 72, 110, 0.15),
-        0 2px 8px rgba(40, 72, 110, 0.05);
-    backdrop-filter: blur(18px);
+    box-shadow: none;
+    backdrop-filter: none;
 }
 
 .mail-topbar {
     border-bottom-color: rgba(220, 229, 239, 0.9);
-    border-radius: 24px 24px 0 0;
+    border-radius: 0;
     background: rgba(255, 255, 255, 0.72);
 }
 

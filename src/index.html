@@ -194,28 +194,6 @@
                 </aside>
 
                 <section class="mail-list-panel">
-                    <div class="mail-list-head">
-                        <input
-                            id="mail-search"
-                            class="mail-search"
-                            type="search"
-                            placeholder="Search by sender, subject, or preview"
-                        />
-                        <button
-                            id="mark-read-btn"
-                            class="small-btn"
-                            type="button"
-                        >
-                            Mark Read
-                        </button>
-                        <button
-                            id="archive-btn"
-                            class="small-btn"
-                            type="button"
-                        >
-                            Archive
-                        </button>
-                    </div>
                     <ul
                         id="mail-list"
                         class="mail-list"
@@ -239,6 +217,8 @@
                 </section>
             </div>
         </div>
+
+        <output id="link-preview" class="link-preview" aria-live="polite"></output>
 
         <div
             id="result-msg"

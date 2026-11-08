@@ -146,6 +146,7 @@ export function formatAddressList(addresses) {
 }
 
 export const EMAIL_LINK_MESSAGE = "riimail:open-email-link";
+export const EMAIL_LINK_PREVIEW_MESSAGE = "riimail:preview-email-link";
 
 export function prepareEmailHtml(html) {
   const documentHtml = String(html ?? "");
@@ -160,6 +161,19 @@ export function prepareEmailHtml(html) {
 <html><head>
 <meta http-equiv="Content-Security-Policy" content="script-src 'nonce-${nonce}'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'" />
 <script nonce="${nonce}">
+  document.addEventListener("mouseover", (event) => {
+    const anchor = event.target?.closest?.("a[href]");
+    const url = anchor?.getAttribute("href")?.trim();
+    if (url) window.parent.postMessage({ type: ${JSON.stringify("riimail:preview-email-link")}, url }, "*");
+  }, true);
+
+  document.addEventListener("mouseout", (event) => {
+    const anchor = event.target?.closest?.("a[href]");
+    if (anchor && !anchor.contains(event.relatedTarget)) {
+      window.parent.postMessage({ type: ${JSON.stringify("riimail:preview-email-link")}, url: null }, "*");
+    }
+  }, true);
+
   document.addEventListener("click", (event) => {
     const anchor = event.target?.closest?.("a[href]");
     if (!anchor) return;

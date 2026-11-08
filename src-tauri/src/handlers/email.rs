@@ -1,13 +1,15 @@
 use arc_swap::ArcSwap;
+use chrono::Utc;
 use lettre::{message::header::ContentType, Message, Transport};
 use sqlx::SqlitePool;
 use tauri::Manager as _;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
+use uuid::Uuid;
 
 use crate::{
     config::AppState,
-    db::{get_emails, MailBox, Provider},
-    email_cache::{CompleteEmail, FrontendEmail},
+    db::{get_emails, populate_storage, MailBox, Provider},
+    email_cache::{CompleteEmail, FrontendEmail, StandardEmail},
     error::Error,
     handlers::{populate_bcc_address, populate_cc_address, populate_to_address},
     imap::{ImapCommand, RefreshSummary},
@@ -185,7 +187,7 @@ pub async fn send_email(
     subject: String,
     body: String,
     content_type: String,
-) -> Result<(), Error> {
+) -> Result<FrontendEmail, Error> {
     let state = app.state::<ArcSwap<AppState>>();
     let app_state = state.load();
 
@@ -210,10 +212,38 @@ pub async fn send_email(
         "Sending email through registered SMTP relay"
     );
     let response = app_state.state().smtp_transport_client.send(&message)?;
+    let sent_at = Utc::now().fixed_offset();
+    let local_uid = u32::from_be_bytes(
+        Uuid::new_v4().as_bytes()[..4]
+            .try_into()
+            .expect("a UUID always contains four leading bytes"),
+    );
+    let sent_email = StandardEmail {
+        uid: Some(local_uid),
+        date: Some(sent_at),
+        body: Some(message.formatted()),
+        labels: Some(vec!["Sent".to_string()]),
+        read: true,
+    };
+    let frontend_email = CompleteEmail::from(sent_email.clone())
+        .into_frontend(format!("db-{}-uid-{local_uid}", MailBox::Sent.as_ref()));
+    let sqlite_pool = app_state.state().sqlite_pool.clone();
+    let sent_table_name = format!(
+        "{}_{}",
+        app_state.state().accounts[0].provider.as_ref(),
+        MailBox::Sent.as_ref()
+    );
+
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = populate_storage(&sqlite_pool, vec![sent_email], &sent_table_name).await
+        {
+            tracing::error!(?error, "Failed to persist sent email locally");
+        }
+    });
 
     tracing::info!("SMTP response: {:?}", response);
 
-    Ok(())
+    Ok(frontend_email)
 }
 
 #[cfg(test)]
