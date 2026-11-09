@@ -135,6 +135,20 @@ pub async fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_notification::init())
+        .on_window_event(|window, event| {
+            #[cfg(not(target_os = "macos"))]
+            let _ = (window, event);
+
+            #[cfg(target_os = "macos")]
+            if window.label() == "main" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    if let Err(error) = window.hide() {
+                        ::tracing::warn!(?error, "Failed to hide the main window");
+                    }
+                }
+            }
+        })
         .setup(|app| {
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -268,6 +282,27 @@ pub async fn run() {
             spam_email_populated,
             spam_initial_email_populated,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app, event);
+
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen {
+                has_visible_windows: false,
+                ..
+            } = event
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    if let Err(error) = window
+                        .show()
+                        .and_then(|_| window.unminimize())
+                        .and_then(|_| window.set_focus())
+                    {
+                        ::tracing::warn!(?error, "Failed to restore the main window");
+                    }
+                }
+            }
+        });
 }
