@@ -136,6 +136,9 @@ pub async fn run() {
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_notification::init())
         .on_window_event(|window, event| {
+            #[cfg(not(target_os = "macos"))]
+            let _ = (window, event);
+
             #[cfg(target_os = "macos")]
             if window.label() == "main" {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -282,6 +285,9 @@ pub async fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app, event);
+
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen {
                 has_visible_windows: false,
