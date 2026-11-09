@@ -3,6 +3,14 @@ import { createUiController } from "./ui.js";
 import { insertResponseBeforeQuote } from "./helpers.js";
 import { updateAiAssistantAvailability } from "./ai-assistant.js";
 import { getErrorMessage } from "../shared/errors.js";
+import {
+  createComposerHtmlBody,
+  getComposerHtml,
+  getComposerText,
+  initializeComposerEditor,
+  setComposerHtml,
+  setComposerText,
+} from "./composer-fonts.js";
 
 const DETACHED_COMPOSER_KEY_PREFIX = "riimail.detachedComposer.";
 
@@ -41,6 +49,7 @@ export function initializeComposerWindow({
   storage = window.localStorage,
   closeWindow = () => window.close(),
   emitToMain,
+  notifyReady,
 }) {
   const draft = readDetachedComposerDraft(storage, window.location.hash) || {};
   const dom = getMailAppDom();
@@ -54,7 +63,17 @@ export function initializeComposerWindow({
   dom.composeCcInput.value = draft.cc || "";
   dom.composeBccInput.value = draft.bcc || "";
   dom.composeSubjectInput.value = draft.subject || "";
-  dom.composeBodyInput.value = draft.body || "";
+  const composerEditor = initializeComposerEditor({
+    editor: dom.composeBodyInput,
+    toolbar: dom.composeToolbar,
+    fontSelect: dom.composeFontSelect,
+    sizeSelect: dom.composeFontSizeSelect,
+  });
+  if (draft.bodyHtml) {
+    setComposerHtml(dom.composeBodyInput, draft.bodyHtml);
+  } else {
+    setComposerText(dom.composeBodyInput, draft.body || "");
+  }
 
   const ccRow = document.getElementById("compose-cc-row");
   const bccRow = document.getElementById("compose-bcc-row");
@@ -147,13 +166,18 @@ export function initializeComposerWindow({
         dom.composeBccInput.value = email.bcc ?? dom.composeBccInput.value;
         dom.composeSubjectInput.value =
           email.subject ?? dom.composeSubjectInput.value;
-        dom.composeBodyInput.value = quotedEmailContext
-          ? insertResponseBeforeQuote(
-              email.body,
-              quotedEmailContext,
-              dom.composeBodyInput.value,
-            )
-          : (email.body ?? dom.composeBodyInput.value);
+        const currentBodyText = getComposerText(dom.composeBodyInput);
+        composerEditor?.reset();
+        setComposerText(
+          dom.composeBodyInput,
+          quotedEmailContext
+            ? insertResponseBeforeQuote(
+                email.body,
+                quotedEmailContext,
+                currentBodyText,
+              )
+            : (email.body ?? currentBodyText),
+        );
 
         ccRow?.classList.toggle("hidden", !dom.composeCcInput.value.trim());
         bccRow?.classList.toggle("hidden", !dom.composeBccInput.value.trim());
@@ -169,13 +193,13 @@ export function initializeComposerWindow({
     const ccEmails = splitAddresses(dom.composeCcInput.value);
     const bccEmails = splitAddresses(dom.composeBccInput.value);
     const subject = dom.composeSubjectInput.value.trim();
-    const body = dom.composeBodyInput.value.trim();
+    const bodyText = getComposerText(dom.composeBodyInput).trim();
 
     if (toEmails.length === 0) {
       ui.showMessage("Recipient email is required.", true);
       return;
     }
-    if (!subject || !body) {
+    if (!subject || !bodyText) {
       ui.showMessage("Subject and body are required.", true);
       return;
     }
@@ -187,8 +211,8 @@ export function initializeComposerWindow({
         cc: ccEmails.map((email) => ["", email]),
         bcc: bccEmails.map((email) => ["", email]),
         subject,
-        body,
-        contentType: "text/plain",
+        body: createComposerHtmlBody(getComposerHtml(dom.composeBodyInput)),
+        contentType: "text/html; charset=utf-8",
       });
 
       if (sentEmail && typeof emitToMain === "function") {
@@ -204,4 +228,10 @@ export function initializeComposerWindow({
 
   const inputToFocus = draft.to ? dom.composeBodyInput : dom.composeToInput;
   inputToFocus?.focus();
+
+  if (typeof notifyReady === "function") {
+    setTimeout(() => {
+      void notifyReady();
+    }, 0);
+  }
 }

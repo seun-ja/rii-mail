@@ -1,3 +1,35 @@
+@font-face {
+    font-family: "Aptos";
+    src: url("/assets/fonts/aptos/Aptos-Regular.ttf") format("truetype");
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Aptos";
+    src: url("/assets/fonts/aptos/Aptos-Italic.ttf") format("truetype");
+    font-style: italic;
+    font-weight: 400;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Aptos";
+    src: url("/assets/fonts/aptos/Aptos-Bold.ttf") format("truetype");
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Aptos";
+    src: url("/assets/fonts/aptos/Aptos-Bold-Italic.ttf") format("truetype");
+    font-style: italic;
+    font-weight: 700;
+    font-display: swap;
+}
+
 .logo.vanilla:hover {
     filter: drop-shadow(0 0 2em #ffe21c);
 }
@@ -2746,6 +2778,7 @@ button.provider-item.active:hover {
     min-width: 0;
 
     display: flex;
+    flex-direction: column;
 
     min-height: 0;
 }
@@ -3585,17 +3618,113 @@ body.home-page {
     background: #ffffff;
 }
 
-.composer-editor {
-    padding: 18px;
+.composer-toolbar {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 4px;
+    min-height: 44px;
+    padding: 5px 12px;
+    overflow-x: auto;
+
+    border-bottom: 1px solid #e1eaf2;
+    background: #fbfdff;
+    scrollbar-width: thin;
+}
+
+.composer-toolbar-label {
+    color: var(--mail-subtext);
+    font-size: 11px;
+    font-weight: 650;
+}
+
+.composer-format-select {
+    height: 30px;
+    padding: 0 26px 0 8px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+
+    background-color: transparent;
+    color: var(--mail-text);
+    font-size: 12px;
+}
+
+.composer-format-select:hover,
+.composer-format-select:focus {
+    border-color: #cddfeb;
+    background-color: #ffffff;
+    outline: none;
+}
+
+.composer-font-select {
+    width: 126px;
+    font-family: "Aptos", Arial, sans-serif;
+}
+
+.composer-size-select {
+    width: 82px;
+}
+
+.composer-toolbar-divider {
+    width: 1px;
+    height: 22px;
+    flex: 0 0 auto;
+    margin: 0 3px;
+    background: #dce7f0;
+}
+
+.composer-format-btn {
+    width: 30px;
+    height: 30px;
+    flex: 0 0 auto;
+    padding: 0;
     border: 0;
-    resize: none;
+    border-radius: 7px;
+
+    background: transparent;
+    box-shadow: none;
+    color: var(--mail-text);
+    font-family: "Aptos", Arial, sans-serif;
+    font-size: 13px;
+}
+
+.composer-format-btn:hover,
+.composer-format-btn.active {
+    background: #e4f1fb;
+    color: var(--mail-accent);
+}
+
+.composer-format-btn[aria-pressed="true"] {
+    box-shadow: inset 0 0 0 1px #b9d9ef;
+}
+
+.format-underline {
+    text-decoration: underline;
+}
+
+.composer-editor {
+    flex: 1;
+    height: auto;
+    min-height: 0;
+    padding: 18px;
+    overflow-y: auto;
+    border: 0;
 
     font-size: 15px;
     line-height: 1.65;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.composer-editor:empty::before {
+    color: #8a98aa;
+    content: attr(data-placeholder);
+    pointer-events: none;
 }
 
 .composer-editor:focus {
     box-shadow: none;
+    outline: none;
 }
 
 #compose-modal .ai-assistant-panel {
@@ -3730,6 +3859,10 @@ body.home-page {
     padding: 0 18px;
 
     background: #fbfdff;
+}
+
+.composer-footer-right {
+    margin-left: auto;
 }
 
 .composer-save-state {

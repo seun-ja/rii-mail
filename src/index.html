@@ -404,11 +404,83 @@
 
                 <div class="composer-main">
                     <div class="composer-editor-wrapper">
-                        <textarea
+                        <div
+                            id="compose-toolbar"
+                            class="composer-toolbar"
+                            role="toolbar"
+                            aria-label="Message formatting"
+                        >
+                            <label
+                                class="composer-toolbar-label"
+                                for="compose-font"
+                            >
+                                Font
+                            </label>
+                            <select
+                                id="compose-font"
+                                class="composer-format-select composer-font-select"
+                                aria-label="Font family"
+                            >
+                                <option value="aptos" selected>Aptos</option>
+                                <option value="arial">Arial</option>
+                                <option value="calibri">Calibri</option>
+                                <option value="georgia">Georgia</option>
+                                <option value="times-new-roman">Times New Roman</option>
+                                <option value="verdana">Verdana</option>
+                                <option value="courier-new">Courier New</option>
+                            </select>
+                            <select
+                                id="compose-font-size"
+                                class="composer-format-select composer-size-select"
+                                aria-label="Font size"
+                            >
+                                <option value="2">Small</option>
+                                <option value="3" selected>Normal</option>
+                                <option value="4">Large</option>
+                                <option value="5">Huge</option>
+                            </select>
+                            <span
+                                class="composer-toolbar-divider"
+                                aria-hidden="true"
+                            ></span>
+                            <button
+                                type="button"
+                                class="composer-format-btn"
+                                data-format-command="bold"
+                                aria-label="Bold"
+                                title="Bold"
+                            >
+                                <strong>B</strong>
+                            </button>
+                            <button
+                                type="button"
+                                class="composer-format-btn"
+                                data-format-command="italic"
+                                aria-label="Italic"
+                                title="Italic"
+                            >
+                                <em>I</em>
+                            </button>
+                            <button
+                                type="button"
+                                class="composer-format-btn"
+                                data-format-command="underline"
+                                aria-label="Underline"
+                                title="Underline"
+                            >
+                                <span class="format-underline">U</span>
+                            </button>
+                        </div>
+                        <div
                             id="compose-body"
                             class="composer-editor"
-                            placeholder="Write your message..."
-                        ></textarea>
+                            contenteditable="true"
+                            role="textbox"
+                            aria-label="Message body"
+                            aria-multiline="true"
+                            spellcheck="true"
+                            data-placeholder="Write your message..."
+                        ></div>
                     </div>
 
                     <aside

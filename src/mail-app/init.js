@@ -39,6 +39,14 @@ import {
 import { updateAiAssistantAvailability } from "./ai-assistant.js";
 import { createReadSyncController } from "./read-sync.js";
 import { getErrorMessage } from "../shared/errors.js";
+import {
+  createComposerHtmlBody,
+  getComposerHtml,
+  getComposerText,
+  initializeComposerEditor,
+  setComposerHtml,
+  setComposerText,
+} from "./composer-fonts.js";
 
 export function initializeMailApp({
   invoke,
@@ -62,6 +70,13 @@ export function initializeMailApp({
   ) {
     return;
   }
+
+  const composerEditor = initializeComposerEditor({
+    editor: dom.composeBodyInput,
+    toolbar: dom.composeToolbar,
+    fontSelect: dom.composeFontSelect,
+    sizeSelect: dom.composeFontSizeSelect,
+  });
 
   const state = createInitialState();
   state.folderPopulation = {
@@ -448,7 +463,12 @@ export function initializeMailApp({
     dom.composeCcInput.value = cc;
     dom.composeBccInput.value = bcc;
     dom.composeSubjectInput.value = draft.subject ?? "";
-    dom.composeBodyInput.value = draft.body ?? "";
+    composerEditor?.reset();
+    if (draft.bodyHtml) {
+      setComposerHtml(dom.composeBodyInput, draft.bodyHtml);
+    } else {
+      setComposerText(dom.composeBodyInput, draft.body ?? "");
+    }
     ccRow?.classList.toggle("hidden", !cc);
     bccRow?.classList.toggle("hidden", !bcc);
     toggleCcBtn?.setAttribute("aria-expanded", String(Boolean(cc)));
@@ -461,10 +481,6 @@ export function initializeMailApp({
 
     const inputToFocus = draft.to ? dom.composeBodyInput : dom.composeToInput;
     inputToFocus.focus();
-
-    if (inputToFocus === dom.composeBodyInput) {
-      inputToFocus.setSelectionRange(0, 0);
-    }
   }
 
   function moveEmailToTrash(email) {
@@ -536,7 +552,8 @@ export function initializeMailApp({
       cc: dom.composeCcInput.value,
       bcc: dom.composeBccInput.value,
       subject: dom.composeSubjectInput.value,
-      body: dom.composeBodyInput.value,
+      body: getComposerText(dom.composeBodyInput),
+      bodyHtml: getComposerHtml(dom.composeBodyInput),
       isReply: title === "Reply",
       replyContext:
         title === "Reply" && selected
@@ -623,14 +640,14 @@ export function initializeMailApp({
       .filter(Boolean);
 
     const subject = dom.composeSubjectInput.value.trim();
-    const body = dom.composeBodyInput.value.trim();
+    const bodyText = getComposerText(dom.composeBodyInput).trim();
 
     if (toEmails.length === 0) {
       ui.showMessage("Recipient email is required.", true);
       return;
     }
 
-    if (!subject || !body) {
+    if (!subject || !bodyText) {
       ui.showMessage("Subject and body are required.", true);
       return;
     }
@@ -643,8 +660,8 @@ export function initializeMailApp({
         cc: ccEmails.map((ccEmail) => ["", ccEmail]),
         bcc: bccEmails.map((bccEmail) => ["", bccEmail]),
         subject,
-        body,
-        contentType: "text/plain",
+        body: createComposerHtmlBody(getComposerHtml(dom.composeBodyInput)),
+        contentType: "text/html; charset=utf-8",
       });
 
       if (sentEmail && typeof sentEmail === "object" && sentEmail.id) {
@@ -665,7 +682,7 @@ export function initializeMailApp({
       dom.composeCcInput.value = "";
       dom.composeBccInput.value = "";
       dom.composeSubjectInput.value = "";
-      dom.composeBodyInput.value = "";
+      composerEditor?.reset();
       ccRow?.classList.add("hidden");
       bccRow?.classList.add("hidden");
       toggleCcBtn?.setAttribute("aria-expanded", "false");
@@ -757,13 +774,18 @@ export function initializeMailApp({
 
       document.getElementById("compose-subject").value = email.subject ?? "";
 
-      document.getElementById("compose-body").value = quotedEmailContext
-        ? insertResponseBeforeQuote(
-            email.body,
-            quotedEmailContext,
-            document.getElementById("compose-body").value,
-          )
-        : (email.body ?? "");
+      const currentBodyText = getComposerText(dom.composeBodyInput);
+      composerEditor?.reset();
+      setComposerText(
+        dom.composeBodyInput,
+        quotedEmailContext
+          ? insertResponseBeforeQuote(
+              email.body,
+              quotedEmailContext,
+              currentBodyText,
+            )
+          : (email.body ?? ""),
+      );
 
       status.textContent = "Draft inserted into composer";
     } catch (err) {
@@ -771,8 +793,6 @@ export function initializeMailApp({
       console.error(err);
     }
   });
-
-
 
   dom.spamCheckBtnEl.addEventListener("click", async () => {
     const selected = getEmails(state).find(
