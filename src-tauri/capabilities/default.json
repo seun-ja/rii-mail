@@ -9,6 +9,8 @@
     "core:default",
     "core:webview:allow-create-webview-window",
     "core:window:allow-close",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
     "opener:default",
     "sql:default",
     "notification:default"
