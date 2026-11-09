@@ -1,6 +1,6 @@
 [package]
 name = "riimail"
-version = "0.1.0"
+version = "0.2.0"
 description = "Personal Email Client"
 authors = ["Aminu Oluwaseun Joshua @seun-ja"]
 edition = "2021"

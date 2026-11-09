@@ -4,8 +4,9 @@ set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
 BUILD_DIR="$SCRIPT_DIR/build"
+VERSION=$(python3 -c 'import json, pathlib, sys; print(json.loads(pathlib.Path(sys.argv[1]).read_text())["version"])' "$PROJECT_ROOT/src-tauri/tauri.conf.json")
 APP="$PROJECT_ROOT/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/RiiMail.app"
-DMG_NAME="RiiMail_0.1.0_aarch64.dmg"
+DMG_NAME="RiiMail_${VERSION}_aarch64.dmg"
 
 usage() {
     cat <<EOF

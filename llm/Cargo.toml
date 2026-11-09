@@ -1,6 +1,6 @@
 [package]
 name = "llm"
-version = "0.1.0"
+version = "0.2.0"
 description = "LLM Library"
 authors = ["Aminu Oluwaseun Joshua @seun-ja"]
 edition = "2021"
