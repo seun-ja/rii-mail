@@ -39,12 +39,12 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
     })?;
 
     refresh_chatgpt_token_if_needed(&mut config, &config_path).await?;
-    config.accounts.push(username.clone());
-
-    config
-        .save(&config_path)
-        .await
-        .map_err(|error| Error::Other(format!("Could not save configuration: {error}")))?;
+    let account_username = username.clone();
+    config = Config::update(&config_path, move |latest| {
+        latest.accounts.push(account_username);
+    })
+    .await
+    .map_err(|error| Error::Other(format!("Could not save configuration: {error}")))?;
     tracing::info!("Configuration updated with username and saved to disk");
 
     let (initialized_state, provider) = handle_initialization(

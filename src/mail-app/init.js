@@ -24,7 +24,6 @@ import {
   createForwardDraft,
   createQuotedEmailContext,
   createReplyDraft,
-  insertResponseBeforeQuote,
   getActiveBackendFolderKey,
   getFolderPaginationState,
   getSafeExternalUrl,
@@ -45,8 +44,16 @@ import {
   getComposerText,
   initializeComposerEditor,
   setComposerHtml,
-  setComposerText,
 } from "./composer-fonts.js";
+import {
+  createGeneratedDraftHtml,
+  createSignedDraftHtml,
+  getAuthoredComposerText,
+  getComposerSignatureHtml,
+  normalizeSignature,
+} from "./signature.js";
+import { activateSettingsSection } from "./settings.js";
+import { initializeSignatureEditor } from "./signature-editor.js";
 
 export function initializeMailApp({
   invoke,
@@ -112,6 +119,92 @@ export function initializeMailApp({
     ui.showMessage("Backend invoke bridge is unavailable.", true);
     return;
   }
+
+  let activeSignature = "";
+  const signatureReady = invoke("get_signature")
+    .then((signature) => {
+      activeSignature = normalizeSignature(signature);
+    })
+    .catch((error) => {
+      console.error("Could not load the email signature", error);
+    });
+
+  const setSignatureStatus = (message = "", isError = false) => {
+    if (!dom.signatureStatusEl) return;
+    dom.signatureStatusEl.textContent = message;
+    dom.signatureStatusEl.classList.toggle("error", isError);
+  };
+
+  const signatureEditor = initializeSignatureEditor({
+    editor: dom.signatureInputEl,
+    toolbar: dom.signatureToolbarEl,
+    fontSelect: dom.signatureFontSelectEl,
+    onError: (message) => setSignatureStatus(message, true),
+  });
+
+  const settingsElements = {
+    navButtons: dom.settingsNavButtons,
+    panels: dom.settingsPanels,
+  };
+
+  dom.settingsNavButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      activateSettingsSection(settingsElements, button.dataset.settingsSection);
+    });
+  });
+
+  const closeSettings = () => {
+    dom.settingsModalEl?.classList.add("hidden");
+    setSignatureStatus();
+  };
+
+  const openSettings = async () => {
+    if (!dom.settingsModalEl || !signatureEditor) return;
+
+    activateSettingsSection(settingsElements, "signature");
+    dom.settingsModalEl.classList.remove("hidden");
+    signatureEditor.setEnabled(false);
+    if (dom.saveSignatureBtnEl) dom.saveSignatureBtnEl.disabled = true;
+    setSignatureStatus("Loading signature…");
+
+    try {
+      const signature = await invoke("get_signature");
+      activeSignature = normalizeSignature(signature);
+      signatureEditor.setHtml(activeSignature);
+      setSignatureStatus();
+      signatureEditor.focus();
+    } catch (error) {
+      console.error("Could not load the email signature", error);
+      setSignatureStatus("Could not load the signature.", true);
+    } finally {
+      signatureEditor.setEnabled(true);
+      if (dom.saveSignatureBtnEl) dom.saveSignatureBtnEl.disabled = false;
+    }
+  };
+
+  dom.saveSignatureBtnEl?.addEventListener("click", async () => {
+    const signature = signatureEditor?.getHtml() ?? "";
+    dom.saveSignatureBtnEl.disabled = true;
+    signatureEditor?.setEnabled(false);
+    setSignatureStatus("Saving…");
+
+    try {
+      await invoke("set_signature", { signature: signature || null });
+      activeSignature = signature;
+      setSignatureStatus(signature ? "Signature saved." : "Signature disabled.");
+    } catch (error) {
+      console.error("Could not save the email signature", error);
+      setSignatureStatus("Could not save the signature.", true);
+    } finally {
+      dom.saveSignatureBtnEl.disabled = false;
+      signatureEditor?.setEnabled(true);
+    }
+  });
+  dom.closeSettingsBtnEl?.addEventListener("click", closeSettings);
+  dom.cancelSettingsBtnEl?.addEventListener("click", closeSettings);
+  dom.settingsModalEl?.addEventListener("click", (event) => {
+    if (event.target === dom.settingsModalEl) closeSettings();
+  });
 
   void invoke("enable_main_window_controls").catch((error) => {
     console.error("Could not enable main window controls", error);
@@ -343,8 +436,17 @@ export function initializeMailApp({
   }
 
   if (listen) {
+    listen("app://open-settings", () => {
+      if (!disposed) void openSettings();
+    }).then(trackListener).catch(() => {
+      // Ignore listener setup failures in non-Tauri contexts.
+    });
+
     listen("app://logged-out", () => {
       if (disposed) return;
+      activeSignature = "";
+      signatureEditor?.setHtml("");
+      composerEditor?.reset();
       cleanup();
       haltSyncAndClearCache();
       window.location.replace("/login.html");
@@ -453,7 +555,8 @@ export function initializeMailApp({
     "ai-use-selected-email-context",
   );
 
-  function openComposerWithDraft(draft, title) {
+  async function openComposerWithDraft(draft, title) {
+    await signatureReady;
     const cc = String(draft.cc ?? "").trim();
     const bcc = String(draft.bcc ?? "").trim();
     const isReply = title === "Reply";
@@ -464,11 +567,15 @@ export function initializeMailApp({
     dom.composeBccInput.value = bcc;
     dom.composeSubjectInput.value = draft.subject ?? "";
     composerEditor?.reset();
-    if (draft.bodyHtml) {
-      setComposerHtml(dom.composeBodyInput, draft.bodyHtml);
-    } else {
-      setComposerText(dom.composeBodyInput, draft.body ?? "");
-    }
+    setComposerHtml(
+      dom.composeBodyInput,
+      createSignedDraftHtml({
+        body: draft.body,
+        bodyHtml: draft.bodyHtml,
+        signature: activeSignature,
+        signatureBeforeBody: isReply || title === "Forward",
+      }),
+    );
     ccRow?.classList.toggle("hidden", !cc);
     bccRow?.classList.toggle("hidden", !bcc);
     toggleCcBtn?.setAttribute("aria-expanded", String(Boolean(cc)));
@@ -515,16 +622,16 @@ export function initializeMailApp({
     }
 
     if (action === "reply") {
-      openComposerWithDraft(createReplyDraft(selected), "Reply");
+      void openComposerWithDraft(createReplyDraft(selected), "Reply");
     } else if (action === "forward") {
-      openComposerWithDraft(createForwardDraft(selected), "Forward");
+      void openComposerWithDraft(createForwardDraft(selected), "Forward");
     } else if (action === "trash") {
       moveEmailToTrash(selected);
     }
   });
 
   dom.composeBtnEl.addEventListener("click", () => {
-    openComposerWithDraft(
+    void openComposerWithDraft(
       { to: "", cc: "", bcc: "", subject: "", body: "" },
       "New Message",
     );
@@ -554,6 +661,7 @@ export function initializeMailApp({
       subject: dom.composeSubjectInput.value,
       body: getComposerText(dom.composeBodyInput),
       bodyHtml: getComposerHtml(dom.composeBodyInput),
+      signature: activeSignature,
       isReply: title === "Reply",
       replyContext:
         title === "Reply" && selected
@@ -594,9 +702,12 @@ export function initializeMailApp({
   });
 
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      dom.composeModalEl.classList.add("hidden");
+    if (e.key !== "Escape") return;
+    if (!dom.settingsModalEl?.classList.contains("hidden")) {
+      closeSettings();
+      return;
     }
+    dom.composeModalEl.classList.add("hidden");
   });
 
   const toggleCcBtn = document.getElementById("toggle-cc-btn");
@@ -640,7 +751,7 @@ export function initializeMailApp({
       .filter(Boolean);
 
     const subject = dom.composeSubjectInput.value.trim();
-    const bodyText = getComposerText(dom.composeBodyInput).trim();
+    const bodyText = getAuthoredComposerText(dom.composeBodyInput);
 
     if (toEmails.length === 0) {
       ui.showMessage("Recipient email is required.", true);
@@ -774,17 +885,15 @@ export function initializeMailApp({
 
       document.getElementById("compose-subject").value = email.subject ?? "";
 
-      const currentBodyText = getComposerText(dom.composeBodyInput);
+      const currentSignature = getComposerSignatureHtml(dom.composeBodyInput);
       composerEditor?.reset();
-      setComposerText(
+      setComposerHtml(
         dom.composeBodyInput,
-        quotedEmailContext
-          ? insertResponseBeforeQuote(
-              email.body,
-              quotedEmailContext,
-              currentBodyText,
-            )
-          : (email.body ?? ""),
+        createGeneratedDraftHtml({
+          body: email.body,
+          signature: currentSignature ?? "",
+          trailingContent: quotedEmailContext,
+        }),
       );
 
       status.textContent = "Draft inserted into composer";

@@ -1,4 +1,7 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::PathBuf,
+    sync::{Arc, LazyLock},
+};
 
 use crate::{
     auth::AppleKeychainManager,
@@ -10,7 +13,10 @@ use lettre::{transport::smtp::authentication::Credentials, SmtpTransport};
 use llm::Agent;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use tokio::fs;
+use tokio::{fs, io::AsyncWriteExt as _};
+
+static CONFIG_SAVE_LOCK: LazyLock<tokio::sync::Mutex<()>> =
+    LazyLock::new(|| tokio::sync::Mutex::new(()));
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -68,6 +74,10 @@ pub struct Config {
     pub access_token: Option<String>,
     #[serde(default)]
     pub refresh_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature_html: Option<String>,
     #[serde(
         default,
         flatten,
@@ -145,19 +155,50 @@ impl Config {
         Ok(config)
     }
 
-    /// Saves configuration with owner-only permissions because it may contain
-    /// renewable OAuth credentials.
+    /// Saves configuration atomically with owner-only permissions because it may
+    /// contain renewable OAuth credentials.
     pub async fn save(
         &self,
         path: &PathBuf,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        fs::write(path, serde_json::to_string_pretty(self)?).await?;
+        let _save_guard = CONFIG_SAVE_LOCK.lock().await;
+        self.save_unlocked(path).await
+    }
+
+    /// Applies a mutation to the latest configuration while holding the same lock
+    /// through the complete read-modify-write transaction.
+    pub async fn update<F>(
+        path: &PathBuf,
+        update: F,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>>
+    where
+        F: FnOnce(&mut Self),
+    {
+        let _save_guard = CONFIG_SAVE_LOCK.lock().await;
+        let mut config = Self::init(path).await?;
+        update(&mut config);
+        config.save_unlocked(path).await?;
+        Ok(config)
+    }
+
+    async fn save_unlocked(
+        &self,
+        path: &PathBuf,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let serialized = serde_json::to_string_pretty(self)?;
+        let temporary_path = path.with_extension("json.tmp");
+        let mut temporary_file = fs::File::create(&temporary_path).await?;
 
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt as _;
-            fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).await?;
+            fs::set_permissions(&temporary_path, std::fs::Permissions::from_mode(0o600)).await?;
         }
+
+        temporary_file.write_all(serialized.as_bytes()).await?;
+        temporary_file.sync_all().await?;
+        drop(temporary_file);
+        fs::rename(&temporary_path, path).await?;
 
         Ok(())
     }
@@ -225,4 +266,49 @@ pub struct ImapClientConfig {
     pub imap_port: u16,
     pub sqlite_pool: SqlitePool,
     pub login_result_tx: Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Config;
+
+    const CONFIG_WITHOUT_SIGNATURE: &str = r#"{
+        "imap_server_url": "imap.example.com",
+        "smtp_relay_url": "smtp.example.com",
+        "imap_port": 993,
+        "sqlite_db": "emails.db",
+        "accounts": [],
+        "default_model": "test-model"
+    }"#;
+
+    #[test]
+    fn missing_signature_deserializes_as_none() {
+        let config: Config = serde_json::from_str(CONFIG_WITHOUT_SIGNATURE).unwrap();
+
+        assert!(config.signature.is_none());
+        assert!(config.signature_html.is_none());
+    }
+
+    #[test]
+    fn none_signature_is_not_serialized() {
+        let config: Config = serde_json::from_str(CONFIG_WITHOUT_SIGNATURE).unwrap();
+        let serialized = serde_json::to_value(config).unwrap();
+
+        assert!(serialized.get("signature").is_none());
+        assert!(serialized.get("signature_html").is_none());
+    }
+
+    #[test]
+    fn rich_signature_round_trips_without_changes() {
+        let mut config: Config = serde_json::from_str(CONFIG_WITHOUT_SIGNATURE).unwrap();
+        let signature_html =
+            "<strong>Best regards,</strong><br>Aminu<br><a href=\"https://example.com\">Website</a>"
+                .to_string();
+        config.signature_html = Some(signature_html.clone());
+
+        let serialized = serde_json::to_string(&config).unwrap();
+        let deserialized: Config = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized.signature_html, Some(signature_html));
+    }
 }

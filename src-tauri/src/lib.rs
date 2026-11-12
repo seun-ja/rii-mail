@@ -21,8 +21,8 @@ use crate::{
     config::{AppState, StartupStatusCache},
     handlers::{
         check_app_status, config_setup, connect_chatgpt, connect_ollama,
-        enable_main_window_controls, fetch_emails, finish_startup, login, logout_with_state,
-        open_main_window, rater,
+        enable_main_window_controls, fetch_emails, finish_startup, get_signature, login,
+        logout_with_state, open_main_window, rater, set_signature,
     },
 };
 
@@ -167,12 +167,21 @@ pub async fn run() {
 
             let app_about = PredefinedMenuItem::about(app, None, None)?;
             let app_quit = PredefinedMenuItem::quit(app, None)?;
-            let app_separator = PredefinedMenuItem::separator(app)?;
+            let app_separator_1 = PredefinedMenuItem::separator(app)?;
+            let app_separator_2 = PredefinedMenuItem::separator(app)?;
+            let settings_item =
+                MenuItem::with_id(app, "settings", "Settings…", true, Some("Cmd+,"))?;
             let app_submenu = Submenu::with_items(
                 app,
                 "RiiMail",
                 true,
-                &[&app_about, &app_separator, &app_quit],
+                &[
+                    &app_about,
+                    &app_separator_1,
+                    &settings_item,
+                    &app_separator_2,
+                    &app_quit,
+                ],
             )?;
 
             let edit_undo = PredefinedMenuItem::undo(app, None)?;
@@ -210,6 +219,23 @@ pub async fn run() {
             Ok(())
         })
         .on_menu_event(|app, event| {
+            if event.id().as_ref() == "settings" {
+                let target_window = app
+                    .get_webview_window("main-app")
+                    .or_else(|| app.get_webview_window("main"));
+
+                if let Some(window) = target_window {
+                    if let Err(err) = window.show().and_then(|_| window.set_focus()) {
+                        ::tracing::warn!(error = ?err, "Failed to focus main window for settings");
+                    }
+                }
+
+                if let Err(err) = app.emit("app://open-settings", ()) {
+                    ::tracing::warn!(error = ?err, "Failed to open settings");
+                }
+                return;
+            }
+
             if event.id().as_ref() != "logout" {
                 return;
             }
@@ -271,12 +297,14 @@ pub async fn run() {
             connect_ollama,
             fetch_emails,
             finish_startup,
+            get_signature,
             login,
             open_main_window,
             rater,
             refresh_emails_handler,
             send_email,
             set_email_read,
+            set_signature,
             sent_email_populated,
             sent_initial_email_populated,
             spam_email_populated,
