@@ -29,5 +29,15 @@ export function getMailAppDom(documentRef = document) {
     composeBccInput: documentRef.querySelector("#compose-bcc"),
     openAiAssistantBtnEl: documentRef.querySelector("#open-ai-assistant-btn"),
     aiAssistantPanelEl: documentRef.querySelector("#ai-assistant-panel"),
+    settingsModalEl: documentRef.querySelector("#settings-modal"),
+    settingsNavButtons: documentRef.querySelectorAll("[data-settings-section]"),
+    settingsPanels: documentRef.querySelectorAll("[data-settings-panel]"),
+    signatureInputEl: documentRef.querySelector("#signature-input"),
+    signatureToolbarEl: documentRef.querySelector("#signature-toolbar"),
+    signatureFontSelectEl: documentRef.querySelector("#signature-font"),
+    signatureStatusEl: documentRef.querySelector("#signature-status"),
+    saveSignatureBtnEl: documentRef.querySelector("#save-signature-btn"),
+    closeSettingsBtnEl: documentRef.querySelector("#close-settings-btn"),
+    cancelSettingsBtnEl: documentRef.querySelector("#cancel-settings-btn"),
   };
 }

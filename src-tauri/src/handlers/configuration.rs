@@ -165,6 +165,8 @@ pub async fn config_setup(
         api_key,
         access_token: None,
         refresh_token: None,
+        signature: None,
+        signature_html: None,
         chatgpt: None,
     };
 

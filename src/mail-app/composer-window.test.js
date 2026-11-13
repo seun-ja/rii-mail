@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { readDetachedComposerDraft } from "./composer-window.js";
+import {
+  createDetachedComposerHtml,
+  readDetachedComposerDraft,
+} from "./composer-window.js";
 
 function createStorage(entries = {}) {
   const values = new Map(Object.entries(entries));
@@ -28,6 +31,30 @@ test("reads and immediately removes a staged detached-composer draft", () => {
     draft,
   );
   assert.equal(storage.has(key), false);
+});
+
+test("preserves the exact visible HTML when moving a draft to a detached composer", () => {
+  const editedHtml = "Message without the deleted signature";
+
+  assert.equal(
+    createDetachedComposerHtml({
+      title: "New Message",
+      bodyHtml: editedHtml,
+      signature: "This must not be restored",
+    }),
+    editedHtml,
+  );
+});
+
+test("adds a configured signature when a detached draft has only plain text", () => {
+  assert.equal(
+    createDetachedComposerHtml({
+      title: "Reply",
+      body: "On Monday, Person wrote:",
+      signature: "Regards,\nAminu",
+    }),
+    '<div><br></div><div data-riimail-signature="true">Regards,<br>Aminu</div><br><br>On Monday, Person wrote:',
+  );
 });
 
 test("rejects unrelated, missing, and malformed staged drafts", () => {

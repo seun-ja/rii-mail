@@ -5,6 +5,7 @@ mod llm;
 mod llm_connections;
 mod login;
 mod menu;
+mod signature;
 
 pub use configuration::{
     check_app_status, config_setup, enable_main_window_controls, finish_startup, open_main_window,
@@ -23,6 +24,7 @@ pub use llm_connections::{
 };
 pub use login::login;
 pub use menu::logout_with_state;
+pub use signature::{get_signature, set_signature};
 
 use crate::{
     config::Account,

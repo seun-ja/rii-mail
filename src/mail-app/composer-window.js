@@ -1,16 +1,20 @@
 import { getMailAppDom } from "./dom.js";
 import { createUiController } from "./ui.js";
-import { insertResponseBeforeQuote } from "./helpers.js";
 import { updateAiAssistantAvailability } from "./ai-assistant.js";
 import { getErrorMessage } from "../shared/errors.js";
 import {
   createComposerHtmlBody,
   getComposerHtml,
-  getComposerText,
   initializeComposerEditor,
   setComposerHtml,
-  setComposerText,
 } from "./composer-fonts.js";
+import {
+  createGeneratedDraftHtml,
+  createSignedDraftHtml,
+  getAuthoredComposerText,
+  getComposerSignatureHtml,
+  normalizeSignature,
+} from "./signature.js";
 
 const DETACHED_COMPOSER_KEY_PREFIX = "riimail.detachedComposer.";
 
@@ -37,6 +41,17 @@ export function readDetachedComposerDraft(storage, hash) {
   }
 }
 
+export function createDetachedComposerHtml(draft = {}) {
+  const bodyHtml = String(draft.bodyHtml ?? "");
+  if (bodyHtml) return bodyHtml;
+
+  return createSignedDraftHtml({
+    body: draft.body,
+    signature: normalizeSignature(draft.signature),
+    signatureBeforeBody: draft.title === "Reply" || draft.title === "Forward",
+  });
+}
+
 function splitAddresses(value) {
   return String(value || "")
     .split(/[,;]/)
@@ -50,6 +65,7 @@ export function initializeComposerWindow({
   closeWindow = () => window.close(),
   emitToMain,
   notifyReady,
+  listen,
 }) {
   const draft = readDetachedComposerDraft(storage, window.location.hash) || {};
   const dom = getMailAppDom();
@@ -69,11 +85,8 @@ export function initializeComposerWindow({
     fontSelect: dom.composeFontSelect,
     sizeSelect: dom.composeFontSizeSelect,
   });
-  if (draft.bodyHtml) {
-    setComposerHtml(dom.composeBodyInput, draft.bodyHtml);
-  } else {
-    setComposerText(dom.composeBodyInput, draft.body || "");
-  }
+  const signature = normalizeSignature(draft.signature);
+  setComposerHtml(dom.composeBodyInput, createDetachedComposerHtml(draft));
 
   const ccRow = document.getElementById("compose-cc-row");
   const bccRow = document.getElementById("compose-bcc-row");
@@ -100,6 +113,15 @@ export function initializeComposerWindow({
   if (typeof invoke !== "function") {
     ui.showMessage("Backend invoke bridge is unavailable.", true);
     return;
+  }
+
+  if (typeof listen === "function") {
+    void listen("app://logged-out", () => {
+      composerEditor?.reset();
+      void closeWindow();
+    }).catch(() => {
+      // Ignore listener setup failures outside the Tauri runtime.
+    });
   }
 
   void updateAiAssistantAvailability({
@@ -166,17 +188,15 @@ export function initializeComposerWindow({
         dom.composeBccInput.value = email.bcc ?? dom.composeBccInput.value;
         dom.composeSubjectInput.value =
           email.subject ?? dom.composeSubjectInput.value;
-        const currentBodyText = getComposerText(dom.composeBodyInput);
+        const currentSignature = getComposerSignatureHtml(dom.composeBodyInput);
         composerEditor?.reset();
-        setComposerText(
+        setComposerHtml(
           dom.composeBodyInput,
-          quotedEmailContext
-            ? insertResponseBeforeQuote(
-                email.body,
-                quotedEmailContext,
-                currentBodyText,
-              )
-            : (email.body ?? currentBodyText),
+          createGeneratedDraftHtml({
+            body: email.body,
+            signature: currentSignature ?? "",
+            trailingContent: quotedEmailContext,
+          }),
         );
 
         ccRow?.classList.toggle("hidden", !dom.composeCcInput.value.trim());
@@ -193,7 +213,7 @@ export function initializeComposerWindow({
     const ccEmails = splitAddresses(dom.composeCcInput.value);
     const bccEmails = splitAddresses(dom.composeBccInput.value);
     const subject = dom.composeSubjectInput.value.trim();
-    const bodyText = getComposerText(dom.composeBodyInput).trim();
+    const bodyText = getAuthoredComposerText(dom.composeBodyInput);
 
     if (toEmails.length === 0) {
       ui.showMessage("Recipient email is required.", true);

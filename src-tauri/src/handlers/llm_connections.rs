@@ -106,7 +106,7 @@ struct ChatGptCredentials {
 #[tracing::instrument(name = "command.llm.connect_ollama", skip_all, err)]
 pub async fn connect_ollama(app: tauri::AppHandle) -> Result<LlmConnection, Error> {
     let config_path = config_path(&app)?;
-    let mut config = load_config(&config_path).await?;
+    let config = load_config(&config_path).await?;
     let model = config.default_model.clone();
     let agent = init_llm_agent(
         Some(Providers::Ollama),
@@ -117,8 +117,11 @@ pub async fn connect_ollama(app: tauri::AppHandle) -> Result<LlmConnection, Erro
         vec![ToolWrapper::new(SearchEmailsTool)],
     )?;
 
-    config.llm_provider = Some("ollama".to_string());
-    config.save(&config_path).await.map_err(config_error)?;
+    Config::update(&config_path, |config| {
+        config.llm_provider = Some("ollama".to_string());
+    })
+    .await
+    .map_err(config_error)?;
     replace_llm_agent(&app, agent).await;
 
     Ok(LlmConnection {
@@ -132,7 +135,7 @@ pub async fn connect_ollama(app: tauri::AppHandle) -> Result<LlmConnection, Erro
 #[tracing::instrument(name = "command.llm.connect_chatgpt", skip_all, err)]
 pub async fn connect_chatgpt(app: tauri::AppHandle) -> Result<LlmConnection, Error> {
     let config_path = config_path(&app)?;
-    let mut config = load_config(&config_path).await?;
+    let config = load_config(&config_path).await?;
     let credentials = authorize_chatgpt(&app, &config).await?;
 
     let agent = init_llm_agent(
@@ -144,27 +147,32 @@ pub async fn connect_chatgpt(app: tauri::AppHandle) -> Result<LlmConnection, Err
         Vec::<ToolWrapper<SearchEmailsTool>>::new(),
     )?;
 
-    config.llm_provider = Some("chatgpt".to_string());
-    config.default_model = credentials.model.clone();
-    config.access_token = Some(credentials.access_token);
-    config.refresh_token = Some(credentials.refresh_token);
-    let chatgpt = config
-        .chatgpt
-        .get_or_insert_with(crate::config::ChatGptConfig::default);
-    chatgpt.client_id = Some(credentials.client_id);
-    chatgpt.id_token = Some(credentials.id_token);
-    chatgpt.email = credentials.email.clone();
-    chatgpt.subject = Some(credentials.subject);
-    chatgpt.scopes = credentials.scopes;
-    chatgpt.token_expires_at = Some(credentials.expires_at);
-    chatgpt.host_id = Some(credentials.host_id);
-    config.save(&config_path).await.map_err(config_error)?;
+    let connection_model = credentials.model.clone();
+    let connection_email = credentials.email.clone();
+    Config::update(&config_path, move |config| {
+        config.llm_provider = Some("chatgpt".to_string());
+        config.default_model = credentials.model;
+        config.access_token = Some(credentials.access_token);
+        config.refresh_token = Some(credentials.refresh_token);
+        let chatgpt = config
+            .chatgpt
+            .get_or_insert_with(crate::config::ChatGptConfig::default);
+        chatgpt.client_id = Some(credentials.client_id);
+        chatgpt.id_token = Some(credentials.id_token);
+        chatgpt.email = credentials.email;
+        chatgpt.subject = Some(credentials.subject);
+        chatgpt.scopes = credentials.scopes;
+        chatgpt.token_expires_at = Some(credentials.expires_at);
+        chatgpt.host_id = Some(credentials.host_id);
+    })
+    .await
+    .map_err(config_error)?;
     replace_llm_agent(&app, agent).await;
 
     Ok(LlmConnection {
         provider: "chatgpt".to_string(),
-        model: credentials.model,
-        account_email: credentials.email,
+        model: connection_model,
+        account_email: connection_email,
     })
 }
 
@@ -261,7 +269,26 @@ pub async fn refresh_chatgpt_token_if_needed(
         chatgpt.scopes = split_scopes(&tokens.scope);
     }
     chatgpt.token_expires_at = Some(unix_time().saturating_add(tokens.expires_in));
-    config.save(path).await.map_err(config_error)
+
+    let id_token = chatgpt.id_token.clone();
+    let scopes = chatgpt.scopes.clone();
+    let token_expires_at = chatgpt.token_expires_at;
+    let access_token = config.access_token.clone();
+    let refresh_token = config.refresh_token.clone();
+    let updated = Config::update(path, move |latest| {
+        latest.access_token = access_token;
+        latest.refresh_token = refresh_token;
+        let latest_chatgpt = latest
+            .chatgpt
+            .get_or_insert_with(crate::config::ChatGptConfig::default);
+        latest_chatgpt.id_token = id_token;
+        latest_chatgpt.scopes = scopes;
+        latest_chatgpt.token_expires_at = token_expires_at;
+    })
+    .await
+    .map_err(config_error)?;
+    *config = updated;
+    Ok(())
 }
 
 fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, Error> {

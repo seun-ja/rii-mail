@@ -85,6 +85,7 @@ window.addEventListener("DOMContentLoaded", () => {
       storage: window.localStorage,
       closeWindow: closeCurrentWindow,
       emitToMain,
+      listen: tauriListen,
       notifyReady: () =>
         emitToMain("composer://ready", { label: currentWindow?.label }),
     });

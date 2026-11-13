@@ -271,6 +271,184 @@
                 </svg>
             </button>
         </div>
+        <div
+            id="settings-modal"
+            class="modal hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="settings-title"
+        >
+            <div class="modal-content settings-modal-content">
+                <div class="settings-header">
+                    <div>
+                        <h2 id="settings-title" class="modal-title">Settings</h2>
+                    </div>
+                    <button
+                        id="close-settings-btn"
+                        class="composer-close-btn"
+                        type="button"
+                        aria-label="Close settings"
+                        title="Close"
+                    >
+                        ✕
+                    </button>
+                </div>
+                <div class="settings-layout">
+                    <aside class="settings-sidebar" aria-label="Settings categories">
+                        <nav class="settings-nav" aria-label="Settings">
+                            <button
+                                class="settings-nav-item active"
+                                type="button"
+                                data-settings-section="signature"
+                                aria-selected="true"
+                            >
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    aria-hidden="true"
+                                >
+                                    <path d="M4 20h4l11-11-4-4L4 16v4Z"></path>
+                                    <path d="m13 7 4 4"></path>
+                                </svg>
+                                <span>Signature</span>
+                            </button>
+                        </nav>
+                    </aside>
+                    <div class="settings-main">
+                        <section
+                            class="settings-panel"
+                            data-settings-panel="signature"
+                            aria-labelledby="signature-settings-title"
+                        >
+                            <div class="settings-body">
+                                <h3
+                                    id="signature-settings-title"
+                                    class="settings-section-title"
+                                >
+                                    Signature
+                                </h3>
+                                <p class="settings-help">
+                                    This signature is added to new messages,
+                                    replies, and forwards. Leave it empty to
+                                    disable it.
+                                </p>
+                                <div
+                                    id="signature-editor-label"
+                                    class="settings-label"
+                                >
+                                    Email signature
+                                </div>
+                                <div class="signature-editor-shell">
+                                    <div
+                                        id="signature-toolbar"
+                                        class="signature-toolbar"
+                                        role="toolbar"
+                                        aria-label="Signature formatting"
+                                    >
+                                        <select
+                                            id="signature-font"
+                                            class="signature-font-select"
+                                            aria-label="Font family"
+                                        >
+                                            <option value="Arial">Sans serif</option>
+                                            <option value="Georgia">Serif</option>
+                                            <option value="Courier New">Monospace</option>
+                                        </select>
+                                        <span
+                                            class="signature-toolbar-divider"
+                                            aria-hidden="true"
+                                        ></span>
+                                        <button
+                                            type="button"
+                                            data-signature-command="bold"
+                                            aria-label="Bold"
+                                            title="Bold"
+                                        >
+                                            B
+                                        </button>
+                                        <button
+                                            type="button"
+                                            data-signature-command="italic"
+                                            aria-label="Italic"
+                                            title="Italic"
+                                        >
+                                            <em>I</em>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            data-signature-command="underline"
+                                            aria-label="Underline"
+                                            title="Underline"
+                                        >
+                                            <span class="format-underline">U</span>
+                                        </button>
+                                        <span
+                                            class="signature-toolbar-divider"
+                                            aria-hidden="true"
+                                        ></span>
+                                        <button
+                                            type="button"
+                                            data-signature-action="link"
+                                            aria-label="Insert link"
+                                            title="Insert link"
+                                        >
+                                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                                <path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"></path>
+                                                <path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"></path>
+                                            </svg>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            data-signature-action="image"
+                                            aria-label="Insert image from URL"
+                                            title="Insert image from URL"
+                                        >
+                                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                                <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+                                                <circle cx="8.5" cy="9" r="1.5"></circle>
+                                                <path d="m4 17 4.5-4.5 3.5 3 2.5-2.5 5.5 5"></path>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <div
+                                        id="signature-input"
+                                        class="settings-signature-input"
+                                        contenteditable="true"
+                                        role="textbox"
+                                        aria-labelledby="signature-editor-label"
+                                        aria-multiline="true"
+                                        data-placeholder="Kind regards, Your name"
+                                        spellcheck="true"
+                                    ></div>
+                                </div>
+                                <p
+                                    id="signature-status"
+                                    class="settings-status"
+                                    role="status"
+                                    aria-live="polite"
+                                ></p>
+                            </div>
+                            <div class="settings-footer">
+                                <button
+                                    id="cancel-settings-btn"
+                                    class="settings-secondary-btn"
+                                    type="button"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    id="save-signature-btn"
+                                    class="action-btn primary"
+                                    type="button"
+                                >
+                                    Save
+                                </button>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div id="compose-modal" class="modal hidden">
             <div class="modal-content composer-modal">
                 <div class="modal-header composer-window-header">
