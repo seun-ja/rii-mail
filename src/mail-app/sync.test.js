@@ -20,6 +20,51 @@ function createStorage() {
   };
 }
 
+test("manual refresh fails immediately with a clear error while offline", async () => {
+  const state = createInitialState();
+  state.allowFetch = true;
+  state.isAppReady = true;
+  let invokeCalls = 0;
+  let renderCalls = 0;
+  const sync = createSyncController(
+    state,
+    { renderList() { renderCalls += 1; } },
+    {},
+    async () => { invokeCalls += 1; },
+    createStorage(),
+    { isOnline: () => false },
+  );
+
+  await assert.rejects(
+    sync.refreshActiveMailbox(),
+    /No internet connection\. Check your network and try again\./,
+  );
+
+  assert.equal(invokeCalls, 0);
+  assert.equal(renderCalls, 0);
+  assert.equal(state.isLoadingEmails, false);
+});
+
+test("background refresh is deferred without contacting IMAP while offline", async () => {
+  const state = createInitialState();
+  state.allowFetch = true;
+  state.isAppReady = true;
+  let invokeCalls = 0;
+  const sync = createSyncController(
+    state,
+    { renderList() {} },
+    {},
+    async () => { invokeCalls += 1; },
+    createStorage(),
+    { isOnline: () => false },
+  );
+
+  const result = await sync.refreshActiveMailbox({ background: true });
+
+  assert.deepEqual(result, { newCount: 0, totalEmails: null });
+  assert.equal(invokeCalls, 0);
+});
+
 test("refresh reconciles the loaded page with newest emails first", async () => {
   const state = createInitialState();
   state.allowFetch = true;

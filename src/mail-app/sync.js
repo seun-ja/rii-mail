@@ -24,7 +24,10 @@ export function createSyncController(
   ui,
   invoke,
   storage = window.localStorage,
-  { reconcileEmails = (emails) => emails } = {},
+  {
+    reconcileEmails = (emails) => emails,
+    isOnline = () => globalThis.navigator?.onLine !== false,
+  } = {},
 ) {
   let syncGeneration = 0;
   let mailboxRefreshInProgress = false;
@@ -412,6 +415,14 @@ export function createSyncController(
   async function refreshMailbox(mailbox, { background = false } = {}) {
     if (!state.allowFetch || !state.isAppReady) {
       return { newCount: 0, totalEmails: null };
+    }
+
+    if (!isOnline()) {
+      if (background) {
+        return { newCount: 0, totalEmails: null };
+      }
+
+      throw new Error("No internet connection. Check your network and try again.");
     }
 
     if (state.isLoadingEmails || mailboxRefreshInProgress) {
