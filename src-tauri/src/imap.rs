@@ -1,6 +1,6 @@
 use async_imap::Client;
 use async_native_tls::TlsStream;
-use tokio::net::TcpStream;
+use tokio::{net::TcpStream, sync::oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::{auth::AppleKeychainManager, db, error::Error};
@@ -12,22 +12,37 @@ pub struct RefreshSummary {
 }
 
 #[derive(Debug)]
+pub struct FetchedAttachment {
+    pub data: Vec<u8>,
+    pub uid_validity: u32,
+}
+
+#[derive(Debug)]
 pub enum ImapCommand {
     Logout,
     FetchEmails(db::Provider, CancellationToken),
     RefreshEmails {
         mail_box: db::MailBox,
         provider: db::Provider,
-        response_channel: tokio::sync::oneshot::Sender<Result<RefreshSummary, String>>,
+        response_channel: oneshot::Sender<Result<RefreshSummary, String>>,
         username: String,
         keychain_manager: AppleKeychainManager,
+    },
+    FetchAttachment {
+        mail_box: db::MailBox,
+        uid: u32,
+        part_id: String,
+        response_channel: oneshot::Sender<Result<FetchedAttachment, String>>,
+        username: String,
+        keychain_manager: AppleKeychainManager,
+        cancel_token: CancellationToken,
     },
     SetEmailRead {
         mail_box: db::MailBox,
         provider: db::Provider,
         uid: u32,
         read: bool,
-        response_channel: tokio::sync::oneshot::Sender<Result<(), String>>,
+        response_channel: oneshot::Sender<Result<(), String>>,
         username: String,
         keychain_manager: AppleKeychainManager,
     },

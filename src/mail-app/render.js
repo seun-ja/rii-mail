@@ -1,3 +1,7 @@
+import {
+  formatAttachmentSize,
+  getPreviewableAttachments,
+} from "./attachments.js";
 import { getEmails } from "./cache.js";
 import {
   EMAIL_LINK_MESSAGE,
@@ -118,6 +122,43 @@ export function createRenderer(state, dom, openEmailLink) {
     const emailFrom = escapeHtml(selected.emailFrom);
     const ccRecipients = formatAddresses(selected.cc).map(escapeHtml);
     const receivedAt = escapeHtml(selected.time);
+    const attachments = getPreviewableAttachments(selected);
+    const attachmentMarkup = attachments.length
+      ? `<section class="reader-attachments" aria-label="Attachments">
+          <div class="reader-attachments-heading">
+            <span>Attachments</span>
+            <span class="reader-attachments-count">${attachments.length}</span>
+          </div>
+          <div class="reader-attachment-list">
+            ${attachments
+              .map((attachment) => {
+                const attachmentId = Number(attachment.id);
+                const attachmentPartId = escapeHtml(attachment.partId);
+                const fileName = escapeHtml(
+                  attachment.fileName || `attachment-${attachmentId + 1}`,
+                );
+                const contentType = escapeHtml(
+                  attachment.contentType || "application/octet-stream",
+                );
+                const formattedSize = formatAttachmentSize(attachment.size);
+                const metadata = [contentType, formattedSize]
+                  .filter(Boolean)
+                  .join(" · ");
+
+                return `<button class="reader-attachment" type="button" data-attachment-part-id="${attachmentPartId}" title="Preview ${fileName}">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8.5 12.5 14 7a3 3 0 0 1 4.2 4.2l-7.3 7.3a5 5 0 0 1-7.1-7.1l7.4-7.4" />
+                  </svg>
+                  <span class="reader-attachment-copy">
+                    <span class="reader-attachment-name">${fileName}</span>
+                    <span class="reader-attachment-meta">${metadata}</span>
+                  </span>
+                </button>`;
+              })
+              .join("")}
+          </div>
+        </section>`
+      : "";
     const ccMarkup = (() => {
       if (ccRecipients.length === 0) {
         return "";
@@ -179,6 +220,7 @@ export function createRenderer(state, dom, openEmailLink) {
           ? `<iframe class="reader-html-frame" title="Email content: ${subject}" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>`
           : `<div class="reader-body reader-body-text">${linkifyPlainText(textBody)}</div>`
       }
+      ${attachmentMarkup}
     `;
 
     if (hasHtmlBody) {
@@ -295,7 +337,10 @@ export function createRenderer(state, dom, openEmailLink) {
             <div class="mail-item-content">
               <div class="mail-item-row">
                 <span class="mail-item-sender">${escapeHtml(mail.senderName || "Unknown sender")}</span>
-                <span class="mail-item-time">${escapeHtml(mail.time)}</span>
+                <span class="mail-item-trailing">
+                  <span class="mail-item-time">${escapeHtml(mail.time)}</span>
+                  ${getPreviewableAttachments(mail).length > 0 ? '<span class="mail-item-attachment" aria-label="Has attachments" title="Has attachments"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 12.5 14 7a3 3 0 0 1 4.2 4.2l-7.3 7.3a5 5 0 0 1-7.1-7.1l7.4-7.4" /></svg></span>' : ""}
+                </span>
               </div>
               <div class="mail-item-subject">${escapeHtml(mail.subject || "(No subject)")}</div>
               <div class="mail-item-preview">${escapeHtml(mail.preview)}</div>

@@ -1,6 +1,13 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
-use async_imap::{types::NameAttribute, Session};
+use async_imap::{
+    imap_proto::types::{
+        BodyContentCommon, BodyContentSinglePart, BodyParams, BodyStructure, MessageSection,
+        SectionPath,
+    },
+    types::{Fetch, Flag, NameAttribute},
+    Session,
+};
 use async_native_tls::TlsStream;
 use futures::StreamExt;
 use sqlx::SqlitePool;
@@ -8,6 +15,7 @@ use tauri::Emitter as _;
 use tokio::{
     net::TcpStream,
     sync::{oneshot::Sender, Mutex},
+    time::timeout,
 };
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument as _;
@@ -15,10 +23,15 @@ use tracing::Instrument as _;
 use crate::{
     db::{
         get_last_uid, populate_inbox_folder_count, populate_sent_folder_count, populate_storage,
-        set_email_read_states, set_last_uid, MailBox, Provider,
+        reconcile_mailbox_uid_validity, replace_storage, reset_storage, set_email_read_states,
+        set_last_uid, MailBox, Provider,
     },
-    email_cache::{CompleteEmail, SharedImapSession, StandardEmail},
+    email_cache::{
+        encode_cached_email_content, normalize_attachment_file_name, CompleteEmail,
+        EmailAttachment, EmailContent, SharedImapSession, StandardEmail,
+    },
     error::Error,
+    imap::FetchedAttachment,
     llm::{phishing_rater, Label},
     INBOX_POPULATE_UPDATE, SENT_POPULATE_UPDATE, SPAM_POPULATE_UPDATE,
 };
@@ -47,8 +60,379 @@ impl FetchResult {
     }
 }
 
-const INITIAL_BATCH_SIZE: u32 = 100;
-const FETCH_MESSAGE_ATTRIBUTES: &str = "(UID FLAGS BODY.PEEK[])";
+const INITIAL_SYNC_CHUNK_SIZE: usize = 20;
+const IMAP_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const FETCH_MESSAGE_ATTRIBUTES: &str = "(UID FLAGS INTERNALDATE BODYSTRUCTURE BODY.PEEK[HEADER])";
+
+#[derive(Debug, Clone)]
+pub(crate) struct BodyPartPlan {
+    pub part_id: String,
+    pub path: Vec<u32>,
+    pub html: bool,
+}
+
+#[derive(Debug)]
+struct MessageFetchPlan {
+    uid: u32,
+    date: Option<chrono::DateTime<chrono::FixedOffset>>,
+    header: Vec<u8>,
+    labels: Option<Vec<String>>,
+    read: bool,
+    body_parts: Vec<BodyPartPlan>,
+    attachments: Vec<EmailAttachment>,
+}
+
+fn percent_decode(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+
+    while index < bytes.len() {
+        if bytes[index] == b'%' && index + 2 < bytes.len() {
+            if let Ok(byte) = u8::from_str_radix(&value[index + 1..index + 3], 16) {
+                decoded.push(byte);
+                index += 3;
+                continue;
+            }
+        }
+        decoded.push(bytes[index]);
+        index += 1;
+    }
+
+    String::from_utf8_lossy(&decoded).into_owned()
+}
+
+fn decode_extended_param(value: &str) -> String {
+    let encoded = value
+        .split_once('\'')
+        .and_then(|(_, remainder)| remainder.split_once('\''))
+        .map_or(value, |(_, encoded)| encoded);
+    percent_decode(encoded)
+}
+
+fn body_param(params: &BodyParams<'_>, name: &str) -> Option<String> {
+    let params = params.as_ref()?;
+
+    if let Some(value) = params
+        .iter()
+        .find_map(|(key, value)| key.eq_ignore_ascii_case(name).then_some(value.as_ref()))
+    {
+        return Some(value.to_string());
+    }
+
+    let extended_name = format!("{name}*");
+    if let Some(value) = params.iter().find_map(|(key, value)| {
+        key.eq_ignore_ascii_case(&extended_name)
+            .then_some(value.as_ref())
+    }) {
+        return Some(decode_extended_param(value));
+    }
+
+    let lower_prefix = format!("{}*", name.to_ascii_lowercase());
+    let mut continuations = params
+        .iter()
+        .filter_map(|(key, value)| {
+            let lower_key = key.to_ascii_lowercase();
+            let suffix = lower_key.strip_prefix(&lower_prefix)?;
+            let index = suffix.trim_end_matches('*').parse::<usize>().ok()?;
+            Some((index, suffix.ends_with('*'), value.as_ref()))
+        })
+        .collect::<Vec<_>>();
+    continuations.sort_unstable_by_key(|(index, _, _)| *index);
+
+    if continuations.is_empty()
+        || continuations
+            .iter()
+            .enumerate()
+            .any(|(expected, (actual, _, _))| expected != *actual)
+    {
+        return None;
+    }
+
+    Some(
+        continuations
+            .into_iter()
+            .map(|(index, encoded, value)| {
+                if encoded {
+                    if index == 0 {
+                        decode_extended_param(value)
+                    } else {
+                        percent_decode(value)
+                    }
+                } else {
+                    value.to_string()
+                }
+            })
+            .collect(),
+    )
+}
+
+fn render_part_id(path: &[u32]) -> String {
+    path.iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
+fn collect_single_part(
+    common: &BodyContentCommon<'_>,
+    other: &BodyContentSinglePart<'_>,
+    path: Vec<u32>,
+    is_text: bool,
+    force_attachment: bool,
+    within_related: bool,
+    body_parts: &mut Vec<BodyPartPlan>,
+    attachments: &mut Vec<EmailAttachment>,
+) {
+    let attachment_id = attachments.len() as u32;
+    let file_name = common
+        .disposition
+        .as_ref()
+        .and_then(|disposition| body_param(&disposition.params, "filename"))
+        .or_else(|| body_param(&common.ty.params, "name"));
+    let disposition_is_attachment = common
+        .disposition
+        .as_ref()
+        .is_some_and(|disposition| disposition.ty.eq_ignore_ascii_case("attachment"));
+    let disposition_is_inline = common
+        .disposition
+        .as_ref()
+        .is_some_and(|disposition| disposition.ty.eq_ignore_ascii_case("inline"));
+    let is_image = common.ty.ty.eq_ignore_ascii_case("image");
+    let embedded_inline = !disposition_is_attachment
+        && (disposition_is_inline || within_related)
+        && (other.id.is_some() || is_image);
+    let is_attachment =
+        force_attachment || disposition_is_attachment || (file_name.is_some() && !embedded_inline);
+    let server_part_id = render_part_id(&path);
+
+    if is_attachment {
+        let content_type = format!("{}/{}", common.ty.ty, common.ty.subtype).to_ascii_lowercase();
+        attachments.push(EmailAttachment {
+            id: attachment_id,
+            part_id: server_part_id,
+            file_name: normalize_attachment_file_name(file_name.as_deref(), attachment_id),
+            content_type,
+            size: other.octets as usize,
+            data: Vec::new(),
+        });
+    } else if is_text && common.ty.ty.eq_ignore_ascii_case("text") {
+        body_parts.push(BodyPartPlan {
+            part_id: server_part_id,
+            path,
+            html: common.ty.subtype.eq_ignore_ascii_case("html"),
+        });
+    }
+}
+
+pub(crate) fn collect_body_structure_parts(
+    structure: &BodyStructure<'_>,
+) -> (Vec<BodyPartPlan>, Vec<EmailAttachment>) {
+    fn walk(
+        structure: &BodyStructure<'_>,
+        path: Vec<u32>,
+        within_related: bool,
+        body_parts: &mut Vec<BodyPartPlan>,
+        attachments: &mut Vec<EmailAttachment>,
+    ) {
+        match structure {
+            BodyStructure::Multipart { common, bodies, .. } => {
+                let within_related =
+                    within_related || common.ty.subtype.eq_ignore_ascii_case("related");
+                for (index, body) in bodies.iter().enumerate() {
+                    let mut child_path = path.clone();
+                    child_path.push(index as u32 + 1);
+                    walk(body, child_path, within_related, body_parts, attachments);
+                }
+            }
+            BodyStructure::Text { common, other, .. } => collect_single_part(
+                common,
+                other,
+                path,
+                true,
+                false,
+                within_related,
+                body_parts,
+                attachments,
+            ),
+            BodyStructure::Basic { common, other, .. } => collect_single_part(
+                common,
+                other,
+                path,
+                false,
+                false,
+                within_related,
+                body_parts,
+                attachments,
+            ),
+            BodyStructure::Message { common, other, .. } => collect_single_part(
+                common,
+                other,
+                path,
+                false,
+                true,
+                within_related,
+                body_parts,
+                attachments,
+            ),
+        }
+    }
+
+    let mut body_parts = Vec::new();
+    let mut attachments = Vec::new();
+    let initial_path = if matches!(structure, BodyStructure::Multipart { .. }) {
+        Vec::new()
+    } else {
+        vec![1]
+    };
+    walk(
+        structure,
+        initial_path,
+        false,
+        &mut body_parts,
+        &mut attachments,
+    );
+    (body_parts, attachments)
+}
+
+fn message_fetch_plan(fetch: &Fetch) -> Result<MessageFetchPlan, Error> {
+    let uid = fetch
+        .uid
+        .ok_or_else(|| Error::Other("IMAP metadata response did not include a UID".to_string()))?;
+    let header = fetch.header().ok_or_else(|| {
+        Error::Other(format!(
+            "IMAP metadata for UID {uid} did not include headers"
+        ))
+    })?;
+    let structure = fetch.bodystructure().ok_or_else(|| {
+        Error::Other(format!(
+            "IMAP metadata for UID {uid} did not include BODYSTRUCTURE"
+        ))
+    })?;
+    let (body_parts, attachments) = collect_body_structure_parts(structure);
+
+    Ok(MessageFetchPlan {
+        uid,
+        date: fetch.internal_date(),
+        header: header.to_vec(),
+        labels: fetch
+            .gmail_labels()
+            .map(|labels| labels.iter().map(ToString::to_string).collect()),
+        read: fetch.flags().any(|flag| flag == Flag::Seen),
+        body_parts,
+        attachments,
+    })
+}
+
+fn mime_part_text(fetch: &Fetch, part: &BodyPartPlan) -> Option<String> {
+    let mime_path = SectionPath::Part(part.path.clone(), Some(MessageSection::Mime));
+    let body_path = SectionPath::Part(part.path.clone(), None);
+    let mime = fetch.section(&mime_path)?;
+    let body = fetch.section(&body_path)?;
+    let mut raw = mime.to_vec();
+    if !raw.ends_with(b"\r\n\r\n") {
+        if !raw.ends_with(b"\r\n") {
+            raw.extend_from_slice(b"\r\n");
+        }
+        raw.extend_from_slice(b"\r\n");
+    }
+    raw.extend_from_slice(body);
+
+    let parsed = mail_parser::MessageParser::default().parse(&raw);
+    let decoded = if part.html {
+        parsed.and_then(|message| message.body_html(0).map(|body| body.into_owned()))
+    } else {
+        parsed.and_then(|message| message.body_text(0).map(|body| body.into_owned()))
+    };
+
+    decoded.or_else(|| Some(String::from_utf8_lossy(body).into_owned()))
+}
+
+async fn fetch_message_without_attachments(
+    session: &mut Session<TlsStream<TcpStream>>,
+    plan: MessageFetchPlan,
+    cancel_token: &CancellationToken,
+) -> Result<StandardEmail, Error> {
+    let mut text_body = Vec::new();
+    let mut html_body = Vec::new();
+
+    if !plan.body_parts.is_empty() {
+        let sections = plan
+            .body_parts
+            .iter()
+            .flat_map(|part| {
+                [
+                    format!("BODY.PEEK[{}.MIME]", part.part_id),
+                    format!("BODY.PEEK[{}]", part.part_id),
+                ]
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        let query = format!("(UID {sections})");
+        let mut stream = tokio::select! {
+            result = timeout(
+                IMAP_REQUEST_TIMEOUT,
+                session.uid_fetch(plan.uid.to_string(), query),
+            ) => result
+                .map_err(|_| Error::Other(format!("Timed out fetching body for UID {}", plan.uid)))??,
+            _ = cancel_token.cancelled() => return Err(Error::ThreadCancel),
+        };
+        let mut fetched_parts = HashSet::new();
+
+        while let Some(fetch) = tokio::select! {
+            result = timeout(IMAP_REQUEST_TIMEOUT, stream.next()) => result
+                .map_err(|_| Error::Other(format!("Timed out reading body for UID {}", plan.uid)))?,
+            _ = cancel_token.cancelled() => return Err(Error::ThreadCancel),
+        } {
+            let fetch = fetch?;
+            if fetch.uid != Some(plan.uid) {
+                continue;
+            }
+
+            for part in &plan.body_parts {
+                if let Some(body) = mime_part_text(&fetch, part) {
+                    fetched_parts.insert(part.part_id.clone());
+                    if part.html {
+                        html_body.push(body);
+                    } else {
+                        text_body.push(body);
+                    }
+                }
+            }
+        }
+
+        if fetched_parts.len() != plan.body_parts.len() {
+            return Err(Error::Other(format!(
+                "IMAP body response for UID {} was incomplete",
+                plan.uid
+            )));
+        }
+    }
+
+    let content = EmailContent::from_header_and_parts(
+        &plan.header,
+        text_body.join("\n\n"),
+        html_body.join("\n\n"),
+        plan.attachments,
+    );
+
+    Ok(StandardEmail {
+        uid: Some(plan.uid),
+        date: plan.date,
+        body: Some(encode_cached_email_content(&content)?),
+        labels: plan.labels,
+        read: plan.read,
+    })
+}
+
+pub(crate) fn canonical_part_path(value: &str) -> Option<Vec<u32>> {
+    let parts = value
+        .split('.')
+        .map(str::parse::<u32>)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    (!parts.is_empty() && parts.iter().all(|part| *part > 0)).then_some(parts)
+}
 
 pub(crate) fn mailbox_name_matches(mailbox: &MailBox, name: &str, delimiter: Option<&str>) -> bool {
     let expected = mailbox.as_ref();
@@ -127,6 +511,57 @@ async fn select_mailbox(
     fields(mailbox = mailbox.as_ref(), uid, read),
     err
 )]
+pub async fn fetch_attachment_on_server(
+    session: SharedImapSession,
+    mailbox: &MailBox,
+    uid: u32,
+    part_id: &str,
+) -> Result<FetchedAttachment, Error> {
+    let path = canonical_part_path(part_id)
+        .ok_or_else(|| Error::Other("Invalid attachment part identifier".to_string()))?;
+    let canonical_id = render_part_id(&path);
+    let query = format!("(UID BODY.PEEK[{canonical_id}.MIME] BODY.PEEK[{canonical_id}])");
+    let mut session = session.lock().await;
+    let mailbox_info = select_mailbox(&mut session, mailbox).await?;
+    let uid_validity = mailbox_info.uid_validity.unwrap_or_default();
+    let mut stream = session.uid_fetch(uid.to_string(), query).await?;
+
+    while let Some(fetch) = stream.next().await {
+        let fetch = fetch?;
+        if fetch.uid != Some(uid) {
+            continue;
+        }
+
+        let mime_path = SectionPath::Part(path.clone(), Some(MessageSection::Mime));
+        let body_path = SectionPath::Part(path.clone(), None);
+        let mime = fetch.section(&mime_path).ok_or(Error::NotFound)?;
+        let body = fetch.section(&body_path).ok_or(Error::NotFound)?;
+        let mut raw = mime.to_vec();
+        if !raw.ends_with(b"\r\n\r\n") {
+            if !raw.ends_with(b"\r\n") {
+                raw.extend_from_slice(b"\r\n");
+            }
+            raw.extend_from_slice(b"\r\n");
+        }
+        raw.extend_from_slice(body);
+
+        let message = mail_parser::MessageParser::default()
+            .parse(&raw)
+            .ok_or_else(|| Error::Other("Unable to decode attachment data".to_string()))?;
+        let attachment = message
+            .attachments()
+            .next()
+            .or_else(|| message.parts.first())
+            .ok_or(Error::NotFound)?;
+        return Ok(FetchedAttachment {
+            data: attachment.contents().to_vec(),
+            uid_validity,
+        });
+    }
+
+    Err(Error::NotFound)
+}
+
 pub async fn set_email_read_on_server(
     session: SharedImapSession,
     mailbox: &MailBox,
@@ -200,7 +635,9 @@ pub async fn fetch_emails(
 
     let table_name = format!("{}_{}", provider.as_ref(), MailBox::Inbox.as_ref());
 
-    if crate::db::check_email_db_empty(pool, &table_name).await? {
+    if crate::db::check_email_db_empty(pool, &table_name).await?
+        && get_last_uid(pool, &table_name).await?.is_some()
+    {
         tracing::info!("Emails already fetched");
         return Ok(FetchResult::Populated);
     }
@@ -379,169 +816,136 @@ async fn handle_email_population(
         }
     };
 
-    if mailbox_info.exists == 0 {
-        if mailbox == &MailBox::Spam {
-            SPAM_POPULATE_UPDATE
-                .0
-                .lock()
-                .await
-                .store(100, std::sync::atomic::Ordering::Release);
-
-            if let Some(tx) = spam_initial_email_populated_tx.lock().await.take() {
-                _ = tx.send(());
-            }
-        }
-
-        return Ok(FetchResult::EmptyMailbox);
+    if let Some(uid_validity) = mailbox_info.uid_validity {
+        reconcile_mailbox_uid_validity(pool, &table_name, uid_validity).await?;
     }
 
-    let mut emails = Vec::new();
-
-    tracing::info!("Starting uid_fetch");
-
-    let mut messages_stream = tokio::select! {
-        result = session.uid_fetch(
-            "1:*",
-            FETCH_MESSAGE_ATTRIBUTES
-        ) => result?,
-
-        _ = cancel_token.cancelled() => {
-            return Err(Error::ThreadCancel);
+    let notify_initial_population = || async {
+        match mailbox {
+            MailBox::Inbox => {
+                if let Some(tx) = inbox_initial_email_populated_tx.lock().await.take() {
+                    _ = tx.send(());
+                }
+            }
+            MailBox::Sent => {
+                if let Some(tx) = sent_initial_email_populated_tx.lock().await.take() {
+                    _ = tx.send(());
+                }
+            }
+            MailBox::Spam => {
+                if let Some(tx) = spam_initial_email_populated_tx.lock().await.take() {
+                    _ = tx.send(());
+                }
+            }
+            MailBox::Drafts | MailBox::Trash => {}
         }
     };
 
-    tracing::info!(mailbox = ?mailbox, "uid_fetch established, starting to stream messages");
+    let set_progress = |percentage: u8| async move {
+        match mailbox {
+            MailBox::Inbox => INBOX_POPULATE_UPDATE
+                .0
+                .lock()
+                .await
+                .store(percentage, std::sync::atomic::Ordering::Release),
+            MailBox::Sent => SENT_POPULATE_UPDATE
+                .0
+                .lock()
+                .await
+                .store(percentage, std::sync::atomic::Ordering::Release),
+            MailBox::Spam => SPAM_POPULATE_UPDATE
+                .0
+                .lock()
+                .await
+                .store(percentage, std::sync::atomic::Ordering::Release),
+            MailBox::Drafts | MailBox::Trash => {}
+        }
+    };
 
+    if mailbox_info.exists == 0 {
+        set_progress(100).await;
+        notify_initial_population().await;
+        return Ok(FetchResult::EmptyMailbox);
+    }
+
+    // Search first, then fetch metadata in small newest-first chunks. This lets
+    // the UI read the first useful page without waiting for a whole-mailbox
+    // BODYSTRUCTURE scan and keeps progress tied to stored messages.
+    let mut uids = tokio::select! {
+        result = timeout(IMAP_REQUEST_TIMEOUT, session.uid_search("ALL")) => result
+            .map_err(|_| Error::Other("Timed out listing mailbox UIDs".to_string()))??,
+        _ = cancel_token.cancelled() => return Err(Error::ThreadCancel),
+    }
+    .into_iter()
+    .collect::<Vec<_>>();
+    uids.sort_unstable_by(|left, right| right.cmp(left));
+
+    if uids.is_empty() {
+        set_progress(100).await;
+        notify_initial_population().await;
+        return Ok(FetchResult::EmptyMailbox);
+    }
+
+    let highest_uid = uids.iter().copied().max().unwrap_or_default();
+    let total_to_process = uids.len();
+    let mut processed_count = 0usize;
     let mut inserted_count = 0u32;
-    let mut highest_uid = 0u32;
+    let mut initial_population_notified = false;
 
-    let mut email_count: u32 = 0;
-
-    let sent_tx = sent_initial_email_populated_tx.clone();
-    let inbox_tx = inbox_initial_email_populated_tx.clone();
-    let spam_tx = spam_initial_email_populated_tx.clone();
-
-    tracing::info!(
-        mailbox = ?mailbox,
-        total_emails = mailbox_info.exists,
-        "Beginning to stream messages"
-    );
-
-    while let Some(message) = tokio::select! {
-        msg = messages_stream.next() => msg,
-
-        _ = cancel_token.cancelled() => {
-            tracing::info!(
-                mailbox = ?mailbox,
-                "Mailbox sync cancelled"
-            );
-
-            return Err(Error::ThreadCancel);
-        }
-    } {
-        email_count += 1;
-        let percentage = ((email_count * 100) / mailbox_info.exists) as u8;
-
-        if mailbox == &MailBox::Inbox {
-            INBOX_POPULATE_UPDATE
-                .0
-                .lock()
-                .await
-                .store(percentage, std::sync::atomic::Ordering::Release);
-        } else if mailbox == &MailBox::Sent {
-            SENT_POPULATE_UPDATE
-                .0
-                .lock()
-                .await
-                .store(percentage, std::sync::atomic::Ordering::Release);
-        } else if mailbox == &MailBox::Spam {
-            SPAM_POPULATE_UPDATE
-                .0
-                .lock()
-                .await
-                .store(percentage, std::sync::atomic::Ordering::Release);
-        }
-
-        let message = match message {
-            Ok(message) => message,
-            Err(err) => {
-                tracing::error!(
-                    error = %err,
-                    mailbox = ?mailbox,
-                    message_index = email_count,
-                    total_emails = mailbox_info.exists,
-                    "Failed to decode IMAP message during initial mailbox sync"
-                );
-                return Err(err.into());
-            }
+    for uid_chunk in uids.chunks(INITIAL_SYNC_CHUNK_SIZE) {
+        let uid_set = uid_chunk
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut messages_stream = tokio::select! {
+            result = timeout(
+                IMAP_REQUEST_TIMEOUT,
+                session.uid_fetch(uid_set, FETCH_MESSAGE_ATTRIBUTES),
+            ) => result
+                .map_err(|_| Error::Other("Timed out fetching message metadata".to_string()))??,
+            _ = cancel_token.cancelled() => return Err(Error::ThreadCancel),
         };
+        let mut plans = Vec::with_capacity(uid_chunk.len());
 
-        if let Some(uid) = message.uid {
-            highest_uid = highest_uid.max(uid);
+        while let Some(message) = tokio::select! {
+            result = timeout(IMAP_REQUEST_TIMEOUT, messages_stream.next()) => result
+                .map_err(|_| Error::Other("Timed out reading message metadata".to_string()))?,
+            _ = cancel_token.cancelled() => return Err(Error::ThreadCancel),
+        } {
+            plans.push(message_fetch_plan(&message?)?);
+        }
+        drop(messages_stream);
+        plans.sort_unstable_by(|left, right| right.uid.cmp(&left.uid));
+
+        let mut emails = Vec::with_capacity(plans.len());
+        for plan in plans {
+            emails.push(fetch_message_without_attachments(session, plan, &cancel_token).await?);
+            processed_count += 1;
+            let percentage = ((processed_count * 100) / total_to_process) as u8;
+            set_progress(percentage.min(99)).await;
         }
 
-        emails.push(message.into());
-
-        let mut initial_batch = INITIAL_BATCH_SIZE;
-
-        if mailbox_info.exists < INITIAL_BATCH_SIZE {
-            initial_batch = mailbox_info.exists;
-        }
-
-        if emails.len() == initial_batch as usize {
-            if cancel_token.is_cancelled() {
-                return Err(Error::ThreadCancel);
+        if !emails.is_empty() {
+            let batch_count = emails.len() as u32;
+            if initial_population_notified {
+                replace_storage(pool, emails, &table_name).await?;
+            } else {
+                // Atomically swap the preserved legacy cache for the first
+                // usable selective-cache chunk, then append later chunks.
+                reset_storage(pool, emails, &table_name).await?;
             }
+            inserted_count += batch_count;
 
-            tokio::select! {
-                result = populate_storage(
-                    pool,
-                    std::mem::take(&mut emails),
-                    &table_name
-                ) => {
-                    result?;
-                }
-
-                _ = cancel_token.cancelled() => {
-                    return Err(Error::ThreadCancel);
-                }
+            if !initial_population_notified {
+                notify_initial_population().await;
+                initial_population_notified = true;
             }
-
-            match mailbox {
-                MailBox::Inbox => {
-                    if let Some(tx) = inbox_tx.lock().await.take() {
-                        tracing::info!(mailbox = ?mailbox, "Inbox initial population complete, notifying UI");
-                        _ = tx.send(());
-                    }
-                }
-                MailBox::Sent => {
-                    if let Some(tx) = sent_tx.lock().await.take() {
-                        tracing::info!(mailbox = ?mailbox, "Sent initial population complete, notifying UI");
-                        _ = tx.send(())
-                    }
-                }
-                MailBox::Spam => {
-                    if let Some(tx) = spam_tx.lock().await.take() {
-                        tracing::info!(mailbox = ?mailbox, "Spam initial population complete, notifying UI");
-                        _ = tx.send(());
-                    }
-                }
-                MailBox::Drafts => unimplemented!("Coming soon"),
-                MailBox::Trash => unimplemented!("Coming soon"),
-            }
-
-            inserted_count += INITIAL_BATCH_SIZE;
         }
     }
 
-    if !emails.is_empty() {
-        if cancel_token.is_cancelled() {
-            return Err(Error::ThreadCancel);
-        }
-
-        inserted_count += emails.len() as u32;
-
-        populate_storage(pool, emails, &table_name).await?;
+    if !initial_population_notified {
+        notify_initial_population().await;
     }
 
     if cancel_token.is_cancelled() {
@@ -549,6 +953,7 @@ async fn handle_email_population(
     }
 
     set_last_uid(pool, &table_name, highest_uid).await?;
+    set_progress(100).await;
 
     tracing::info!(
         inserted = inserted_count,
@@ -606,6 +1011,10 @@ pub async fn fetch_latest(
         }
     };
 
+    if let Some(uid_validity) = mailbox_info.uid_validity {
+        reconcile_mailbox_uid_validity(pool, &table_name, uid_validity).await?;
+    }
+
     let total_emails = mailbox_info.exists;
 
     let read_state_updates =
@@ -657,6 +1066,7 @@ pub async fn fetch_latest(
         }
     };
 
+    let mut plans = Vec::new();
     let mut emails: Vec<StandardEmail> = vec![];
     let mut spam_uids = HashSet::new();
 
@@ -696,7 +1106,18 @@ pub async fn fetch_latest(
             highest_uid = highest_uid.max(uid);
         }
 
-        let email: StandardEmail = message.into();
+        plans.push(message_fetch_plan(&message)?);
+    }
+
+    // The metadata stream holds a mutable borrow of the IMAP session.
+    drop(stream);
+
+    for plan in plans {
+        if cancel_token.is_cancelled() {
+            return Err(Error::ThreadCancel);
+        }
+
+        let email = fetch_message_without_attachments(&mut session, plan, &cancel_token).await?;
 
         if let Some(body) = CompleteEmail::from(email.clone()).body {
             let rating =
@@ -704,25 +1125,15 @@ pub async fn fetch_latest(
                     .await?;
 
             if *mailbox == MailBox::Inbox && rating.label == Label::Spam && rating.score > 0.8 {
-                // make this configurable
                 if let Some(uid) = email.uid {
                     spam_uids.insert(uid);
                     continue;
                 }
-
-                tracing::warn!(
-                    score = rating.score,
-                    "Cannot move spam-classified message without a UID"
-                );
             }
         }
 
         emails.push(email);
     }
-
-    // The fetch stream holds a mutable borrow of the IMAP session, so it must
-    // be released before issuing the UID MOVE command.
-    drop(stream);
 
     if !spam_uids.is_empty() {
         let spam_mailbox = resolve_imap_mailbox_name(&mut session, &MailBox::Spam).await?;

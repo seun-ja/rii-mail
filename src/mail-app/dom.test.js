@@ -24,6 +24,11 @@ test("getMailAppDom queries all expected selectors", () => {
   assert.equal(dom.mailReaderEl.selector, "#mail-reader");
   assert.equal(dom.searchInputEl.selector, "#global-search");
   assert.equal(dom.syncProgressBarEl.selector, "#sync-progress-bar");
+  assert.equal(
+    dom.attachmentPreviewModalEl.selector,
+    "#attachment-preview-modal",
+  );
+  assert.equal(dom.downloadAttachmentBtnEl.selector, "#download-attachment-btn");
   assert.equal(dom.openAiAssistantBtnEl.selector, "#open-ai-assistant-btn");
   assert.equal(dom.aiAssistantPanelEl.selector, "#ai-assistant-panel");
   assert.deepEqual(dom.settingsNavButtons, ["[data-settings-section]"]);

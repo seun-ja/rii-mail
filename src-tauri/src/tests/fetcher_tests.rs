@@ -1,7 +1,13 @@
 use crate::db::MailBox;
 use crate::email_cache::{
-    incremental_uid_search_query, mailbox_name_matches, uid_vec_to_set, FetchResult,
+    canonical_part_path, collect_body_structure_parts, incremental_uid_search_query,
+    mailbox_name_matches, uid_vec_to_set, FetchResult,
 };
+use async_imap::imap_proto::types::{
+    BodyContentCommon, BodyContentSinglePart, BodyStructure, ContentDisposition, ContentEncoding,
+    ContentType,
+};
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -27,6 +33,140 @@ fn fetch_result_count_returns_expected_value() {
         .total_emails(),
         42
     );
+}
+
+fn body_common(
+    content_type: &str,
+    subtype: &str,
+    disposition: Option<(&str, &str)>,
+) -> BodyContentCommon<'static> {
+    BodyContentCommon {
+        ty: ContentType {
+            ty: Cow::Owned(content_type.to_string()),
+            subtype: Cow::Owned(subtype.to_string()),
+            params: None,
+        },
+        disposition: disposition.map(|(kind, file_name)| ContentDisposition {
+            ty: Cow::Owned(kind.to_string()),
+            params: Some(vec![(
+                Cow::Borrowed("filename"),
+                Cow::Owned(file_name.to_string()),
+            )]),
+        }),
+        language: None,
+        location: None,
+    }
+}
+
+fn single_part_details(octets: u32) -> BodyContentSinglePart<'static> {
+    BodyContentSinglePart {
+        id: None,
+        md5: None,
+        description: None,
+        transfer_encoding: ContentEncoding::SevenBit,
+        octets,
+    }
+}
+
+#[test]
+fn body_structure_separates_text_parts_from_attachment_metadata() {
+    let structure = BodyStructure::Multipart {
+        common: body_common("multipart", "mixed", None),
+        bodies: vec![
+            BodyStructure::Text {
+                common: body_common("text", "plain", None),
+                other: single_part_details(24),
+                lines: 2,
+                extension: None,
+            },
+            BodyStructure::Basic {
+                common: body_common("application", "pdf", Some(("attachment", "report.pdf"))),
+                other: single_part_details(4096),
+                extension: None,
+            },
+        ],
+        extension: None,
+    };
+
+    let (body_parts, attachments) = collect_body_structure_parts(&structure);
+
+    assert_eq!(body_parts.len(), 1);
+    assert_eq!(body_parts[0].part_id, "1");
+    assert!(!body_parts[0].html);
+    assert_eq!(attachments.len(), 1);
+    assert_eq!(attachments[0].part_id, "2");
+    assert_eq!(attachments[0].file_name, "report.pdf");
+    assert_eq!(attachments[0].content_type, "application/pdf");
+    assert_eq!(attachments[0].size, 4096);
+    assert!(attachments[0].data.is_empty());
+}
+
+#[test]
+fn body_structure_hides_inline_related_images_but_keeps_attached_images() {
+    let mut inline_details = single_part_details(512);
+    inline_details.id = Some(Cow::Borrowed("logo@example"));
+    let structure = BodyStructure::Multipart {
+        common: body_common("multipart", "related", None),
+        bodies: vec![
+            BodyStructure::Text {
+                common: body_common("text", "html", None),
+                other: single_part_details(100),
+                lines: 1,
+                extension: None,
+            },
+            BodyStructure::Basic {
+                common: body_common("image", "png", Some(("inline", "logo.png"))),
+                other: inline_details,
+                extension: None,
+            },
+            BodyStructure::Basic {
+                common: body_common("image", "jpeg", Some(("attachment", "photo.jpg"))),
+                other: single_part_details(2048),
+                extension: None,
+            },
+        ],
+        extension: None,
+    };
+
+    let (body_parts, attachments) = collect_body_structure_parts(&structure);
+
+    assert_eq!(body_parts.len(), 1);
+    assert_eq!(attachments.len(), 1);
+    assert_eq!(attachments[0].file_name, "photo.jpg");
+    assert_eq!(attachments[0].part_id, "3");
+}
+
+#[test]
+fn body_structure_decodes_extended_and_continued_attachment_names() {
+    let mut common = body_common("application", "pdf", Some(("attachment", "ignored")));
+    common.disposition.as_mut().expect("disposition").params = Some(vec![
+        (
+            Cow::Borrowed("filename*0*"),
+            Cow::Borrowed("UTF-8''quarterly%20"),
+        ),
+        (
+            Cow::Borrowed("filename*1*"),
+            Cow::Borrowed("report%20%E2%82%AC.pdf"),
+        ),
+    ]);
+    let structure = BodyStructure::Basic {
+        common,
+        other: single_part_details(4096),
+        extension: None,
+    };
+
+    let (_, attachments) = collect_body_structure_parts(&structure);
+
+    assert_eq!(attachments.len(), 1);
+    assert_eq!(attachments[0].file_name, "quarterly report €.pdf");
+}
+
+#[test]
+fn attachment_part_paths_accept_only_positive_dot_separated_numbers() {
+    assert_eq!(canonical_part_path("2.1"), Some(vec![2, 1]));
+    for invalid in ["", "0", "1.0", "1.", "1.MIME", "1] BODY[]"] {
+        assert_eq!(canonical_part_path(invalid), None, "{invalid} should fail");
+    }
 }
 
 #[test]

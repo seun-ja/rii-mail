@@ -119,6 +119,68 @@ test("refresh reconciles the loaded page with newest emails first", async () => 
   assert.ok(calls[1].args.maxRange >= refreshedPage.length);
 });
 
+test("queued page fetch runs after a background mailbox refresh", async () => {
+  const state = createInitialState();
+  state.allowFetch = true;
+  state.isAppReady = true;
+  state.cachedByFolder.INBOX = [
+    { id: "db-INBOX-uid-3", subject: "Newest", folder: "INBOX" },
+    { id: "db-INBOX-uid-2", subject: "Older", folder: "INBOX" },
+  ];
+  state.paginationByFolder.INBOX.nextOffset = 2;
+
+  let markRefreshStarted;
+  const refreshStarted = new Promise((resolve) => {
+    markRefreshStarted = resolve;
+  });
+  let finishRefresh;
+  const refreshResult = new Promise((resolve) => {
+    finishRefresh = resolve;
+  });
+  const calls = [];
+  const sync = createSyncController(
+    state,
+    { renderList() {} },
+    {},
+    async (command, args) => {
+      calls.push({ command, args });
+      if (command === "refresh_emails_handler") {
+        markRefreshStarted();
+        return refreshResult;
+      }
+
+      if (command === "fetch_emails" && args.minRange === 0) {
+        return {
+          emails: state.cachedByFolder.INBOX,
+        };
+      }
+
+      if (command === "fetch_emails" && args.minRange === 2) {
+        return {
+          emails: [{ id: "db-INBOX-uid-1", subject: "Oldest", folder: "INBOX" }],
+        };
+      }
+
+      throw new Error(`Unexpected command: ${command}`);
+    },
+    createStorage(),
+  );
+
+  const refresh = sync.refreshActiveMailbox({ background: true });
+  await refreshStarted;
+  await sync.loadMoreEmails(50, { retryWhenBusy: true });
+  finishRefresh({ emails: [], newEmailsCount: 0, totalEmails: 3 });
+  await refresh;
+  await new Promise((resolve) => setTimeout(resolve, 150));
+
+  assert.ok(
+    calls.some(
+      ({ command, args }) => command === "fetch_emails" && args.minRange === 2,
+    ),
+  );
+  assert.equal(state.paginationByFolder.INBOX.nextOffset, 3);
+});
+
 test("refreshing an updated mailbox reconciles its cache even when it is inactive", async () => {
   const state = createInitialState();
   state.allowFetch = true;

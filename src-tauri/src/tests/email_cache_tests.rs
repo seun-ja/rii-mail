@@ -1,5 +1,6 @@
 use crate::email_cache::{
-    map_folder_and_starred, normalize_text, CompleteEmail, EmailContent, StandardEmail,
+    encode_cached_email_content, map_folder_and_starred, normalize_text, CompleteEmail,
+    EmailAttachment, EmailContent, StandardEmail,
 };
 
 #[test]
@@ -60,6 +61,7 @@ fn into_frontend_uses_text_body_when_available() {
     let frontend = complete.into_frontend("id-1".to_string());
 
     assert_eq!(frontend.id, "id-1");
+    assert_eq!(frontend.uid, Some(1));
     assert_eq!(frontend.folder, "inbox");
     assert_eq!(frontend.subject, "Subject");
     assert_eq!(frontend.preview, "Preview text");
@@ -73,6 +75,103 @@ fn into_frontend_uses_text_body_when_available() {
     assert!(!frontend.starred);
     assert!(frontend.read);
     assert_eq!(frontend.time, "Unknown");
+}
+
+#[test]
+fn structured_email_cache_roundtrips_attachment_metadata_without_bytes() {
+    let content = EmailContent::from_header_and_parts(
+        b"From: Alice <alice@example.com>\r\nSubject: Cached\r\n",
+        "Hello".to_string(),
+        String::new(),
+        vec![EmailAttachment {
+            id: 0,
+            part_id: "2.1".to_string(),
+            file_name: "report.pdf".to_string(),
+            content_type: "application/pdf".to_string(),
+            size: 4096,
+            data: Vec::new(),
+        }],
+    );
+    let encoded = encode_cached_email_content(&content).expect("content should serialize");
+    assert!(!String::from_utf8_lossy(&encoded).contains("attachment bytes"));
+
+    let complete = CompleteEmail::from(StandardEmail {
+        uid: Some(8),
+        date: None,
+        body: Some(encoded),
+        labels: None,
+        read: false,
+    });
+    let cached = complete.body.expect("structured content should decode");
+
+    assert_eq!(cached.subject, "Cached");
+    assert_eq!(cached.text_body, "Hello");
+    assert_eq!(cached.attachments[0].part_id, "2.1");
+    assert!(cached.attachments[0].data.is_empty());
+}
+
+#[test]
+fn email_content_extracts_attachment_metadata_and_decoded_bytes() {
+    let raw_message = concat!(
+        "From: Alice <alice@example.com>\r\n",
+        "Subject: Attachment test\r\n",
+        "Content-Type: multipart/mixed; boundary=boundary\r\n",
+        "\r\n",
+        "--boundary\r\n",
+        "Content-Type: text/plain; charset=utf-8\r\n",
+        "\r\n",
+        "See attachment.\r\n",
+        "--boundary\r\n",
+        "Content-Type: application/pdf; name=report.pdf\r\n",
+        "Content-Disposition: attachment; filename=report.pdf\r\n",
+        "Content-Transfer-Encoding: base64\r\n",
+        "\r\n",
+        "AQIDBA==\r\n",
+        "--boundary--\r\n",
+    );
+    let complete = CompleteEmail::from(StandardEmail {
+        uid: Some(4),
+        date: None,
+        body: Some(raw_message.as_bytes().to_vec()),
+        labels: None,
+        read: false,
+    });
+
+    let content = complete.body.expect("message should parse");
+    assert_eq!(content.attachments.len(), 1);
+
+    let attachment = &content.attachments[0];
+    assert_eq!(attachment.id, 0);
+    assert_eq!(attachment.part_id, "1");
+    assert_eq!(attachment.file_name, "report.pdf");
+    assert_eq!(attachment.content_type, "application/pdf");
+    assert_eq!(attachment.size, 4);
+    assert_eq!(attachment.data, vec![1, 2, 3, 4]);
+}
+
+#[test]
+fn email_content_removes_path_components_from_attachment_names() {
+    let raw_message = concat!(
+        "From: alice@example.com\r\n",
+        "Content-Type: multipart/mixed; boundary=boundary\r\n",
+        "\r\n",
+        "--boundary\r\n",
+        "Content-Type: application/octet-stream\r\n",
+        "Content-Disposition: attachment; filename=../../unsafe.txt\r\n",
+        "\r\n",
+        "contents\r\n",
+        "--boundary--\r\n",
+    );
+    let complete = CompleteEmail::from(StandardEmail {
+        uid: Some(5),
+        date: None,
+        body: Some(raw_message.as_bytes().to_vec()),
+        labels: None,
+        read: false,
+    });
+
+    let content = complete.body.expect("message should parse");
+    assert_eq!(content.attachments[0].file_name, "unsafe.txt");
 }
 
 #[test]

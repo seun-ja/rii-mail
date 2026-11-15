@@ -8,7 +8,10 @@ import {
   loadCachedEmails,
   saveCachedEmails,
 } from "./cache.js";
-import { EMAIL_CACHE_KEY } from "./constants.js";
+import {
+  EMAIL_CACHE_KEY,
+  LEGACY_EMAIL_CACHE_KEYS,
+} from "./constants.js";
 
 function createStorage(initial = {}) {
   const store = new Map(Object.entries(initial));
@@ -49,6 +52,23 @@ test("loadCachedEmails handles missing and malformed payload", () => {
   assert.deepEqual(loadCachedEmails(badStorage), []);
 });
 
+test("loadCachedEmails migrates legacy mail while removing stale attachment metadata", () => {
+  const legacyKey = LEGACY_EMAIL_CACHE_KEYS[0];
+  const storage = createStorage({
+    [legacyKey]: JSON.stringify([
+      { id: "legacy", attachments: [{ id: 0, fileName: "report.pdf" }] },
+    ]),
+  });
+
+  assert.deepEqual(loadCachedEmails(storage), [
+    { id: "legacy", attachments: [] },
+  ]);
+  assert.equal(storage.getItem(legacyKey), null);
+  assert.deepEqual(JSON.parse(storage.getItem(EMAIL_CACHE_KEY)), [
+    { id: "legacy", attachments: [] },
+  ]);
+});
+
 test("saveCachedEmails persists serialized payload", () => {
   const storage = createStorage();
   const state = {
@@ -68,10 +88,15 @@ test("saveCachedEmails persists serialized payload", () => {
   assert.equal(parsed.length, 3);
 });
 
-test("clearCachedEmails removes cache key", () => {
-  const storage = createStorage({ [EMAIL_CACHE_KEY]: "[]" });
+test("clearCachedEmails removes current and legacy cache keys", () => {
+  const legacyKey = LEGACY_EMAIL_CACHE_KEYS[0];
+  const storage = createStorage({
+    [EMAIL_CACHE_KEY]: "[]",
+    [legacyKey]: "[]",
+  });
   clearCachedEmails(storage);
   assert.equal(storage.getItem(EMAIL_CACHE_KEY), null);
+  assert.equal(storage.getItem(legacyKey), null);
 });
 
 test("hydrateFolderCachesFromStorage categorizes folders consistently", () => {
