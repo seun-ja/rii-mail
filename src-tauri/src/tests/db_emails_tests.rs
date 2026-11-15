@@ -1,7 +1,8 @@
 use crate::{
     db::{
         check_email_db_empty, cleanup, db_pool, get_email_by_uid, get_emails, get_last_uid,
-        init_db, populate_storage, set_email_read_states, set_last_uid, Provider,
+        get_mailbox_uid_validity, init_db, populate_storage, reconcile_mailbox_uid_validity,
+        set_email_read_states, set_last_uid, set_mailbox_uid_validity, Provider,
     },
     email_cache::StandardEmail,
 };
@@ -68,6 +69,135 @@ async fn init_db_adds_read_column_to_existing_provider_tables() {
     }
 
     migrated_pool.close().await;
+    let _ = std::fs::remove_dir_all(app_dir);
+}
+
+#[tokio::test]
+async fn init_db_preserves_legacy_rows_while_resetting_sync_state_only_once() {
+    let app_dir = unique_test_dir("selective-attachment-cache-migration");
+    let pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
+        .await
+        .expect("database should initialize");
+
+    populate_storage(
+        &pool,
+        vec![StandardEmail {
+            uid: Some(77),
+            date: None,
+            body: Some(b"Subject: Legacy\r\n\r\nfull MIME body".to_vec()),
+            labels: None,
+            read: false,
+        }],
+        "gmail_INBOX",
+    )
+    .await
+    .expect("legacy message should insert");
+    sqlx::query("UPDATE cache_metadata SET value = '1' WHERE key = 'email_cache_version_gmail'")
+        .execute(&pool)
+        .await
+        .expect("test should mark cache as legacy");
+    set_last_uid(&pool, "gmail_INBOX", 77)
+        .await
+        .expect("legacy high-water mark should be stored");
+    pool.close().await;
+
+    let migrated = init_db(&app_dir, "emails.db", &Provider::Gmail)
+        .await
+        .expect("legacy cache should migrate");
+    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM gmail_INBOX")
+        .fetch_one(&migrated)
+        .await
+        .expect("migrated cache should be queryable");
+    assert_eq!(
+        count.0, 1,
+        "legacy rows should remain visible during rebuild"
+    );
+    assert_eq!(
+        get_last_uid(&migrated, "gmail_INBOX")
+            .await
+            .expect("sync state should be readable"),
+        None,
+        "legacy sync state should be reset so rows are rebuilt"
+    );
+
+    populate_storage(
+        &migrated,
+        vec![StandardEmail {
+            uid: Some(78),
+            date: None,
+            body: Some(b"RIIMAIL-CACHE-V1\0{}".to_vec()),
+            labels: None,
+            read: false,
+        }],
+        "gmail_INBOX",
+    )
+    .await
+    .expect("new cache row should insert");
+    migrated.close().await;
+
+    let reopened = init_db(&app_dir, "emails.db", &Provider::Gmail)
+        .await
+        .expect("current cache should reopen");
+    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM gmail_INBOX")
+        .fetch_one(&reopened)
+        .await
+        .expect("current cache should be queryable");
+    assert_eq!(
+        count.0, 2,
+        "current and rebuilt cache rows should survive restart"
+    );
+
+    reopened.close().await;
+    let _ = std::fs::remove_dir_all(app_dir);
+}
+
+#[tokio::test]
+async fn uid_validity_change_clears_stale_mail_and_sync_position() {
+    let app_dir = unique_test_dir("uid-validity-change");
+    let pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
+        .await
+        .expect("database should initialize");
+    populate_storage(
+        &pool,
+        vec![StandardEmail {
+            uid: Some(77),
+            date: None,
+            body: Some(b"Subject: Old mailbox\r\n\r\nBody".to_vec()),
+            labels: None,
+            read: false,
+        }],
+        "gmail_INBOX",
+    )
+    .await
+    .expect("mail should insert");
+    set_last_uid(&pool, "gmail_INBOX", 77)
+        .await
+        .expect("sync position should write");
+    set_mailbox_uid_validity(&pool, "gmail_INBOX", 10)
+        .await
+        .expect("UIDVALIDITY should write");
+
+    assert!(reconcile_mailbox_uid_validity(&pool, "gmail_INBOX", 11)
+        .await
+        .expect("UIDVALIDITY should reconcile"));
+    assert!(get_emails(&pool, "gmail_INBOX", 0, 10)
+        .await
+        .expect("mailbox should read")
+        .is_empty());
+    assert_eq!(
+        get_last_uid(&pool, "gmail_INBOX")
+            .await
+            .expect("sync position should read"),
+        None
+    );
+    assert_eq!(
+        get_mailbox_uid_validity(&pool, "gmail_INBOX")
+            .await
+            .expect("UIDVALIDITY should read"),
+        Some(11)
+    );
+
+    pool.close().await;
     let _ = std::fs::remove_dir_all(app_dir);
 }
 

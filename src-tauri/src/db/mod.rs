@@ -4,8 +4,9 @@ use std::{fs, path::PathBuf};
 
 pub use emails_db::{
     check_email_db_empty, cleanup, get_email_by_uid, get_emails, get_last_uid,
-    populate_inbox_folder_count, populate_sent_folder_count, populate_storage, set_email_read,
-    set_email_read_states, set_last_uid,
+    get_mailbox_uid_validity, populate_inbox_folder_count, populate_sent_folder_count,
+    populate_storage, reconcile_mailbox_uid_validity, replace_storage, reset_storage,
+    set_email_read, set_email_read_states, set_last_uid, set_mailbox_uid_validity,
 };
 
 use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
@@ -119,6 +120,11 @@ async fn create_table_for_provider(
             last_uid INTEGER NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS cache_metadata (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
         CREATE INDEX IF NOT EXISTS {inbox_uid_index}
         ON {inbox_table_name}(uid);
 
@@ -143,6 +149,56 @@ async fn create_table_for_provider(
     ensure_read_column(pool, &inbox_table_name).await?;
     ensure_read_column(pool, &sent_table_name).await?;
     ensure_read_column(pool, &spam_table_name).await?;
+    migrate_to_selective_attachment_cache(
+        pool,
+        provider,
+        [&inbox_table_name, &sent_table_name, &spam_table_name],
+    )
+    .await?;
+
+    Ok(())
+}
+
+async fn migrate_to_selective_attachment_cache(
+    pool: &SqlitePool,
+    provider: &Provider,
+    table_names: [&str; 3],
+) -> Result<(), sqlx::Error> {
+    const CACHE_VERSION: &str = "2";
+    let key = format!("email_cache_version_{}", provider.as_ref());
+    let stored_version: Option<(String,)> =
+        sqlx::query_as("SELECT value FROM cache_metadata WHERE key = ?")
+            .bind(&key)
+            .fetch_optional(pool)
+            .await?;
+
+    if stored_version
+        .as_ref()
+        .is_some_and(|version| version.0 == CACHE_VERSION)
+    {
+        return Ok(());
+    }
+
+    let mut tx = pool.begin().await?;
+    for table_name in table_names {
+        // Keep the existing rows available while the selective attachment
+        // cache is rebuilt in the background. Resetting the high-water mark
+        // makes the next initial sync replace each legacy full-message row
+        // with the metadata-only representation without blanking the UI.
+        sqlx::query("DELETE FROM mailbox_sync_state WHERE mailbox = ?")
+            .bind(table_name)
+            .execute(&mut *tx)
+            .await?;
+    }
+    sqlx::query(
+        "INSERT INTO cache_metadata (key, value) VALUES (?, ?) \
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    )
+    .bind(key)
+    .bind(CACHE_VERSION)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
 
     Ok(())
 }

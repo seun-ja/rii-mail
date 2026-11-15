@@ -229,7 +229,13 @@ pub async fn worker(
                             .await
                             {
                                 Ok(_) => {
-                                    tracing::info!("Initial sync completed");
+                                    initial_fetch_completed.insert(provider.clone());
+                                    providers.insert(provider.clone());
+                                    database_initialized = true;
+                                    tracing::info!(
+                                        provider = provider.as_ref(),
+                                        "Initial sync completed and periodic refresh enabled"
+                                    );
                                 }
                                 Err(Error::ThreadCancel) => {
                                     tracing::info!("Initial sync cancelled");
@@ -267,6 +273,62 @@ pub async fn worker(
 
                             *LOGGED_IN.lock().await = false;
                             let _ = logout_result_tx.send(());
+                        }
+                        ImapCommand::FetchAttachment {
+                            mail_box,
+                            uid,
+                            part_id,
+                            response_channel,
+                            username,
+                            keychain_manager,
+                            cancel_token,
+                        } => {
+                            let request = async {
+                                let session = initialized_session
+                                    .clone()
+                                    .ok_or_else(|| Error::Other(
+                                        "FetchAttachment failed: IMAP session is not initialized".to_string(),
+                                    ))?;
+
+                                match crate::email_cache::fetch_attachment_on_server(
+                                    session,
+                                    &mail_box,
+                                    uid,
+                                    &part_id,
+                                )
+                                .await
+                                {
+                                    Err(error) if is_imap_connection_error(&error) => {
+                                        let new_session = reconnect_imap_session(
+                                            &username,
+                                            &keychain_manager,
+                                            imap_endpoint.as_ref(),
+                                        )
+                                        .await?;
+                                        initialized_session = Some(new_session.clone());
+                                        crate::email_cache::fetch_attachment_on_server(
+                                            new_session,
+                                            &mail_box,
+                                            uid,
+                                            &part_id,
+                                        )
+                                        .await
+                                    }
+                                    result => result,
+                                }
+                            };
+                            let result = tokio::select! {
+                                result = time::timeout(Duration::from_secs(30), request) => result
+                                    .map_err(|_| "Attachment request timed out".to_string())
+                                    .and_then(|result| result.map_err(|error| error.to_string())),
+                                _ = cancel_token.cancelled() => {
+                                    Err("Attachment request cancelled".to_string())
+                                }
+                            };
+
+                            if let Err(undelivered) = response_channel.send(result) {
+                                tracing::error!(?undelivered, "Failed sending attachment result");
+                            }
                         }
                         ImapCommand::SetEmailRead {
                             mail_box,

@@ -37,6 +37,7 @@ import {
 } from "./spam-rating.js";
 import { updateAiAssistantAvailability } from "./ai-assistant.js";
 import { createReadSyncController } from "./read-sync.js";
+import { createAttachmentPreview } from "./attachments.js";
 import { getErrorMessage } from "../shared/errors.js";
 import {
   createComposerHtmlBody,
@@ -95,6 +96,58 @@ export function initializeMailApp({
   if (startupWarning) {
     ui.showMessage(startupWarning, true);
   }
+
+  let activeAttachmentPreview = null;
+  let activeAttachmentContext = null;
+
+  function closeAttachmentPreview() {
+    activeAttachmentPreview?.dispose();
+    activeAttachmentPreview = null;
+    activeAttachmentContext = null;
+    dom.attachmentPreviewModalEl?.classList.add("hidden");
+    dom.attachmentPreviewBodyEl?.replaceChildren();
+  }
+
+  function showAttachmentPreview(response, context) {
+    if (
+      !dom.attachmentPreviewModalEl ||
+      !dom.attachmentPreviewTitleEl ||
+      !dom.attachmentPreviewBodyEl
+    ) {
+      throw new Error("The attachment preview window is unavailable.");
+    }
+
+    closeAttachmentPreview();
+    activeAttachmentPreview = createAttachmentPreview(response);
+    activeAttachmentContext = context;
+    dom.attachmentPreviewTitleEl.textContent = response.fileName || "Attachment";
+
+    let previewElement;
+    if (activeAttachmentPreview.kind === "image") {
+      previewElement = document.createElement("img");
+      previewElement.className = "attachment-preview-image";
+      previewElement.src = activeAttachmentPreview.objectUrl;
+      previewElement.alt = response.fileName || "Attachment preview";
+    } else if (activeAttachmentPreview.kind === "pdf") {
+      previewElement = document.createElement("iframe");
+      previewElement.className = "attachment-preview-frame";
+      previewElement.src = activeAttachmentPreview.objectUrl;
+      previewElement.title = `Preview of ${response.fileName || "attachment"}`;
+    } else if (activeAttachmentPreview.kind === "text") {
+      previewElement = document.createElement("pre");
+      previewElement.className = "attachment-preview-text";
+      previewElement.textContent = activeAttachmentPreview.text;
+    } else {
+      previewElement = document.createElement("p");
+      previewElement.className = "attachment-preview-unavailable";
+      previewElement.textContent =
+        "A preview is not available for this file type. You can still download it.";
+    }
+
+    dom.attachmentPreviewBodyEl.append(previewElement);
+    dom.attachmentPreviewModalEl.classList.remove("hidden");
+  }
+
   function openEmailLink(rawUrl) {
     const safeUrl = getSafeExternalUrl(rawUrl);
     if (!safeUrl) {
@@ -206,6 +259,36 @@ export function initializeMailApp({
     if (event.target === dom.settingsModalEl) closeSettings();
   });
 
+  dom.closeAttachmentPreviewBtnEl?.addEventListener(
+    "click",
+    closeAttachmentPreview,
+  );
+  dom.attachmentPreviewModalEl?.addEventListener("click", (event) => {
+    if (event.target === dom.attachmentPreviewModalEl) closeAttachmentPreview();
+  });
+  dom.downloadAttachmentBtnEl?.addEventListener("click", async () => {
+    if (!activeAttachmentContext) return;
+
+    dom.downloadAttachmentBtnEl.disabled = true;
+    dom.downloadAttachmentBtnEl.setAttribute("aria-busy", "true");
+    try {
+      const response = await invoke("save_email_attachment", {
+        uid: activeAttachmentContext.uid,
+        mailbox: activeAttachmentContext.mailbox,
+        partId: activeAttachmentContext.partId,
+      });
+      ui.showMessage(`Saved ${response.fileName} to Downloads.`);
+    } catch (error) {
+      ui.showMessage(
+        `Could not save this attachment: ${getErrorMessage(error)}`,
+        true,
+      );
+    } finally {
+      dom.downloadAttachmentBtnEl.disabled = false;
+      dom.downloadAttachmentBtnEl.removeAttribute("aria-busy");
+    }
+  });
+
   void invoke("enable_main_window_controls").catch((error) => {
     console.error("Could not enable main window controls", error);
   });
@@ -262,6 +345,7 @@ export function initializeMailApp({
     if (disposed) return;
     disposed = true;
     state.isAppReady = false;
+    closeAttachmentPreview();
     notifications.dispose();
     renderer.dispose();
     cleanupListeners.splice(0).forEach((unlisten) => {
@@ -415,7 +499,6 @@ export function initializeMailApp({
 
       const pagination = getFolderPaginationState(state, requestedFolderKey);
       if (
-        state.isLoadingEmails ||
         !pagination?.hasMoreEmails ||
         !isMailListNearBottom(dom.mailListEl)
       ) {
@@ -423,7 +506,7 @@ export function initializeMailApp({
       }
 
       const previousOffset = pagination.nextOffset;
-      await sync.loadMoreEmails(batchSize);
+      await sync.loadMoreEmails(batchSize, { retryWhenBusy: true });
 
       if (
         getActiveBackendFolderKey(state) !== requestedFolderKey ||
@@ -540,7 +623,7 @@ export function initializeMailApp({
     const folderKey = getActiveBackendFolderKey(state);
     const pagination = getFolderPaginationState(state, folderKey);
 
-    if (state.isLoadingEmails || !pagination.hasMoreEmails) {
+    if (!pagination.hasMoreEmails) {
       return;
     }
 
@@ -606,18 +689,57 @@ export function initializeMailApp({
       return;
     }
 
+    const selected = getEmails(state).find(
+      (mail) => mail.id === state.selectedId,
+    );
+    if (!selected) {
+      return;
+    }
+
+    const attachmentButton = event.target?.closest?.(
+      "[data-attachment-part-id]",
+    );
+    if (attachmentButton) {
+      const partId = attachmentButton.dataset.attachmentPartId;
+      const idUid = String(selected.id || "").match(/uid-(\d+)$/)?.[1];
+      const uid = Number(selected.uid ?? idUid);
+
+      if (!Number.isInteger(uid) || !partId) {
+        ui.showMessage("This attachment is not available for preview.", true);
+        return;
+      }
+
+      attachmentButton.disabled = true;
+      attachmentButton.setAttribute("aria-busy", "true");
+
+      void invoke("get_email_attachment", {
+        uid,
+        mailbox: selected.folder,
+        partId,
+      })
+        .then((response) => {
+          showAttachmentPreview(response, {
+            uid,
+            mailbox: selected.folder,
+            partId,
+          });
+        })
+        .catch((error) => {
+          const message = getErrorMessage(error);
+          console.error("Could not preview email attachment", error);
+          ui.showMessage(`Could not preview this attachment: ${message}`, true);
+        })
+        .finally(() => {
+          attachmentButton.disabled = false;
+          attachmentButton.removeAttribute("aria-busy");
+        });
+      return;
+    }
+
     const action = event.target?.closest?.("[data-reader-action]")?.dataset
       .readerAction;
 
     if (!action) {
-      return;
-    }
-
-    const selected = getEmails(state).find(
-      (mail) => mail.id === state.selectedId,
-    );
-
-    if (!selected) {
       return;
     }
 
@@ -913,6 +1035,10 @@ export function initializeMailApp({
       return;
     }
 
+    dom.spamCheckBtnEl.disabled = true;
+    dom.spamCheckBtnEl.setAttribute("aria-busy", "true");
+    dom.spamCheckBtnEl.setAttribute("aria-label", "Checking email for phishing");
+
     try {
       const rating = await invoke("rater", {
         subject: selected.subject,
@@ -923,6 +1049,10 @@ export function initializeMailApp({
       ui.showMessage(formatSpamRatingResponse(rating));
     } catch (error) {
       ui.showMessage(formatSpamRatingError(error), true);
+    } finally {
+      dom.spamCheckBtnEl.disabled = false;
+      dom.spamCheckBtnEl.removeAttribute("aria-busy");
+      dom.spamCheckBtnEl.removeAttribute("aria-label");
     }
   });
 

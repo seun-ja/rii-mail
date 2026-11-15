@@ -1,6 +1,6 @@
 use crate::auth::AppleKeychainManager;
 use crate::db::{MailBox, Provider};
-use crate::imap::{ImapCommand, RefreshSummary};
+use crate::imap::{FetchedAttachment, ImapCommand, RefreshSummary};
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
@@ -36,6 +36,34 @@ fn imap_command_refresh_emails_variant_preserves_values() {
             assert_eq!(provider.as_ref(), "yahoo");
         }
         _ => panic!("expected refresh emails variant"),
+    }
+}
+
+#[test]
+fn imap_command_fetch_attachment_variant_preserves_values() {
+    let (tx, _rx) = oneshot::channel::<Result<FetchedAttachment, String>>();
+    let cmd = ImapCommand::FetchAttachment {
+        mail_box: MailBox::Inbox,
+        uid: 42,
+        part_id: "2.1".to_string(),
+        response_channel: tx,
+        username: "user@example.com".to_string(),
+        keychain_manager: AppleKeychainManager::new("test"),
+        cancel_token: tokio_util::sync::CancellationToken::new(),
+    };
+
+    match cmd {
+        ImapCommand::FetchAttachment {
+            mail_box,
+            uid,
+            part_id,
+            ..
+        } => {
+            assert_eq!(mail_box, MailBox::Inbox);
+            assert_eq!(uid, 42);
+            assert_eq!(part_id, "2.1");
+        }
+        _ => panic!("expected fetch attachment variant"),
     }
 }
 

@@ -29,6 +29,44 @@ pub async fn populate_storage(
     emails: Vec<StandardEmail>,
     table_name: &str,
 ) -> Result<(), Error> {
+    write_storage(pool, emails, table_name, false, false).await
+}
+
+#[tracing::instrument(
+    name = "db.email.batch_replace",
+    skip_all,
+    fields(table = table_name, email_count = emails.len()),
+    err
+)]
+pub async fn replace_storage(
+    pool: &SqlitePool,
+    emails: Vec<StandardEmail>,
+    table_name: &str,
+) -> Result<(), Error> {
+    write_storage(pool, emails, table_name, true, false).await
+}
+
+#[tracing::instrument(
+    name = "db.email.mailbox_reset",
+    skip_all,
+    fields(table = table_name, email_count = emails.len()),
+    err
+)]
+pub async fn reset_storage(
+    pool: &SqlitePool,
+    emails: Vec<StandardEmail>,
+    table_name: &str,
+) -> Result<(), Error> {
+    write_storage(pool, emails, table_name, true, true).await
+}
+
+async fn write_storage(
+    pool: &SqlitePool,
+    emails: Vec<StandardEmail>,
+    table_name: &str,
+    replace_content: bool,
+    clear_existing: bool,
+) -> Result<(), Error> {
     if emails.is_empty() {
         return Ok(());
     }
@@ -61,6 +99,12 @@ pub async fn populate_storage(
 
     let mut tx = pool.begin().await?;
 
+    if clear_existing {
+        sqlx::query(&format!("DELETE FROM {table_name}"))
+            .execute(&mut *tx)
+            .await?;
+    }
+
     let mut query_builder: QueryBuilder<'_, sqlx::Sqlite> = QueryBuilder::new(&format!(
         "INSERT INTO {} (uid, date, body, labels, read) ",
         table_name
@@ -73,7 +117,17 @@ pub async fn populate_storage(
             .push_bind(labels)
             .push_bind(read);
     });
-    query_builder.push(" ON CONFLICT(uid) DO UPDATE SET read = excluded.read");
+    if replace_content {
+        query_builder.push(
+            " ON CONFLICT(uid) DO UPDATE SET \
+             date = excluded.date, \
+             body = excluded.body, \
+             labels = excluded.labels, \
+             read = excluded.read",
+        );
+    } else {
+        query_builder.push(" ON CONFLICT(uid) DO UPDATE SET read = excluded.read");
+    }
 
     query_builder.build().execute(&mut *tx).await?;
 
@@ -356,4 +410,82 @@ pub async fn set_last_uid(pool: &SqlitePool, mailbox: &str, uid: u32) -> Result<
     .await?;
 
     Ok(())
+}
+
+#[tracing::instrument(name = "db.uid_validity.read", skip_all, fields(mailbox), err)]
+pub async fn get_mailbox_uid_validity(
+    pool: &SqlitePool,
+    mailbox: &str,
+) -> Result<Option<u32>, Error> {
+    let key = format!("uid_validity_{mailbox}");
+    let result: Option<(String,)> =
+        sqlx::query_as("SELECT value FROM cache_metadata WHERE key = ?")
+            .bind(key)
+            .fetch_optional(pool)
+            .await?;
+
+    Ok(result.and_then(|value| value.0.parse().ok()))
+}
+
+#[tracing::instrument(
+    name = "db.uid_validity.write",
+    skip_all,
+    fields(mailbox, uid_validity),
+    err
+)]
+pub async fn set_mailbox_uid_validity(
+    pool: &SqlitePool,
+    mailbox: &str,
+    uid_validity: u32,
+) -> Result<(), Error> {
+    let key = format!("uid_validity_{mailbox}");
+    sqlx::query(
+        "INSERT INTO cache_metadata (key, value) VALUES (?, ?) \
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    )
+    .bind(key)
+    .bind(uid_validity.to_string())
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+#[tracing::instrument(
+    name = "db.uid_validity.reconcile",
+    skip_all,
+    fields(mailbox, uid_validity),
+    err
+)]
+pub async fn reconcile_mailbox_uid_validity(
+    pool: &SqlitePool,
+    mailbox: &str,
+    uid_validity: u32,
+) -> Result<bool, Error> {
+    let previous = get_mailbox_uid_validity(pool, mailbox).await?;
+    let changed = previous.is_some_and(|value| value != uid_validity);
+    let key = format!("uid_validity_{mailbox}");
+    let mut tx = pool.begin().await?;
+
+    if changed {
+        sqlx::query(&format!("DELETE FROM {mailbox}"))
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM mailbox_sync_state WHERE mailbox = ?")
+            .bind(mailbox)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    sqlx::query(
+        "INSERT INTO cache_metadata (key, value) VALUES (?, ?) \
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    )
+    .bind(key)
+    .bind(uid_validity.to_string())
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+
+    Ok(changed)
 }

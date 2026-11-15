@@ -4,20 +4,26 @@ use async_imap::types::{Fetch, Flag};
 use async_imap::Session;
 use async_native_tls::TlsStream;
 use chrono::{DateTime, FixedOffset};
-use mail_parser::{Addr, Address, Message, MessageParser};
+use mail_parser::{Addr, Address, Message, MessageParser, MimeHeaders};
 use serde::{Deserialize, Serialize};
 use tokio::{net::TcpStream, sync::Mutex};
 
 mod fetcher;
 
-pub use fetcher::{fetch_emails, fetch_latest, set_email_read_on_server};
+pub(crate) use fetcher::canonical_part_path;
 #[cfg(test)]
 pub(crate) use fetcher::{
-    incremental_uid_search_query, mailbox_name_matches, uid_vec_to_set, FetchResult,
+    collect_body_structure_parts, incremental_uid_search_query, mailbox_name_matches,
+    uid_vec_to_set, FetchResult,
+};
+pub use fetcher::{
+    fetch_attachment_on_server, fetch_emails, fetch_latest, set_email_read_on_server,
 };
 use sqlx::prelude::FromRow;
 
 pub type SharedImapSession = Arc<Mutex<Session<TlsStream<TcpStream>>>>;
+
+const STRUCTURED_EMAIL_PREFIX: &[u8] = b"RIIMAIL-CACHE-V1\0";
 
 fn extract_date_from_message(message: &Message<'_>) -> Option<DateTime<FixedOffset>> {
     message
@@ -67,13 +73,18 @@ impl From<Fetch> for StandardEmail {
 
 impl From<StandardEmail> for CompleteEmail {
     fn from(value: StandardEmail) -> Self {
-        let parsed_message = value
-            .body
-            .as_deref()
-            .and_then(|raw| MessageParser::default().parse(raw));
-
-        let parsed_date = parsed_message.as_ref().and_then(extract_date_from_message);
-        let body = parsed_message.map(EmailContent::from);
+        let (body, parsed_date) = match value.body.as_deref() {
+            Some(raw) if raw.starts_with(STRUCTURED_EMAIL_PREFIX) => (
+                serde_json::from_slice(&raw[STRUCTURED_EMAIL_PREFIX.len()..]).ok(),
+                None,
+            ),
+            Some(raw) => {
+                let parsed_message = MessageParser::default().parse(raw);
+                let parsed_date = parsed_message.as_ref().and_then(extract_date_from_message);
+                (parsed_message.map(EmailContent::from), parsed_date)
+            }
+            None => (None, None),
+        };
 
         Self {
             uid: value.uid,
@@ -96,6 +107,19 @@ pub struct CompleteEmail {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailAttachment {
+    pub id: u32,
+    #[serde(default)]
+    pub part_id: String,
+    pub file_name: String,
+    pub content_type: String,
+    pub size: usize,
+    #[serde(skip)]
+    pub data: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmailContent {
     pub subject: String,
     pub sender_name: String,
@@ -105,7 +129,7 @@ pub struct EmailContent {
     pub preview: String,
     pub html_body: String,
     pub text_body: String,
-    pub attachments: Vec<u32>,
+    pub attachments: Vec<EmailAttachment>,
     pub parts: Vec<u32>,
     pub raw_message: String,
 }
@@ -162,6 +186,53 @@ fn extract_addresses(address: Option<&Address<'_>>) -> Option<Vec<(String, Strin
     (!addresses.is_empty()).then_some(addresses)
 }
 
+pub(crate) fn normalize_attachment_file_name(name: Option<&str>, attachment_id: u32) -> String {
+    let file_name = name
+        .and_then(|name| name.rsplit(['/', '\\']).next())
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(|name| {
+            name.chars()
+                .filter(|character| !character.is_control())
+                .collect()
+        })
+        .filter(|name: &String| !name.is_empty() && name != "." && name != "..");
+
+    file_name.unwrap_or_else(|| format!("attachment-{}", attachment_id + 1))
+}
+
+fn attachment_content_type(part: &mail_parser::MessagePart<'_>) -> String {
+    part.content_type()
+        .map(|content_type| {
+            content_type.subtype().map_or_else(
+                || content_type.ctype().to_string(),
+                |subtype| format!("{}/{}", content_type.ctype(), subtype),
+            )
+        })
+        .filter(|content_type| !content_type.trim().is_empty())
+        .unwrap_or_else(|| "application/octet-stream".to_string())
+}
+
+fn extract_attachments(message: &Message<'_>) -> Vec<EmailAttachment> {
+    message
+        .attachments()
+        .enumerate()
+        .map(|(index, part)| {
+            let id = index as u32;
+            let data = part.contents().to_vec();
+
+            EmailAttachment {
+                id,
+                part_id: (id + 1).to_string(),
+                file_name: normalize_attachment_file_name(part.attachment_name(), id),
+                content_type: attachment_content_type(part),
+                size: data.len(),
+                data,
+            }
+        })
+        .collect()
+}
+
 pub(crate) fn map_folder_and_starred(labels: &[String]) -> (String, bool) {
     let mut folder = "inbox".to_string();
     let mut starred = false;
@@ -185,36 +256,105 @@ pub(crate) fn map_folder_and_starred(labels: &[String]) -> (String, bool) {
     (folder, starred)
 }
 
+pub(crate) fn encode_cached_email_content(
+    content: &EmailContent,
+) -> Result<Vec<u8>, serde_json::Error> {
+    let encoded = serde_json::to_vec(content)?;
+    let mut body = Vec::with_capacity(STRUCTURED_EMAIL_PREFIX.len() + encoded.len());
+    body.extend_from_slice(STRUCTURED_EMAIL_PREFIX);
+    body.extend_from_slice(&encoded);
+    Ok(body)
+}
+
+impl EmailContent {
+    pub(crate) fn from_header_and_parts(
+        header: &[u8],
+        text_body: String,
+        html_body: String,
+        attachments: Vec<EmailAttachment>,
+    ) -> Self {
+        let mut header_message = header.to_vec();
+        if !header_message.ends_with(b"\r\n\r\n") {
+            if !header_message.ends_with(b"\r\n") {
+                header_message.extend_from_slice(b"\r\n");
+            }
+            header_message.extend_from_slice(b"\r\n");
+        }
+        let parsed_header = MessageParser::default().parse(&header_message);
+        let subject = parsed_header
+            .as_ref()
+            .and_then(|message| message.subject())
+            .unwrap_or("No Subject")
+            .to_string();
+        let (sender_name, email_from) = parsed_header
+            .as_ref()
+            .and_then(|message| extract_sender(message.from()))
+            .unwrap_or_else(|| ("Unknown Sender".to_string(), "unknown@local".to_string()));
+        let cc = parsed_header
+            .as_ref()
+            .and_then(|message| extract_addresses(message.cc()));
+        let preview_source = if text_body.trim().is_empty() {
+            html_body.as_str()
+        } else {
+            text_body.as_str()
+        };
+        let preview = normalize_text(preview_source, 120);
+
+        Self {
+            subject,
+            sender_name,
+            email_from,
+            cc,
+            preview,
+            html_body,
+            text_body,
+            attachments,
+            parts: Vec::new(),
+            raw_message: String::new(),
+        }
+    }
+}
+
 impl CompleteEmail {
     pub fn into_frontend(self, id: String) -> FrontendEmail {
         let labels = self.labels.unwrap_or_default();
         let (folder, starred) = map_folder_and_starred(&labels);
 
-        let (subject, sender_name, email_from, cc, preview, body, text_body, html_body) =
-            match self.body {
-                Some(content) => {
-                    let body = match (
-                        content.text_body.trim().is_empty(),
-                        content.html_body.trim().is_empty(),
-                    ) {
-                        (false, _) => content.text_body.clone(),
-                        (true, false) => content.html_body.clone(),
-                        _ => "No message body".to_string(),
-                    };
+        let (
+            subject,
+            sender_name,
+            email_from,
+            cc,
+            preview,
+            body,
+            text_body,
+            html_body,
+            attachments,
+        ) = match self.body {
+            Some(content) => {
+                let body = match (
+                    content.text_body.trim().is_empty(),
+                    content.html_body.trim().is_empty(),
+                ) {
+                    (false, _) => content.text_body.clone(),
+                    (true, false) => content.html_body.clone(),
+                    _ => "No message body".to_string(),
+                };
 
-                    (
-                        normalize_text(&content.subject, 160),
-                        content.sender_name,
-                        content.email_from,
-                        content.cc,
-                        normalize_text(&content.preview, 120),
-                        normalize_text(&body, 2000),
-                        content.text_body,
-                        content.html_body,
-                    )
-                }
-                None => Default::default(),
-            };
+                (
+                    normalize_text(&content.subject, 160),
+                    content.sender_name,
+                    content.email_from,
+                    content.cc,
+                    normalize_text(&content.preview, 120),
+                    normalize_text(&body, 2000),
+                    content.text_body,
+                    content.html_body,
+                    content.attachments,
+                )
+            }
+            None => Default::default(),
+        };
 
         let time = self
             .date
@@ -223,6 +363,7 @@ impl CompleteEmail {
 
         FrontendEmail {
             id,
+            uid: self.uid,
             folder,
             sender_name,
             email_from,
@@ -232,6 +373,7 @@ impl CompleteEmail {
             body,
             text_body,
             html_body,
+            attachments,
             time,
             starred,
             read: self.read,
@@ -259,7 +401,7 @@ impl<'a> From<Message<'a>> for EmailContent {
             .collect::<Vec<_>>()
             .join("\n\n");
 
-        let attachments = message.attachments.clone();
+        let attachments = extract_attachments(&message);
         let parts = (0..message.parts.len() as u32).collect();
         let raw_message = String::from_utf8_lossy(message.raw_message()).into_owned();
 
@@ -284,6 +426,7 @@ impl<'a> From<Message<'a>> for EmailContent {
 #[serde(rename_all = "camelCase")]
 pub struct FrontendEmail {
     pub id: String,
+    pub uid: Option<u32>,
     pub folder: String,
     pub sender_name: String,
     pub email_from: String,
@@ -293,6 +436,7 @@ pub struct FrontendEmail {
     pub body: String,
     pub text_body: String,
     pub html_body: String,
+    pub attachments: Vec<EmailAttachment>,
     pub time: String,
     pub starred: bool,
     pub read: bool,
