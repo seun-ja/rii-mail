@@ -174,6 +174,7 @@ fn render_part_id(path: &[u32]) -> String {
         .join(".")
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_single_part(
     common: &BodyContentCommon<'_>,
     other: &BodyContentSinglePart<'_>,
@@ -916,7 +917,7 @@ async fn handle_email_population(
             plans.push(message_fetch_plan(&message?)?);
         }
         drop(messages_stream);
-        plans.sort_unstable_by(|left, right| right.uid.cmp(&left.uid));
+        plans.sort_unstable_by_key(|left| std::cmp::Reverse(left.uid));
 
         let mut emails = Vec::with_capacity(plans.len());
         for plan in plans {

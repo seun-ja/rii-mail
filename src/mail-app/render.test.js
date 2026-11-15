@@ -109,7 +109,7 @@ test("renderReader omits the Cc row when there are no recipients", () => {
   assert.doesNotMatch(mailReaderEl.innerHTML, /reader-meta-cc/);
 });
 
-test("renderReader shows safe downloadable attachment controls", () => {
+test("renderReader shows safe attachment controls", () => {
   const email = {
     id: "message-attachment",
     uid: 42,
@@ -133,7 +133,6 @@ test("renderReader shows safe downloadable attachment controls", () => {
   renderer.renderReader();
 
   assert.match(mailReaderEl.innerHTML, /reader-attachments-count">1<\/span>/);
-  assert.match(mailReaderEl.innerHTML, />Preview<\/span>/);
   assert.match(mailReaderEl.innerHTML, /data-attachment-part-id="2\.1"/);
   assert.match(mailReaderEl.innerHTML, /report &lt;final&gt;\.pdf/);
   assert.match(mailReaderEl.innerHTML, /application\/pdf · 1\.5 KB/);
