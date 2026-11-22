@@ -37,12 +37,12 @@
             │
             ▼
 ┌───────────────────────┐
-│ SQLite Cache          │
+│ SQLite Mail Store     │
 │                       │
-│ gmail_INBOX           │
-│ gmail_Sent            │
-│ mailbox_sync_state    │
-│ total_emails          │
+│ accounts / mailboxes  │
+│ messages / content    │
+│ MIME parts / cache    │
+│ drafts / labels       │
 └───────────────────────┘
 
             │

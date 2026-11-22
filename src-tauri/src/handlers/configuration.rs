@@ -175,7 +175,7 @@ pub async fn config_setup(
 
     let provider = provider_from_imap_server(&config.imap_server_url);
 
-    db::init_db(&data_dir, &config.sqlite_db, &provider).await?;
+    db::init_db(&data_dir, &config.sqlite_db).await?;
     tracing::info!(
         "Database initialized successfully for provider: {}",
         provider.as_ref()
@@ -273,7 +273,8 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
         let imap_client_channel_tx = app.state::<ReturningUserImapClientChannelTx>();
 
         let provider = provider_from_imap_server(&config.imap_server_url);
-        let sqlite_pool = db::init_db(&data_dir, &config.sqlite_db, &provider).await?;
+        let sqlite_pool = db::init_db(&data_dir, &config.sqlite_db).await?;
+        db::ensure_account(&sqlite_pool, &username, None, provider.as_ref()).await?;
 
         let credential = Credentials::new(username.clone(), password.clone());
         let smtp_transport_client = smtp_transport_client(&config.smtp_relay_url, credential)?;

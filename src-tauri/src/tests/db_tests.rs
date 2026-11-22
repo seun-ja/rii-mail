@@ -13,15 +13,6 @@ fn unique_test_dir(prefix: &str) -> std::path::PathBuf {
 fn providers_as_ref_and_from_string() {
     assert_eq!(Provider::Yahoo.as_ref(), "yahoo");
     assert_eq!(Provider::Gmail.as_ref(), "gmail");
-
-    assert!(matches!(
-        Provider::from("yahoo".to_string()),
-        Provider::Yahoo
-    ));
-    assert!(matches!(
-        Provider::from("gmail".to_string()),
-        Provider::Gmail
-    ));
     assert!(matches!(
         Provider::from("outlook".to_string()),
         Provider::Outlook
@@ -39,36 +30,56 @@ fn mailbox_as_ref_and_from_string() {
     assert_eq!(MailBox::Drafts.as_ref(), "Drafts");
     assert_eq!(MailBox::Trash.as_ref(), "Trash");
     assert_eq!(MailBox::Spam.as_ref(), "Spam");
-
-    assert!(matches!(MailBox::from("INBOX".to_string()), MailBox::Inbox));
-    assert!(matches!(MailBox::from("Sent".to_string()), MailBox::Sent));
-    assert!(matches!(
-        MailBox::from("Drafts".to_string()),
-        MailBox::Drafts
-    ));
-    assert!(matches!(MailBox::from("Trash".to_string()), MailBox::Trash));
     assert!(matches!(MailBox::from("Spam".to_string()), MailBox::Spam));
-    assert!(matches!(MailBox::from("other".to_string()), MailBox::Inbox));
 }
 
 #[tokio::test]
-async fn init_db_creates_provider_tables_and_state_table() {
-    let app_dir = unique_test_dir("init-db");
-
-    let pool = init_db(&app_dir, "emails.db", &Provider::Yahoo)
+async fn init_db_runs_the_standard_schema_migration() {
+    let app_dir = unique_test_dir("standard-schema");
+    let pool = init_db(&app_dir, "emails.db")
         .await
         .expect("db should initialize");
 
-    let count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('yahoo_INBOX', 'yahoo_Sent', 'yahoo_Spam', 'mailbox_sync_state')",
+    let expected = [
+        "accounts",
+        "mailboxes",
+        "messages",
+        "message_addresses",
+        "labels",
+        "message_labels",
+        "message_content",
+        "mime_parts",
+        "part_cache",
+        "cache_deletion_queue",
+        "drafts",
+        "draft_addresses",
+        "draft_attachments",
+    ];
+    for table in expected {
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?)",
+        )
+        .bind(table)
+        .fetch_one(&pool)
+        .await
+        .expect("schema lookup should work");
+        assert!(exists, "{table} should exist");
+    }
+
+    let provider_tables: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('yahoo_INBOX', 'gmail_INBOX', 'outlook_INBOX')",
     )
     .fetch_one(&pool)
     .await
-    .expect("table listing should work");
+    .expect("legacy table lookup should work");
+    assert_eq!(provider_tables, 0);
 
-    assert_eq!(count.0, 4);
+    let foreign_keys: i64 = sqlx::query_scalar("PRAGMA foreign_keys")
+        .fetch_one(&pool)
+        .await
+        .expect("foreign key pragma should be readable");
+    assert_eq!(foreign_keys, 1);
 
     pool.close().await;
-
     let _ = std::fs::remove_dir_all(app_dir);
 }

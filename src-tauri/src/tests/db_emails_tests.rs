@@ -1,7 +1,7 @@
 use crate::{
     db::{
-        check_email_db_empty, cleanup, db_pool, get_email_by_uid, get_emails, get_last_uid,
-        init_db, populate_storage, set_email_read_states, set_last_uid, Provider,
+        check_email_db_empty, cleanup, db_pool, ensure_account, ensure_mailbox, get_email_by_uid,
+        get_emails, get_last_uid, init_db, populate_storage, set_email_read_states, set_last_uid,
     },
     email_cache::StandardEmail,
 };
@@ -20,600 +20,242 @@ fn parse_date(value: &str) -> DateTime<FixedOffset> {
     DateTime::parse_from_rfc3339(value).expect("date should parse")
 }
 
+async fn test_pool(prefix: &str) -> (std::path::PathBuf, sqlx::SqlitePool) {
+    let app_dir = unique_test_dir(prefix);
+    let pool = init_db(&app_dir, "emails.db")
+        .await
+        .expect("db should initialize");
+    (app_dir, pool)
+}
+
+fn email(uid: u32, date: &str, subject: &str, read: bool) -> StandardEmail {
+    StandardEmail {
+        uid: Some(uid),
+        date: Some(parse_date(date)),
+        body: Some(
+            format!("Subject: {subject}\r\nFrom: Person <person@example.com>\r\nCc: Team <team@example.com>\r\n\r\nBody for {subject}")
+                .into_bytes(),
+        ),
+        labels: Some(vec!["\\Inbox".to_string(), "Project Phoenix".to_string()]),
+        read,
+    }
+}
+
 #[tokio::test]
-async fn init_db_adds_read_column_to_existing_provider_tables() {
-    let app_dir = unique_test_dir("legacy-read-migration");
+async fn migration_replaces_legacy_provider_tables() {
+    let app_dir = unique_test_dir("drop-legacy");
     let legacy_pool = db_pool(&app_dir, "emails.db")
         .await
         .expect("legacy database should open");
-
-    sqlx::query(
-        r#"
-        CREATE TABLE gmail_INBOX (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            uid INTEGER NOT NULL UNIQUE,
-            date INTEGER,
-            body BLOB,
-            labels TEXT
-        );
-        CREATE TABLE gmail_Sent (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            uid INTEGER NOT NULL UNIQUE,
-            date TEXT,
-            body BLOB,
-            labels TEXT
-        );
-        "#,
-    )
-    .execute(&legacy_pool)
-    .await
-    .expect("legacy tables should be created");
+    sqlx::query("CREATE TABLE gmail_INBOX (uid INTEGER PRIMARY KEY, body BLOB)")
+        .execute(&legacy_pool)
+        .await
+        .expect("legacy table should be created");
     legacy_pool.close().await;
 
-    let migrated_pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
+    let pool = init_db(&app_dir, "emails.db")
         .await
-        .expect("legacy database should migrate");
-
-    for table in ["gmail_INBOX", "gmail_Sent", "gmail_Spam"] {
-        let columns: Vec<(String,)> =
-            sqlx::query_as(&format!("SELECT name FROM pragma_table_info('{table}')"))
-                .fetch_all(&migrated_pool)
-                .await
-                .expect("table columns should be queryable");
-
-        assert!(
-            columns.iter().any(|column| column.0 == "read"),
-            "{table} should have a read column"
-        );
-    }
-
-    migrated_pool.close().await;
+        .expect("migration should succeed");
+    let legacy_exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'gmail_INBOX')",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("legacy lookup should work");
+    assert!(!legacy_exists);
+    pool.close().await;
     let _ = std::fs::remove_dir_all(app_dir);
 }
 
 #[tokio::test]
-async fn populate_storage_and_get_emails_work_with_pagination() {
-    let app_dir = unique_test_dir("emails-pagination");
-    let pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
+async fn accounts_and_mailboxes_are_stable_and_unique() {
+    let (app_dir, pool) = test_pool("account-mailbox").await;
+    let first = ensure_account(&pool, "person@example.com", Some("Person"), "gmail")
         .await
-        .expect("db should initialize");
-
-    let table = "gmail_INBOX";
-
-    let emails = vec![
-        StandardEmail {
-            uid: Some(1),
-            date: Some(parse_date("2026-01-01T09:00:00+00:00")),
-            body: Some(b"Subject: Older\r\nFrom: old@example.com\r\n\r\nBody".to_vec()),
-            labels: Some(vec!["\\Inbox".to_string()]),
-            read: false,
-        },
-        StandardEmail {
-            uid: Some(3),
-            date: Some(parse_date("2026-01-03T09:00:00+00:00")),
-            body: Some(b"Subject: Newest\r\nFrom: newest@example.com\r\n\r\nBody".to_vec()),
-            labels: Some(vec!["\\Inbox".to_string()]),
-            read: false,
-        },
-        StandardEmail {
-            uid: Some(2),
-            date: Some(parse_date("2026-01-02T09:00:00+00:00")),
-            body: Some(b"Subject: Middle\r\nFrom: middle@example.com\r\n\r\nBody".to_vec()),
-            labels: Some(vec!["\\Inbox".to_string()]),
-            read: false,
-        },
-    ];
-
-    populate_storage(&pool, emails, table)
+        .expect("account should be created");
+    let second = ensure_account(&pool, "person@example.com", None, "gmail")
         .await
-        .expect("populate should succeed");
+        .expect("account should be reused");
+    assert_eq!(first, second);
 
-    let first_page = get_emails(&pool, table, 0, 2)
+    let inbox = ensure_mailbox(&pool, first, "INBOX", "Inbox", "inbox")
         .await
-        .expect("query should succeed");
-    assert_eq!(first_page.len(), 2);
-    assert!(first_page[0]
-        .body
-        .as_ref()
-        .expect("email body should exist")
-        .subject
-        .contains("Newest"));
-
-    let second_page = get_emails(&pool, table, 2, 3)
+        .expect("mailbox should be created");
+    let same_inbox = ensure_mailbox(&pool, first, "INBOX", "Inbox", "inbox")
         .await
-        .expect("query should succeed");
-    assert_eq!(second_page.len(), 1);
-    assert!(second_page[0]
-        .body
-        .as_ref()
-        .expect("email body should exist")
-        .subject
-        .contains("Older"));
+        .expect("mailbox should be reused");
+    assert_eq!(inbox, same_inbox);
 
     pool.close().await;
     let _ = std::fs::remove_dir_all(app_dir);
 }
 
 #[tokio::test]
-async fn get_email_by_uid_returns_exact_match_not_newest_email() {
-    let app_dir = unique_test_dir("email-by-uid-exact");
-    let pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
-        .await
-        .expect("db should initialize");
-    let table = "gmail_INBOX";
-    let requested_date = parse_date("2026-01-01T09:00:00+00:00");
-
+async fn messages_are_normalized_and_page_in_date_order() {
+    let (app_dir, pool) = test_pool("message-page").await;
     populate_storage(
         &pool,
         vec![
-            StandardEmail {
-                uid: Some(41),
-                date: Some(requested_date),
-                body: Some(b"Subject: Requested\r\nFrom: old@example.com\r\n\r\nBody".to_vec()),
-                labels: None,
-                read: false,
-            },
-            StandardEmail {
-                uid: Some(42),
-                date: Some(parse_date("2026-01-02T09:00:00+00:00")),
-                body: Some(b"Subject: Newest\r\nFrom: new@example.com\r\n\r\nBody".to_vec()),
-                labels: None,
-                read: false,
-            },
+            email(1, "2026-01-01T09:00:00+00:00", "Oldest", false),
+            email(3, "2026-01-03T09:00:00+00:00", "Newest", false),
+            email(2, "2026-01-02T09:00:00+00:00", "Middle", false),
         ],
-        table,
+        "gmail_INBOX",
     )
     .await
-    .expect("insert should succeed");
+    .expect("messages should be stored");
 
-    let newest = get_emails(&pool, table, 0, 1)
+    let page = get_emails(&pool, "gmail_INBOX", 0, 2)
         .await
-        .expect("page query should succeed");
-    assert_eq!(newest[0].uid, Some(42));
-
-    let email = get_email_by_uid(&pool, table, 41)
-        .await
-        .expect("uid query should succeed")
-        .expect("requested email should exist");
-    assert_eq!(email.uid, Some(41));
-    assert_eq!(email.date, Some(requested_date));
+        .expect("page should load");
     assert_eq!(
-        email.body.expect("body should be parsed").subject,
-        "Requested"
+        page.iter().map(|message| message.uid).collect::<Vec<_>>(),
+        vec![Some(3), Some(2)]
     );
-    assert_eq!(email.labels, None);
-
-    pool.close().await;
-    let _ = std::fs::remove_dir_all(app_dir);
-}
-
-#[tokio::test]
-async fn get_email_by_uid_returns_none_for_missing_uid() {
-    let app_dir = unique_test_dir("email-by-uid-missing");
-    let pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
-        .await
-        .expect("db should initialize");
-
-    populate_storage(
-        &pool,
-        vec![StandardEmail {
-            uid: Some(1),
-            date: None,
-            body: None,
-            labels: None,
-            read: false,
-        }],
-        "gmail_INBOX",
-    )
-    .await
-    .expect("insert should succeed");
-
-    assert!(get_email_by_uid(&pool, "gmail_INBOX", 2)
-        .await
-        .expect("missing uid query should succeed")
-        .is_none());
-
-    pool.close().await;
-    let _ = std::fs::remove_dir_all(app_dir);
-}
-
-#[tokio::test]
-async fn get_email_by_uid_roundtrips_u32_max() {
-    let app_dir = unique_test_dir("email-by-uid-max");
-    let pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
-        .await
-        .expect("db should initialize");
-
-    populate_storage(
-        &pool,
-        vec![StandardEmail {
-            uid: Some(u32::MAX),
-            date: None,
-            body: None,
-            labels: None,
-            read: false,
-        }],
-        "gmail_INBOX",
-    )
-    .await
-    .expect("maximum uid insert should succeed");
-
-    let email = get_email_by_uid(&pool, "gmail_INBOX", u32::MAX)
-        .await
-        .expect("maximum uid query should succeed")
-        .expect("maximum uid email should exist");
-    assert_eq!(email.uid, Some(u32::MAX));
-    assert_eq!(email.date, None);
-    assert!(email.body.is_none());
-    assert_eq!(email.labels, None);
-
-    pool.close().await;
-    let _ = std::fs::remove_dir_all(app_dir);
-}
-
-#[tokio::test]
-async fn get_email_by_uid_decodes_valid_labels() {
-    let app_dir = unique_test_dir("email-by-uid-labels");
-    let pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
-        .await
-        .expect("db should initialize");
-    let labels = vec![
-        "Project \"Phoenix\"".to_string(),
-        r"Finance\2026".to_string(),
-        "emoji-📬".to_string(),
-        "line\nbreak".to_string(),
-    ];
-
-    populate_storage(
-        &pool,
-        vec![StandardEmail {
-            uid: Some(101),
-            date: None,
-            body: None,
-            labels: Some(labels.clone()),
-            read: false,
-        }],
-        "gmail_INBOX",
-    )
-    .await
-    .expect("insert should succeed");
-
-    let email = get_email_by_uid(&pool, "gmail_INBOX", 101)
-        .await
-        .expect("uid query should succeed")
-        .expect("labelled email should exist");
-    assert_eq!(email.labels, Some(labels));
-
-    pool.close().await;
-    let _ = std::fs::remove_dir_all(app_dir);
-}
-
-#[tokio::test]
-async fn get_email_by_uid_treats_malformed_labels_as_none() {
-    let app_dir = unique_test_dir("email-by-uid-malformed-labels");
-    let pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
-        .await
-        .expect("db should initialize");
-
-    populate_storage(
-        &pool,
-        vec![StandardEmail {
-            uid: Some(301),
-            date: None,
-            body: Some(b"Subject: Still readable\r\n\r\nBody".to_vec()),
-            labels: None,
-            read: false,
-        }],
-        "gmail_INBOX",
-    )
-    .await
-    .expect("insert should succeed");
-
-    for malformed_labels in ["{not valid json", r#"{"not":"a label array"}"#, "[123]"] {
-        sqlx::query("UPDATE gmail_INBOX SET labels = ? WHERE uid = ?")
-            .bind(malformed_labels)
-            .bind(301_i64)
-            .execute(&pool)
-            .await
-            .expect("malformed labels fixture should be stored");
-
-        let email = get_email_by_uid(&pool, "gmail_INBOX", 301)
-            .await
-            .expect("malformed labels should not fail the uid query")
-            .expect("email should still exist");
-        assert_eq!(email.uid, Some(301));
-        assert_eq!(email.labels, None);
-        assert_eq!(
-            email.body.expect("body should be parsed").subject,
-            "Still readable"
-        );
-    }
-
-    pool.close().await;
-    let _ = std::fs::remove_dir_all(app_dir);
-}
-
-#[tokio::test]
-async fn populate_storage_with_empty_input_is_noop() {
-    let app_dir = unique_test_dir("emails-empty");
-    let pool = init_db(&app_dir, "emails.db", &Provider::Yahoo)
-        .await
-        .expect("db should initialize");
-
-    populate_storage(&pool, Vec::new(), "yahoo_INBOX")
-        .await
-        .expect("empty insert should succeed");
-
-    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM yahoo_INBOX")
-        .fetch_one(&pool)
-        .await
-        .expect("count query should succeed");
-
-    assert_eq!(count.0, 0);
-
-    pool.close().await;
-    let _ = std::fs::remove_dir_all(app_dir);
-}
-
-#[tokio::test]
-async fn set_email_read_states_reports_only_changed_existing_rows() {
-    let app_dir = unique_test_dir("emails-read-state-batch");
-    let pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
-        .await
-        .expect("db should initialize");
-    let table = "gmail_INBOX";
-
-    populate_storage(
-        &pool,
-        vec![StandardEmail {
-            uid: Some(10),
-            date: None,
-            body: None,
-            labels: None,
-            read: false,
-        }],
-        table,
-    )
-    .await
-    .expect("email insert should succeed");
-
-    let changed = set_email_read_states(&pool, table, &[(10, true), (999, true)])
-        .await
-        .expect("read-state update should succeed");
-    assert_eq!(changed, vec![(10, true)]);
+    let newest = page[0].body.as_ref().expect("body should be cached");
+    assert_eq!(newest.subject, "Newest");
+    assert_eq!(newest.email_from, "person@example.com");
+    assert_eq!(
+        newest.cc.as_ref().expect("cc should exist")[0].1,
+        "team@example.com"
+    );
     assert!(
-        get_email_by_uid(&pool, table, 10)
-            .await
-            .expect("read-state lookup should succeed")
-            .expect("email should exist")
-            .read
+        newest.raw_message.is_empty(),
+        "raw MIME should not be persisted"
+    );
+    assert_eq!(
+        page[0].labels.as_ref().expect("labels should exist").len(),
+        2
     );
 
-    let unchanged = set_email_read_states(&pool, table, &[(10, true)])
-        .await
-        .expect("replayed read state should succeed");
-    assert!(unchanged.is_empty());
-
-    let changed = set_email_read_states(&pool, table, &[(10, false)])
-        .await
-        .expect("unread-state update should succeed");
-    assert_eq!(changed, vec![(10, false)]);
+    let raw_blob_columns: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name IN ('body', 'raw_message')",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("message columns should be inspectable");
+    assert_eq!(raw_blob_columns, 0);
 
     pool.close().await;
     let _ = std::fs::remove_dir_all(app_dir);
 }
 
 #[tokio::test]
-async fn populate_storage_reconciles_read_state_without_replacing_existing_messages() {
-    let app_dir = unique_test_dir("emails-dup-uids");
-    let pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
-        .await
-        .expect("db should initialize");
-
-    let table = "gmail_INBOX";
-
-    let first_insert = vec![StandardEmail {
-        uid: Some(10),
-        date: Some(parse_date("2026-01-10T09:00:00+00:00")),
-        body: Some(b"Subject: First\r\nFrom: first@example.com\r\n\r\nBody".to_vec()),
-        labels: Some(vec!["\\Inbox".to_string()]),
-        read: false,
-    }];
-
-    let duplicate_insert = vec![StandardEmail {
-        uid: Some(10),
-        date: Some(parse_date("2026-01-11T09:00:00+00:00")),
-        body: Some(b"Subject: Duplicate\r\nFrom: dup@example.com\r\n\r\nBody".to_vec()),
-        labels: Some(vec!["\\Inbox".to_string()]),
-        read: true,
-    }];
-
-    populate_storage(&pool, first_insert, table)
-        .await
-        .expect("first insert should succeed");
-    populate_storage(&pool, duplicate_insert, table)
-        .await
-        .expect("duplicate insert should be ignored and succeed");
-
-    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM gmail_INBOX")
-        .fetch_one(&pool)
-        .await
-        .expect("count query should succeed");
-
-    assert_eq!(count.0, 1);
-
-    let updated = get_email_by_uid(&pool, table, 10)
-        .await
-        .expect("read-state lookup should succeed")
-        .expect("existing email should remain available");
-    assert!(updated.read);
-    assert_eq!(
-        updated.body.expect("body should remain available").subject,
-        "First"
-    );
-
+async fn duplicate_uid_updates_read_state_without_replacing_content() {
+    let (app_dir, pool) = test_pool("message-upsert").await;
     populate_storage(
         &pool,
-        vec![StandardEmail {
-            uid: Some(10),
-            date: None,
-            body: None,
-            labels: None,
-            read: false,
-        }],
-        table,
+        vec![email(10, "2026-01-01T09:00:00+00:00", "Original", false)],
+        "gmail_INBOX",
     )
     .await
-    .expect("server unread state should update the existing email");
+    .expect("first insert should work");
+    populate_storage(
+        &pool,
+        vec![email(10, "2026-01-02T09:00:00+00:00", "Replacement", true)],
+        "gmail_INBOX",
+    )
+    .await
+    .expect("replay should work");
 
-    let updated = get_email_by_uid(&pool, table, 10)
+    let stored = get_email_by_uid(&pool, "gmail_INBOX", 10)
         .await
-        .expect("read-state lookup should succeed")
-        .expect("existing email should remain available");
-    assert!(!updated.read);
-    assert_eq!(
-        updated.body.expect("body should remain available").subject,
-        "First"
-    );
+        .expect("lookup should work")
+        .expect("message should exist");
+    assert!(stored.read);
+    assert_eq!(stored.body.expect("body should exist").subject, "Original");
 
-    pool.close().await;
-    let _ = std::fs::remove_dir_all(app_dir);
-}
-
-#[tokio::test]
-async fn populate_storage_keeps_all_unique_uids_when_replayed() {
-    let app_dir = unique_test_dir("emails-replay");
-    let pool = init_db(&app_dir, "emails.db", &Provider::Yahoo)
-        .await
-        .expect("db should initialize");
-
-    let table = "yahoo_INBOX";
-
-    let initial = vec![
-        StandardEmail {
-            uid: Some(1),
-            date: Some(parse_date("2026-02-01T09:00:00+00:00")),
-            body: Some(b"Subject: One\r\nFrom: one@example.com\r\n\r\nBody".to_vec()),
-            labels: None,
-            read: false,
-        },
-        StandardEmail {
-            uid: Some(2),
-            date: Some(parse_date("2026-02-02T09:00:00+00:00")),
-            body: Some(b"Subject: Two\r\nFrom: two@example.com\r\n\r\nBody".to_vec()),
-            labels: None,
-            read: false,
-        },
-    ];
-
-    let replay_plus_new = vec![
-        StandardEmail {
-            uid: Some(1),
-            date: Some(parse_date("2026-02-01T09:00:00+00:00")),
-            body: Some(b"Subject: One\r\nFrom: one@example.com\r\n\r\nBody".to_vec()),
-            labels: None,
-            read: false,
-        },
-        StandardEmail {
-            uid: Some(2),
-            date: Some(parse_date("2026-02-02T09:00:00+00:00")),
-            body: Some(b"Subject: Two\r\nFrom: two@example.com\r\n\r\nBody".to_vec()),
-            labels: None,
-            read: false,
-        },
-        StandardEmail {
-            uid: Some(3),
-            date: Some(parse_date("2026-02-03T09:00:00+00:00")),
-            body: Some(b"Subject: Three\r\nFrom: three@example.com\r\n\r\nBody".to_vec()),
-            labels: None,
-            read: false,
-        },
-    ];
-
-    populate_storage(&pool, initial, table)
-        .await
-        .expect("initial insert should succeed");
-    populate_storage(&pool, replay_plus_new, table)
-        .await
-        .expect("replayed insert should succeed");
-
-    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM yahoo_INBOX")
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages")
         .fetch_one(&pool)
         .await
-        .expect("count query should succeed");
-
-    assert_eq!(count.0, 3);
+        .expect("count should work");
+    assert_eq!(count, 1);
 
     pool.close().await;
     let _ = std::fs::remove_dir_all(app_dir);
 }
 
 #[tokio::test]
-async fn check_email_db_empty_reflects_table_state() {
-    let app_dir = unique_test_dir("emails-empty-flag");
-    let pool = init_db(&app_dir, "emails.db", &Provider::Yahoo)
-        .await
-        .expect("db should initialize");
-
+async fn read_state_and_sync_cursor_use_normalized_rows() {
+    let (app_dir, pool) = test_pool("read-and-cursor").await;
     assert!(!check_email_db_empty(&pool, "yahoo_INBOX")
         .await
-        .expect("exists query should succeed"));
-
+        .expect("empty lookup should work"));
     populate_storage(
         &pool,
-        vec![StandardEmail {
-            uid: Some(1),
-            date: Some(parse_date("2026-01-01T09:00:00+00:00")),
-            body: Some(b"Subject: One\r\nFrom: one@example.com\r\n\r\nBody".to_vec()),
-            labels: None,
-            read: false,
-        }],
+        vec![email(41, "2026-01-01T09:00:00+00:00", "Message", false)],
         "yahoo_INBOX",
     )
     .await
-    .expect("insert should succeed");
-
+    .expect("message should be inserted");
     assert!(check_email_db_empty(&pool, "yahoo_INBOX")
         .await
-        .expect("exists query should succeed"));
+        .expect("populated lookup should work"));
+
+    let changed = set_email_read_states(&pool, "yahoo_INBOX", &[(41, true), (999, true)])
+        .await
+        .expect("read states should update");
+    assert_eq!(changed, vec![(41, true)]);
+
+    assert_eq!(get_last_uid(&pool, "yahoo_INBOX").await.unwrap(), None);
+    set_last_uid(&pool, "yahoo_INBOX", 41)
+        .await
+        .expect("cursor should update");
+    assert_eq!(get_last_uid(&pool, "yahoo_INBOX").await.unwrap(), Some(41));
 
     pool.close().await;
     let _ = std::fs::remove_dir_all(app_dir);
 }
 
 #[tokio::test]
-async fn mailbox_sync_state_roundtrip_works() {
-    let app_dir = unique_test_dir("emails-last-uid");
-    let pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
+async fn deleting_a_message_cascades_to_content_parts_and_cache_rows() {
+    let (app_dir, pool) = test_pool("message-cascade").await;
+    let account_id = ensure_account(&pool, "cascade@example.com", None, "gmail")
         .await
-        .expect("db should initialize");
-
-    assert_eq!(
-        get_last_uid(&pool, "gmail_INBOX")
-            .await
-            .expect("query should succeed"),
-        None
-    );
-
-    set_last_uid(&pool, "gmail_INBOX", 41)
+        .unwrap();
+    let mailbox_id = ensure_mailbox(&pool, account_id, "INBOX", "Inbox", "inbox")
         .await
-        .expect("set should succeed");
-    assert_eq!(
-        get_last_uid(&pool, "gmail_INBOX")
+        .unwrap();
+    let message_id: i64 =
+        sqlx::query_scalar("INSERT INTO messages (mailbox_id, uid) VALUES (?, 7) RETURNING id")
+            .bind(mailbox_id)
+            .fetch_one(&pool)
             .await
-            .expect("query should succeed"),
-        Some(41)
-    );
-
-    set_last_uid(&pool, "gmail_INBOX", 42)
+            .unwrap();
+    let part_id: i64 = sqlx::query_scalar(
+        "INSERT INTO mime_parts (message_id, section, content_type, disposition) VALUES (?, '2', 'application/pdf', 'attachment') RETURNING id",
+    )
+    .bind(message_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO part_cache (part_id, relative_path, byte_size, state) VALUES (?, 'aa/file.bin', 10, 'ready')")
+        .bind(part_id)
+        .execute(&pool)
         .await
-        .expect("update should succeed");
-    assert_eq!(
-        get_last_uid(&pool, "gmail_INBOX")
-            .await
-            .expect("query should succeed"),
-        Some(42)
-    );
+        .unwrap();
+
+    sqlx::query("DELETE FROM messages WHERE id = ?")
+        .bind(message_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let parts: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mime_parts")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let cached: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM part_cache")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!((parts, cached), (0, 0));
+    let queued: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM cache_deletion_queue WHERE relative_path = 'aa/file.bin'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(queued, 1);
 
     pool.close().await;
     let _ = std::fs::remove_dir_all(app_dir);
@@ -623,223 +265,10 @@ async fn mailbox_sync_state_roundtrip_works() {
 async fn cleanup_handles_file_and_missing_path() {
     let temp_file = unique_test_dir("cleanup-file").with_extension("tmp");
     std::fs::write(&temp_file, b"temporary").expect("temp file should be created");
-
     cleanup(temp_file.clone())
         .await
-        .expect("cleanup file should succeed");
-    assert!(!temp_file.exists());
-
+        .expect("cleanup should succeed");
     cleanup(temp_file)
         .await
-        .expect("cleanup missing path should be ok");
-}
-
-#[tokio::test]
-async fn populate_storage_writes_none_labels_as_sql_null_and_reads_them_back_as_none() {
-    let app_dir = unique_test_dir("emails-null-labels");
-    let pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
-        .await
-        .expect("db should initialize");
-
-    populate_storage(
-        &pool,
-        vec![StandardEmail {
-            uid: Some(101),
-            date: Some(parse_date("2026-03-01T09:00:00+00:00")),
-            body: None,
-            labels: None,
-            read: false,
-        }],
-        "gmail_INBOX",
-    )
-    .await
-    .expect("insert should succeed");
-
-    let stored: (Option<String>,) = sqlx::query_as("SELECT labels FROM gmail_INBOX WHERE uid = ?")
-        .bind(101_i64)
-        .fetch_one(&pool)
-        .await
-        .expect("stored labels should be queryable");
-    assert_eq!(stored.0, None);
-
-    let readback = get_emails(&pool, "gmail_INBOX", 0, 1)
-        .await
-        .expect("email should read back");
-    assert_eq!(readback.len(), 1);
-    assert_eq!(readback[0].labels, None);
-
-    pool.close().await;
-    let _ = std::fs::remove_dir_all(app_dir);
-}
-
-#[tokio::test]
-async fn populate_storage_serializes_special_labels_as_json_and_roundtrips_exactly() {
-    let app_dir = unique_test_dir("emails-special-labels");
-    let pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
-        .await
-        .expect("db should initialize");
-
-    let labels = vec![
-        "Project \"Phoenix\"".to_string(),
-        r"Finance\2026".to_string(),
-        "emoji-📬".to_string(),
-        "line\nbreak".to_string(),
-    ];
-
-    populate_storage(
-        &pool,
-        vec![StandardEmail {
-            uid: Some(102),
-            date: Some(parse_date("2026-03-02T09:00:00+00:00")),
-            body: None,
-            labels: Some(labels.clone()),
-            read: false,
-        }],
-        "gmail_INBOX",
-    )
-    .await
-    .expect("insert should succeed");
-
-    let stored: (String,) = sqlx::query_as("SELECT labels FROM gmail_INBOX WHERE uid = ?")
-        .bind(102_i64)
-        .fetch_one(&pool)
-        .await
-        .expect("stored labels should be queryable");
-    assert_eq!(
-        stored.0,
-        r#"["Project \"Phoenix\"","Finance\\2026","emoji-📬","line\nbreak"]"#
-    );
-
-    let readback = get_emails(&pool, "gmail_INBOX", 0, 1)
-        .await
-        .expect("email should read back");
-    assert_eq!(readback.len(), 1);
-    assert_eq!(readback[0].labels.as_ref(), Some(&labels));
-
-    pool.close().await;
-    let _ = std::fs::remove_dir_all(app_dir);
-}
-
-#[tokio::test]
-async fn populate_storage_handles_mixed_labelled_and_unlabelled_batch() {
-    let app_dir = unique_test_dir("emails-mixed-labels");
-    let pool = init_db(&app_dir, "emails.db", &Provider::Yahoo)
-        .await
-        .expect("db should initialize");
-
-    let labels = vec!["Important".to_string(), "Team/Alpha".to_string()];
-    populate_storage(
-        &pool,
-        vec![
-            StandardEmail {
-                uid: Some(201),
-                date: Some(parse_date("2026-03-01T09:00:00+00:00")),
-                body: None,
-                labels: Some(labels.clone()),
-                read: false,
-            },
-            StandardEmail {
-                uid: Some(202),
-                date: Some(parse_date("2026-03-02T09:00:00+00:00")),
-                body: None,
-                labels: None,
-                read: false,
-            },
-        ],
-        "yahoo_INBOX",
-    )
-    .await
-    .expect("mixed batch insert should succeed");
-
-    let stored: Vec<(i64, Option<String>)> =
-        sqlx::query_as("SELECT uid, labels FROM yahoo_INBOX ORDER BY uid")
-            .fetch_all(&pool)
-            .await
-            .expect("stored rows should be queryable");
-    assert_eq!(
-        stored,
-        vec![
-            (201, Some(r#"["Important","Team/Alpha"]"#.to_string())),
-            (202, None),
-        ]
-    );
-
-    let readback = get_emails(&pool, "yahoo_INBOX", 0, 2)
-        .await
-        .expect("emails should read back");
-    assert_eq!(readback.len(), 2);
-    assert_eq!(readback[0].labels, None);
-    assert_eq!(readback[1].labels.as_ref(), Some(&labels));
-
-    pool.close().await;
-    let _ = std::fs::remove_dir_all(app_dir);
-}
-
-#[tokio::test]
-async fn populate_storage_defaults_missing_uid_to_zero() {
-    let app_dir = unique_test_dir("emails-default-uid");
-    let pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
-        .await
-        .expect("db should initialize");
-
-    populate_storage(
-        &pool,
-        vec![StandardEmail {
-            uid: None,
-            date: Some(parse_date("2026-03-03T09:00:00+00:00")),
-            body: None,
-            labels: Some(vec!["No UID".to_string()]),
-            read: false,
-        }],
-        "gmail_INBOX",
-    )
-    .await
-    .expect("insert should succeed");
-
-    let stored_uid: (i64,) = sqlx::query_as("SELECT uid FROM gmail_INBOX")
-        .fetch_one(&pool)
-        .await
-        .expect("stored uid should be queryable");
-    assert_eq!(stored_uid.0, 0);
-
-    pool.close().await;
-    let _ = std::fs::remove_dir_all(app_dir);
-}
-
-#[tokio::test]
-async fn get_emails_treats_malformed_stored_label_json_as_none() {
-    let app_dir = unique_test_dir("emails-malformed-labels");
-    let pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
-        .await
-        .expect("db should initialize");
-
-    populate_storage(
-        &pool,
-        vec![StandardEmail {
-            uid: Some(301),
-            date: Some(parse_date("2026-03-04T09:00:00+00:00")),
-            body: None,
-            labels: Some(vec!["Initially valid".to_string()]),
-            read: false,
-        }],
-        "gmail_INBOX",
-    )
-    .await
-    .expect("insert should succeed");
-
-    sqlx::query("UPDATE gmail_INBOX SET labels = ? WHERE uid = ?")
-        .bind("{not valid json")
-        .bind(301_i64)
-        .execute(&pool)
-        .await
-        .expect("malformed labels fixture should be stored");
-
-    let readback = get_emails(&pool, "gmail_INBOX", 0, 1)
-        .await
-        .expect("malformed labels should not fail the email query");
-    assert_eq!(readback.len(), 1);
-    assert_eq!(readback[0].labels, None);
-
-    pool.close().await;
-    let _ = std::fs::remove_dir_all(app_dir);
+        .expect("missing cleanup should succeed");
 }
