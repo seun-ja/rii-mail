@@ -11,6 +11,7 @@
     "test": "node --test src/**/*.test.js",
     "test:frontend": "node --test src/**/*.test.js",
     "test:backend": "./packaging/macos/run-rust-tests.sh backend",
+    "test:load:100k": "./packaging/macos/run-rust-tests.sh load-100k",
     "test:backend:macos-arm64": "PYO3_CONFIG_FILE=\"$(pwd)/packaging/macos-arm64/build/pyo3-config.txt\" PYO3_ENVIRONMENT_SIGNATURE=riimail-python-3.12.15-macos-arm64-tests DYLD_LIBRARY_PATH=\"$(pwd)/packaging/macos-arm64/build\" cargo test --manifest-path src-tauri/Cargo.toml",
     "test:backend:macos-intel": "PYO3_CONFIG_FILE=\"$(pwd)/packaging/macos-intel/build/pyo3-config.txt\" PYO3_ENVIRONMENT_SIGNATURE=riimail-python-3.12.15-macos-x86_64-tests DYLD_LIBRARY_PATH=\"$(pwd)/packaging/macos-intel/build\" cargo test --manifest-path src-tauri/Cargo.toml",
     "test:llm": "./packaging/macos/run-rust-tests.sh llm",

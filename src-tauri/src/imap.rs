@@ -1,6 +1,6 @@
 use async_imap::Client;
 use async_native_tls::TlsStream;
-use tokio::net::TcpStream;
+use tokio::{net::TcpStream, sync::oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::{auth::AppleKeychainManager, db, error::Error};
@@ -9,6 +9,12 @@ use crate::{auth::AppleKeychainManager, db, error::Error};
 pub struct RefreshSummary {
     pub new_emails_count: u16,
     pub total_emails: u32,
+}
+
+#[derive(Debug)]
+pub struct FetchedAttachment {
+    pub data: Vec<u8>,
+    pub uid_validity: u32,
 }
 
 #[derive(Debug)]
@@ -21,6 +27,15 @@ pub enum ImapCommand {
         response_channel: tokio::sync::oneshot::Sender<Result<RefreshSummary, String>>,
         username: String,
         keychain_manager: AppleKeychainManager,
+    },
+    FetchAttachment {
+        mail_box: db::MailBox,
+        uid: u32,
+        part_id: String,
+        response_channel: oneshot::Sender<Result<FetchedAttachment, String>>,
+        username: String,
+        keychain_manager: AppleKeychainManager,
+        cancel_token: CancellationToken,
     },
     SetEmailRead {
         mail_box: db::MailBox,

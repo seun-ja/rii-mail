@@ -246,6 +246,34 @@ body.home-page {
     border-color: transparent;
 }
 
+#spam-check-btn[aria-busy="true"],
+#download-attachment-btn[aria-busy="true"] {
+    position: relative;
+    color: transparent;
+    cursor: wait;
+    transform: none;
+}
+
+#spam-check-btn[aria-busy="true"]::after,
+#download-attachment-btn[aria-busy="true"]::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0.9rem;
+    height: 0.9rem;
+    margin: -0.55rem 0 0 -0.55rem;
+    border: 2px solid rgba(64, 83, 106, 0.25);
+    border-top-color: var(--mail-accent);
+    border-radius: 50%;
+    content: "";
+    animation: spin 0.8s linear infinite;
+}
+
+#download-attachment-btn[aria-busy="true"]::after {
+    border-color: rgba(255, 255, 255, 0.35);
+    border-top-color: #fff;
+}
+
 .mail-body {
     flex: 1;
     display: grid;
@@ -560,9 +588,14 @@ body.home-page {
 }
 
 .mail-item-sender {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    color: #203247;
     font-size: 0.84rem;
     font-weight: 600;
-    color: #203247;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .mail-item-time {
@@ -571,12 +604,37 @@ body.home-page {
     white-space: nowrap;
 }
 
+.mail-item-trailing {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 0.35rem;
+}
+
 .mail-item-subject {
+    min-width: 0;
     font-size: 0.83rem;
     color: #1d2f42;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.mail-item-attachment {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    color: #60758c;
+}
+
+.mail-item-attachment svg {
+    width: 0.82rem;
+    height: 0.82rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.8;
 }
 
 .mail-item-preview {
@@ -780,6 +838,289 @@ body.home-page {
 .reader-meta-value {
     min-width: 0;
     overflow-wrap: anywhere;
+}
+
+.reader-attachments {
+    flex: 0 0 auto;
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #edf0f3;
+}
+
+.reader-attachments-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0 0 0.45rem;
+    color: var(--mail-subtext);
+    font-size: 0.72rem;
+    font-weight: 400;
+    letter-spacing: 0.01em;
+}
+
+.reader-attachments-count {
+    color: #8b98a8;
+    font-variant-numeric: tabular-nums;
+}
+
+.reader-attachment-list {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0.35rem;
+    padding-bottom: 0.25rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    overscroll-behavior-x: contain;
+}
+
+.reader-attachment-list::-webkit-scrollbar {
+    height: 5px;
+}
+
+.reader-attachment-list::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: #cbd6e2;
+}
+
+.reader-attachment {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    min-width: 0;
+    max-width: min(22rem, 88%);
+    gap: 0.55rem;
+    padding: 0.45rem 0.55rem;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: #536579;
+    text-align: left;
+    box-shadow: none;
+    cursor: pointer;
+}
+
+.reader-attachment:hover,
+.reader-attachment:focus-visible {
+    border-color: #e2e8ee;
+    background: #fafbfc;
+    color: #34546f;
+    box-shadow: none;
+}
+
+.reader-attachment:focus-visible {
+    outline: 2px solid rgba(29, 117, 190, 0.18);
+    outline-offset: 1px;
+}
+
+.reader-attachment:disabled {
+    cursor: wait;
+}
+
+.reader-attachment[aria-busy="true"] .reader-attachment-action {
+    width: 0.7rem;
+    height: 0.7rem;
+    border: 2px solid rgba(117, 135, 154, 0.25);
+    border-top-color: var(--mail-accent);
+    border-radius: 50%;
+    color: transparent;
+    font-size: 0;
+    animation: spin 0.8s linear infinite;
+}
+
+.reader-attachment > svg {
+    flex: 0 0 auto;
+    width: 0.9rem;
+    height: 0.9rem;
+    color: #8795a5;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.7;
+}
+
+.reader-attachment-copy {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.05rem;
+}
+
+.reader-attachment-name,
+.reader-attachment-meta {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.reader-attachment-name {
+    color: #34465a;
+    font-size: 0.76rem;
+    font-weight: 500;
+}
+
+.reader-attachment-meta {
+    color: var(--mail-subtext);
+    font-size: 0.66rem;
+    font-weight: 400;
+}
+
+.reader-attachment-action {
+    flex: 0 0 auto;
+    color: #8593a2;
+    font-size: 0.67rem;
+    font-weight: 400;
+}
+
+.attachment-preview-modal-content {
+    display: flex;
+    width: min(920px, calc(100vw - 3rem));
+    height: min(760px, calc(100vh - 3rem));
+    max-width: none;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid #e5e9ed;
+    border-radius: 12px;
+    box-shadow: 0 18px 48px rgba(33, 45, 58, 0.16);
+}
+
+.attachment-preview-header {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 3.25rem;
+    gap: 0.75rem;
+    padding: 0.55rem 0.65rem 0.55rem 0.9rem;
+    border-bottom: 1px solid #edf0f3;
+    background: #fff;
+}
+
+.attachment-preview-header .modal-title {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: #35465a;
+    font-size: 0.86rem;
+    font-weight: 500;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.attachment-preview-actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 0.15rem;
+}
+
+.attachment-preview-download,
+.attachment-preview-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    height: 2.1rem;
+    margin: 0;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: #627286;
+    box-shadow: none;
+    font-size: 0.75rem;
+    font-weight: 400;
+    line-height: 1;
+}
+
+.attachment-preview-download {
+    padding: 0 0.65rem;
+}
+
+.attachment-preview-close {
+    width: 2.1rem;
+    padding: 0;
+}
+
+.attachment-preview-download svg,
+.attachment-preview-close svg {
+    width: 0.95rem;
+    height: 0.95rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.7;
+}
+
+.attachment-preview-download:hover,
+.attachment-preview-download:focus-visible,
+.attachment-preview-close:hover,
+.attachment-preview-close:focus-visible {
+    border-color: transparent;
+    background: #f2f5f7;
+    color: #31465a;
+    box-shadow: none;
+}
+
+.attachment-preview-download:focus-visible,
+.attachment-preview-close:focus-visible {
+    outline: 2px solid rgba(29, 117, 190, 0.18);
+    outline-offset: 1px;
+}
+
+#download-attachment-btn[aria-busy="true"]::after {
+    border-color: rgba(98, 114, 134, 0.22);
+    border-top-color: #627286;
+}
+
+.attachment-preview-body {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    align-items: center;
+    justify-content: center;
+    overflow: auto;
+    background: #f7f8fa;
+}
+
+.attachment-preview-image {
+    display: block;
+    max-width: calc(100% - 2rem);
+    max-height: calc(100% - 2rem);
+    object-fit: contain;
+}
+
+.attachment-preview-frame {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: #fff;
+}
+
+.attachment-preview-text {
+    align-self: stretch;
+    width: min(780px, 100%);
+    margin: 0;
+    padding: 1.25rem;
+    overflow: auto;
+    color: #3d4d60;
+    background: #fff;
+    font: 400 0.8rem/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.attachment-preview-unavailable {
+    max-width: 28rem;
+    padding: 1rem;
+    color: #718094;
+    font-size: 0.82rem;
+    font-weight: 400;
+    line-height: 1.55;
+    text-align: center;
 }
 
 .reader-body {

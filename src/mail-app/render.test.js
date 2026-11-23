@@ -109,6 +109,41 @@ test("renderReader omits the Cc row when there are no recipients", () => {
   assert.doesNotMatch(mailReaderEl.innerHTML, /reader-meta-cc/);
 });
 
+test("renderReader shows safe attachment controls", () => {
+  const email = {
+    id: "message-attachment",
+    uid: 42,
+    subject: "Files",
+    body: "See attachment",
+    textBody: "See attachment",
+    htmlBody: "",
+    attachments: [
+      {
+        id: 0,
+        partId: "2.1",
+        fileName: 'report <final>.pdf',
+        contentType: "application/pdf",
+        size: 1536,
+      },
+    ],
+  };
+  const mailReaderEl = createReaderElement();
+  const renderer = createRenderer(createState(email), { mailReaderEl });
+
+  renderer.renderReader();
+
+  assert.match(mailReaderEl.innerHTML, /reader-attachments-count">1<\/span>/);
+  assert.match(mailReaderEl.innerHTML, /data-attachment-part-id="2\.1"/);
+  assert.match(mailReaderEl.innerHTML, /report &lt;final&gt;\.pdf/);
+  assert.match(mailReaderEl.innerHTML, /application\/pdf · 1\.5 KB/);
+  assert.doesNotMatch(mailReaderEl.innerHTML, /report <final>/);
+  assert.ok(
+    mailReaderEl.innerHTML.indexOf("reader-attachments") >
+      mailReaderEl.innerHTML.indexOf("reader-body"),
+    "attachments should render after the message body",
+  );
+});
+
 test("renderReader makes plain-text web links clickable", () => {
   const email = {
     id: "message-links",
@@ -192,6 +227,46 @@ test("renderReader only opens safe messages from its isolated HTML frame", () =>
   renderer.dispose();
   renderer.dispose();
   assert.equal(listeners.size, 0, "disposing the renderer removes its listener");
+});
+
+test("renderList places the attachment indicator in the right-side metadata", () => {
+  const email = {
+    id: "message-list-attachment",
+    folder: "INBOX",
+    senderName: "Alice",
+    subject: "Quarterly report",
+    preview: "Attached for review",
+    time: "10:30",
+    attachments: [{ id: 0, partId: "2" }],
+    read: true,
+  };
+  const state = {
+    ...createState(email),
+    activeFolder: "INBOX",
+    query: "",
+    isLoadingEmails: false,
+    totalEmailsByFolder: {},
+  };
+  const mailListEl = { innerHTML: "" };
+  const mailReaderEl = createReaderElement();
+  const originalDocument = globalThis.document;
+  globalThis.document = {
+    querySelector() {
+      return { textContent: "" };
+    },
+  };
+
+  try {
+    createRenderer(state, { mailListEl, mailReaderEl }).renderList();
+  } finally {
+    globalThis.document = originalDocument;
+  }
+
+  assert.match(
+    mailListEl.innerHTML,
+    /mail-item-trailing[\s\S]*mail-item-time[\s\S]*mail-item-attachment/,
+  );
+  assert.doesNotMatch(mailListEl.innerHTML, /mail-item-subject-row/);
 });
 
 test("updateEmailReadState unbolds only the matching list item", () => {

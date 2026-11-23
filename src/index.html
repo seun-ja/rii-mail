@@ -224,6 +224,47 @@
             aria-live="polite"
         ></output>
 
+        <div
+            id="attachment-preview-modal"
+            class="modal hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="attachment-preview-title"
+        >
+            <div class="modal-content attachment-preview-modal-content">
+                <header class="attachment-preview-header">
+                    <h2 id="attachment-preview-title" class="modal-title">
+                        Attachment
+                    </h2>
+                    <div class="attachment-preview-actions">
+                        <button
+                            id="download-attachment-btn"
+                            class="attachment-preview-download"
+                            type="button"
+                        >
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M12 3v12"></path>
+                                <path d="m7 10 5 5 5-5"></path>
+                                <path d="M5 20h14"></path>
+                            </svg>
+                        </button>
+                        <button
+                            id="close-attachment-preview-btn"
+                            class="attachment-preview-close"
+                            type="button"
+                            aria-label="Close attachment preview"
+                            title="Close"
+                        >
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="m6 6 12 12M18 6 6 18"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </header>
+                <div id="attachment-preview-body" class="attachment-preview-body"></div>
+            </div>
+        </div>
+
         <div id="result-msg" class="status-toast" inert>
             <span class="status-toast-icon" aria-hidden="true">
                 <svg

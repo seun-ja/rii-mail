@@ -13,6 +13,13 @@ export function getMailAppDom(documentRef = document) {
     spamCheckBtnEl: documentRef.querySelector("#spam-check-btn"),
     resultMsgEl: documentRef.querySelector("#result-msg"),
     linkPreviewEl: documentRef.querySelector("#link-preview"),
+    attachmentPreviewModalEl: documentRef.querySelector("#attachment-preview-modal"),
+    attachmentPreviewTitleEl: documentRef.querySelector("#attachment-preview-title"),
+    attachmentPreviewBodyEl: documentRef.querySelector("#attachment-preview-body"),
+    closeAttachmentPreviewBtnEl: documentRef.querySelector(
+      "#close-attachment-preview-btn",
+    ),
+    downloadAttachmentBtnEl: documentRef.querySelector("#download-attachment-btn"),
     syncOverlayEl: documentRef.querySelector("#sync-overlay"),
     syncMessageEl: documentRef.querySelector("#sync-message"),
     syncProgressBarEl: documentRef.querySelector("#sync-progress-bar"),

@@ -12,8 +12,9 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 use crate::config::ImapClientConfig;
 use crate::handlers::{
     email_generator, inbox_email_populated, inbox_initial_email_populated, is_llm_enabled,
-    refresh_emails_handler, send_email, sent_email_populated, sent_initial_email_populated,
-    set_email_read, spam_email_populated, spam_initial_email_populated,
+    refresh_emails_handler, save_email_attachment, send_email, sent_email_populated,
+    sent_initial_email_populated, set_email_read, spam_email_populated,
+    spam_initial_email_populated,
 };
 use crate::imap::ImapCommand;
 use crate::workers::{worker, FetchManager};
@@ -21,8 +22,8 @@ use crate::{
     config::{AppState, StartupStatusCache},
     handlers::{
         check_app_status, config_setup, connect_chatgpt, connect_ollama,
-        enable_main_window_controls, fetch_emails, finish_startup, get_signature, login,
-        logout_with_state, open_main_window, rater, set_signature,
+        enable_main_window_controls, fetch_emails, finish_startup, get_email_attachment,
+        get_signature, login, logout_with_state, open_main_window, rater, set_signature,
     },
 };
 
@@ -297,11 +298,13 @@ pub async fn run() {
             connect_ollama,
             fetch_emails,
             finish_startup,
+            get_email_attachment,
             get_signature,
             login,
             open_main_window,
             rater,
             refresh_emails_handler,
+            save_email_attachment,
             send_email,
             set_email_read,
             set_signature,

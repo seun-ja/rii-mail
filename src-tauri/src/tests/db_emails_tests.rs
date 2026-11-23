@@ -3,7 +3,7 @@ use crate::{
         check_email_db_empty, cleanup, db_pool, ensure_account, ensure_mailbox, get_email_by_uid,
         get_emails, get_last_uid, init_db, populate_storage, set_email_read_states, set_last_uid,
     },
-    email_cache::StandardEmail,
+    email_cache::{encode_cached_email_content, EmailAttachment, EmailContent, StandardEmail},
 };
 use chrono::{DateTime, FixedOffset};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -39,6 +39,57 @@ fn email(uid: u32, date: &str, subject: &str, read: bool) -> StandardEmail {
         labels: Some(vec!["\\Inbox".to_string(), "Project Phoenix".to_string()]),
         read,
     }
+}
+
+#[tokio::test]
+async fn attachment_metadata_round_trips_without_payload_bytes() {
+    let (app_dir, pool) = test_pool("attachment-metadata").await;
+    let content = EmailContent {
+        subject: "Quarterly report".to_string(),
+        sender_name: "Person".to_string(),
+        email_from: "person@example.com".to_string(),
+        cc: None,
+        preview: "Attached".to_string(),
+        html_body: String::new(),
+        text_body: "Attached".to_string(),
+        attachments: vec![EmailAttachment {
+            id: 0,
+            part_id: "2.1".to_string(),
+            file_name: "report.pdf".to_string(),
+            content_type: "application/pdf".to_string(),
+            size: 4096,
+            data: Vec::new(),
+        }],
+        parts: Vec::new(),
+        raw_message: String::new(),
+    };
+    populate_storage(
+        &pool,
+        vec![StandardEmail {
+            uid: Some(77),
+            date: Some(parse_date("2026-01-01T09:00:00+00:00")),
+            body: Some(encode_cached_email_content(&content).unwrap()),
+            labels: Some(vec!["\\Inbox".to_string()]),
+            read: false,
+        }],
+        "gmail_INBOX",
+    )
+    .await
+    .unwrap();
+
+    let stored = get_email_by_uid(&pool, "gmail_INBOX", 77)
+        .await
+        .unwrap()
+        .unwrap();
+    let attachments = stored.body.unwrap().attachments;
+    assert_eq!(attachments.len(), 1);
+    assert_eq!(attachments[0].part_id, "2.1");
+    assert_eq!(attachments[0].file_name, "report.pdf");
+    assert_eq!(attachments[0].size, 4096);
+    assert!(attachments[0].data.is_empty());
+
+    pool.close().await;
+    let _ = std::fs::remove_dir_all(app_dir);
 }
 
 #[tokio::test]

@@ -166,6 +166,49 @@ test("refreshing an updated mailbox reconciles its cache even when it is inactiv
   assert.equal(calls[1].args.mailbox, "Sent");
 });
 
+test("ticker updates reload the committed database page without another IMAP refresh", async () => {
+  const state = createInitialState();
+  state.allowFetch = true;
+  state.isAppReady = true;
+  state.cachedByFolder.INBOX = [
+    { id: "db-INBOX-uid-1", subject: "Older", folder: "INBOX" },
+  ];
+
+  const calls = [];
+  const sync = createSyncController(
+    state,
+    { renderList() {}, updateCounts() {} },
+    {},
+    async (command, args) => {
+      calls.push({ command, args });
+      assert.equal(command, "fetch_emails");
+      return {
+        emails: [
+          { id: "db-INBOX-uid-2", subject: "Latest", folder: "INBOX" },
+          { id: "db-INBOX-uid-1", subject: "Older", folder: "INBOX" },
+        ],
+      };
+    },
+    createStorage(),
+  );
+
+  await sync.reloadMailboxFromDatabase("INBOX", {
+    newEmailsCount: 1,
+    totalEmails: 2,
+  });
+
+  assert.deepEqual(
+    state.cachedByFolder.INBOX.map((email) => email.id),
+    ["db-INBOX-uid-2", "db-INBOX-uid-1"],
+  );
+  assert.deepEqual(
+    calls.map((call) => call.command),
+    ["fetch_emails"],
+  );
+  assert.equal(calls[0].args.minRange, 0);
+  assert.equal(calls[0].args.maxRange, 100);
+});
+
 test("initial sync refreshes the inbox in the background after loading its first database page", async () => {
   const state = createInitialState();
   state.allowFetch = true;
@@ -271,4 +314,81 @@ test("initial sync does not wait for a queued IMAP refresh", async () => {
   assert.equal(state.isInitialSyncComplete, true);
   assert.equal(state.isLoadingEmails, false);
   assert.ok(uiStates.includes(false));
+});
+
+test("a busy inbox-ready reload resolves only after emails are rendered", async () => {
+  const state = createInitialState();
+  state.allowFetch = true;
+  state.isAppReady = true;
+  state.isLoadingEmails = true;
+
+  const events = [];
+  const sync = createSyncController(
+    state,
+    {
+      renderList() {
+        if (state.cachedByFolder.INBOX.length > 0) {
+          events.push("rendered");
+        }
+      },
+    },
+    { showMessage() {} },
+    async (command) => {
+      assert.equal(command, "fetch_emails");
+      events.push("fetched");
+      return {
+        emails: [{ id: "db-INBOX-uid-1", folder: "INBOX" }],
+      };
+    },
+    createStorage(),
+    {
+      wait: async () => {
+        events.push("waited");
+        state.isLoadingEmails = false;
+      },
+    },
+  );
+
+  await sync.loadMoreEmails(100, { reset: true, retryWhenBusy: true });
+  events.push("resolved");
+
+  assert.deepEqual(events, ["waited", "fetched", "rendered", "resolved"]);
+  assert.equal(state.cachedByFolder.INBOX.length, 1);
+});
+
+test("initial sync keeps the loading UI visible until an inbox page exists", async () => {
+  const state = createInitialState();
+  state.allowFetch = true;
+  state.isAppReady = true;
+
+  const uiStates = [];
+  const sync = createSyncController(
+    state,
+    { renderList() {}, updateCounts() {} },
+    {
+      setSyncUiState(locked) {
+        uiStates.push(locked);
+      },
+    },
+    async (command) => {
+      if (command === "fetch_emails") {
+        return { emails: [] };
+      }
+
+      if (command === "refresh_emails_handler") {
+        return { emails: [], newEmailsCount: 0, totalEmails: 0 };
+      }
+
+      throw new Error(`Unexpected command: ${command}`);
+    },
+    createStorage(),
+    { wait: async () => {} },
+  );
+
+  const rendered = await sync.runInitialSync();
+  sync.stopBootstrapRefresh();
+
+  assert.equal(rendered, false);
+  assert.equal(state.isInitialSyncComplete, false);
+  assert.equal(uiStates.includes(false), false);
 });

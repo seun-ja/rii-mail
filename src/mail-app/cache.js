@@ -1,4 +1,8 @@
-import { EMAIL_CACHE_KEY, MAX_CACHED_EMAILS } from "./constants.js";
+import {
+  EMAIL_CACHE_KEY,
+  LEGACY_EMAIL_CACHE_KEYS,
+  MAX_CACHED_EMAILS,
+} from "./constants.js";
 
 export function getEmails(state) {
   return [
@@ -12,16 +16,27 @@ export function getEmails(state) {
 export function loadCachedEmails(storage = window.localStorage) {
   try {
     const raw = storage.getItem(EMAIL_CACHE_KEY);
-    if (!raw) {
-      return [];
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
     }
 
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) {
-      return [];
+    for (const key of LEGACY_EMAIL_CACHE_KEYS) {
+      const legacyRaw = storage.getItem(key);
+      if (!legacyRaw) continue;
+
+      const parsed = JSON.parse(legacyRaw);
+      if (!Array.isArray(parsed)) continue;
+
+      const migrated = parsed.map((email) => ({ ...email, attachments: [] }));
+      storage.setItem(EMAIL_CACHE_KEY, JSON.stringify(migrated));
+      LEGACY_EMAIL_CACHE_KEYS.forEach((legacyKey) =>
+        storage.removeItem(legacyKey),
+      );
+      return migrated;
     }
 
-    return parsed;
+    return [];
   } catch (_error) {
     return [];
   }
@@ -38,6 +53,7 @@ export function saveCachedEmails(state, storage = window.localStorage) {
 
 export function clearCachedEmails(storage = window.localStorage) {
   storage.removeItem(EMAIL_CACHE_KEY);
+  LEGACY_EMAIL_CACHE_KEYS.forEach((key) => storage.removeItem(key));
 }
 
 export function hydrateFolderCachesFromStorage(

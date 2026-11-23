@@ -27,6 +27,7 @@ export function createSyncController(
   {
     reconcileEmails = (emails) => emails,
     isOnline = () => globalThis.navigator?.onLine !== false,
+    wait = delay,
   } = {},
 ) {
   let syncGeneration = 0;
@@ -113,17 +114,23 @@ export function createSyncController(
     }
 
     if (state.isLoadingEmails || mailboxRefreshInProgress) {
-      if (retryWhenBusy && !state.initialSyncPollTimer) {
-        state.initialSyncPollTimer = setTimeout(() => {
-          state.initialSyncPollTimer = null;
-          void loadMoreEmails(batchSize, {
-            reset,
-            preserveEmptyRetryState,
-            retryWhenBusy: true,
-          });
-        }, 100);
+      if (!retryWhenBusy) {
+        return;
       }
-      return;
+
+      const runGeneration = syncGeneration;
+      while (state.isLoadingEmails || mailboxRefreshInProgress) {
+        await wait(50);
+        if (!state.allowFetch || runGeneration !== syncGeneration) {
+          return;
+        }
+      }
+
+      return loadMoreEmails(batchSize, {
+        reset,
+        preserveEmptyRetryState,
+        retryWhenBusy: false,
+      });
     }
 
     const folderKey = getActiveBackendFolderKey(state);
@@ -210,9 +217,10 @@ export function createSyncController(
 
       pagination.nextOffset += page.length;
 
-      if (page.length < batchSize) {
-        pagination.hasMoreEmails = false;
-      }
+      pagination.hasMoreEmails =
+        typeof totalEmails === "number"
+          ? pagination.nextOffset < totalEmails
+          : page.length >= batchSize;
     } catch (error) {
       if (getEmails(state).length > 0) {
         ui.showMessage("Showing cached emails while reconnecting.");
@@ -253,6 +261,55 @@ export function createSyncController(
     } catch (error) {
       console.warn("Unable to refresh inbox during startup", error);
     }
+  }
+
+  async function reloadMailboxFromDatabase(
+    mailbox,
+    { newEmailsCount = 0, totalEmails = null } = {},
+  ) {
+    if (!state.allowFetch || !state.isAppReady) {
+      return;
+    }
+
+    const folderKey = mailbox;
+    const provider = getProviderLiteral(storage);
+    const pagination = getFolderPaginationState(state, folderKey);
+    const pageSize = Math.max(
+      INITIAL_BATCH_SIZE,
+      state.cachedByFolder[folderKey].length + Math.max(0, newEmailsCount),
+    );
+    const fetched = await invoke("fetch_emails", {
+      minRange: 0,
+      maxRange: pageSize,
+      mailbox,
+      provider,
+    });
+    const refreshedPage = normalizeFetchPayload(fetched).emails;
+    const storedTotalEmails = await fetchMailboxEmailCount(mailbox, provider).catch(
+      () => null,
+    );
+    const resolvedTotal = Number.isInteger(totalEmails)
+      ? totalEmails
+      : typeof storedTotalEmails === "number"
+        ? storedTotalEmails
+        : null;
+
+    if (typeof resolvedTotal === "number") {
+      state.totalEmailsByFolder[folderKey] = resolvedTotal;
+    }
+
+    state.cachedByFolder[folderKey] = refreshedPage;
+    pagination.nextOffset = refreshedPage.length;
+    pagination.hasMoreEmails =
+      typeof resolvedTotal === "number"
+        ? refreshedPage.length < resolvedTotal
+        : refreshedPage.length >= pageSize;
+    pagination.lastFetchSignature = null;
+    pagination.lastFetchAt = 0;
+
+    saveCachedEmails(state, storage);
+    renderer.renderList();
+    renderer.updateCounts?.();
   }
 
   async function runInitialSync() {
@@ -343,7 +400,7 @@ export function createSyncController(
           break;
         }
 
-        await delay(INITIAL_EMPTY_RETRY_DELAY_MS);
+        await wait(INITIAL_EMPTY_RETRY_DELAY_MS);
 
         if (!state.allowFetch || runGeneration !== syncGeneration) {
           return { page, aborted: true };
@@ -353,7 +410,11 @@ export function createSyncController(
       state.cachedByFolder[folder] = page;
       const folderPagination = getFolderPaginationState(state, folder);
       folderPagination.nextOffset = page.length;
-      folderPagination.hasMoreEmails = page.length >= INITIAL_BATCH_SIZE;
+      const totalEmails = state.totalEmailsByFolder[folder];
+      folderPagination.hasMoreEmails =
+        typeof totalEmails === "number"
+          ? page.length < totalEmails
+          : page.length >= INITIAL_BATCH_SIZE;
       folderPagination.lastFetchSignature = null;
       folderPagination.lastFetchAt = 0;
 
@@ -375,17 +436,16 @@ export function createSyncController(
     });
 
     if (inboxSync.aborted) {
-      return;
+      return false;
     }
 
-    // `refresh_emails_handler` is serviced by the same serial IMAP worker as the
-    // full initial import. Awaiting it here can leave startup locked until that
-    // import finishes, even though the first database page is already usable.
-    state.isInitialSyncComplete = true;
-    clearInitialSyncPoll();
-    ui.setSyncUiState(false);
-
     if (inboxSync.page.length > 0) {
+      // The page has already been assigned and rendered by
+      // syncFolderWithRetries. Only now is it safe to dismiss the overlay.
+      state.isInitialSyncComplete = true;
+      clearInitialSyncPoll();
+      ui.setSyncUiState(false);
+
       // A local page is already usable, so reconcile it without blocking UI.
       void refreshInboxOnStartup();
 
@@ -396,7 +456,7 @@ export function createSyncController(
         // Ignore background sync failures; manual refresh can retry.
       });
 
-      return;
+      return true;
     }
 
     // Do not block app startup for long when backend bootstrap is still filling DB.
@@ -410,6 +470,7 @@ export function createSyncController(
     });
 
     startBootstrapRefresh();
+    return false;
   }
 
   async function refreshMailbox(mailbox, { background = false } = {}) {
@@ -516,6 +577,7 @@ export function createSyncController(
     clearInitialSyncPoll,
     haltAllSync,
     loadMoreEmails,
+    reloadMailboxFromDatabase,
     refreshActiveMailbox,
     refreshMailbox,
     runInitialSync,

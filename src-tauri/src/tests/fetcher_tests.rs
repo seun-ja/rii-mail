@@ -1,7 +1,13 @@
 use crate::db::MailBox;
 use crate::email_cache::{
-    incremental_uid_search_query, mailbox_name_matches, uid_vec_to_set, FetchResult,
+    canonical_part_path, collect_body_structure_parts, incremental_uid_search_query,
+    mailbox_name_matches, uid_vec_to_set, FetchResult,
 };
+use async_imap::imap_proto::types::{
+    BodyContentCommon, BodyContentSinglePart, BodyStructure, ContentDisposition, ContentEncoding,
+    ContentType,
+};
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -27,6 +33,78 @@ fn fetch_result_count_returns_expected_value() {
         .total_emails(),
         42
     );
+}
+
+fn body_common(
+    content_type: &str,
+    subtype: &str,
+    disposition: Option<(&str, &str)>,
+) -> BodyContentCommon<'static> {
+    BodyContentCommon {
+        ty: ContentType {
+            ty: Cow::Owned(content_type.to_string()),
+            subtype: Cow::Owned(subtype.to_string()),
+            params: None,
+        },
+        disposition: disposition.map(|(kind, file_name)| ContentDisposition {
+            ty: Cow::Owned(kind.to_string()),
+            params: Some(vec![(
+                Cow::Borrowed("filename"),
+                Cow::Owned(file_name.to_string()),
+            )]),
+        }),
+        language: None,
+        location: None,
+    }
+}
+
+fn single_part_details(octets: u32) -> BodyContentSinglePart<'static> {
+    BodyContentSinglePart {
+        id: None,
+        md5: None,
+        description: None,
+        transfer_encoding: ContentEncoding::SevenBit,
+        octets,
+    }
+}
+
+#[test]
+fn body_structure_separates_body_from_attachment_metadata() {
+    let structure = BodyStructure::Multipart {
+        common: body_common("multipart", "mixed", None),
+        bodies: vec![
+            BodyStructure::Text {
+                common: body_common("text", "plain", None),
+                other: single_part_details(24),
+                lines: 2,
+                extension: None,
+            },
+            BodyStructure::Basic {
+                common: body_common("application", "pdf", Some(("attachment", "report.pdf"))),
+                other: single_part_details(4096),
+                extension: None,
+            },
+        ],
+        extension: None,
+    };
+
+    let (body_parts, attachments) = collect_body_structure_parts(&structure);
+    assert_eq!(body_parts.len(), 1);
+    assert_eq!(body_parts[0].part_id, "1");
+    assert_eq!(attachments.len(), 1);
+    assert_eq!(attachments[0].part_id, "2");
+    assert_eq!(attachments[0].file_name, "report.pdf");
+    assert_eq!(attachments[0].content_type, "application/pdf");
+    assert_eq!(attachments[0].size, 4096);
+    assert!(attachments[0].data.is_empty());
+}
+
+#[test]
+fn attachment_part_paths_reject_imap_query_injection() {
+    assert_eq!(canonical_part_path("2.1"), Some(vec![2, 1]));
+    for invalid in ["", "0", "1.0", "1.", "1.MIME", "1] BODY[]"] {
+        assert_eq!(canonical_part_path(invalid), None);
+    }
 }
 
 #[test]

@@ -2,7 +2,7 @@
 set -eu
 
 if [ "$#" -ne 1 ]; then
-    printf 'usage: %s backend|llm\n' "$(basename -- "$0")" >&2
+    printf 'usage: %s backend|llm|load-100k\n' "$(basename -- "$0")" >&2
     exit 2
 fi
 
@@ -41,8 +41,11 @@ case "$1" in
     llm)
         exec cargo test --manifest-path src-tauri/Cargo.toml --package llm --lib
         ;;
+    load-100k)
+        exec cargo test --manifest-path src-tauri/Cargo.toml load_100k_mailbox -- --ignored --nocapture
+        ;;
     *)
-        printf 'usage: %s backend|llm\n' "$(basename -- "$0")" >&2
+        printf 'usage: %s backend|llm|load-100k\n' "$(basename -- "$0")" >&2
         exit 2
         ;;
 esac

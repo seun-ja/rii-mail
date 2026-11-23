@@ -1,19 +1,33 @@
+use std::path::{Path, PathBuf};
+
 use arc_swap::ArcSwap;
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use chrono::Utc;
 use lettre::{message::header::ContentType, Message, Transport};
 use sqlx::SqlitePool;
 use tauri::Manager as _;
-use tokio::sync::{mpsc::UnboundedSender, oneshot};
+use tokio::{
+    fs::{self, OpenOptions},
+    io::AsyncWriteExt as _,
+    sync::{mpsc::UnboundedSender, oneshot},
+};
 use uuid::Uuid;
 
 use crate::{
     config::AppState,
-    db::{get_emails, populate_storage, MailBox, Provider},
+    db::{
+        cached_parts_for_eviction, cached_parts_size, get_attachment_record, get_cached_part,
+        get_emails, get_mailbox_uid_validity, populate_storage, reconcile_mailbox_uid_validity,
+        remove_cached_part, store_cached_part, AttachmentRecord, MailBox, Provider,
+    },
     email_cache::{CompleteEmail, FrontendEmail, StandardEmail},
     error::Error,
     handlers::{populate_bcc_address, populate_cc_address, populate_to_address},
-    imap::{ImapCommand, RefreshSummary},
+    imap::{FetchedAttachment, ImapCommand, RefreshSummary},
+    workers::SharedFetchManager,
 };
+
+const ATTACHMENT_CACHE_LIMIT_BYTES: i64 = 256 * 1024 * 1024;
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -27,6 +41,182 @@ pub struct RefreshEmailsResponse {
     pub emails: Vec<FrontendEmail>,
     pub new_emails_count: u16,
     pub total_emails: u32,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachmentPreviewResponse {
+    pub file_name: String,
+    pub content_type: String,
+    pub base64_data: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadedAttachmentResponse {
+    pub file_name: String,
+    pub path: String,
+}
+
+fn attachment_cache_path(cache_root: &Path, part_id: i64) -> (String, PathBuf) {
+    let relative = format!("attachments/{part_id}");
+    let absolute = cache_root.join(&relative);
+    (relative, absolute)
+}
+
+async fn evict_attachment_cache(
+    pool: &SqlitePool,
+    cache_root: &Path,
+    protected_part_id: i64,
+) -> Result<(), Error> {
+    let mut total = cached_parts_size(pool).await?;
+    if total <= ATTACHMENT_CACHE_LIMIT_BYTES {
+        return Ok(());
+    }
+
+    for cached in cached_parts_for_eviction(pool, protected_part_id).await? {
+        if total <= ATTACHMENT_CACHE_LIMIT_BYTES {
+            break;
+        }
+        let path = cache_root.join(&cached.relative_path);
+        match fs::remove_file(&path).await {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                tracing::warn!(?error, path = %path.display(), "Unable to evict attachment file");
+                continue;
+            }
+        }
+        remove_cached_part(pool, cached.part_id).await?;
+        total = total.saturating_sub(cached.byte_size);
+    }
+
+    Ok(())
+}
+
+async fn load_attachment_data(
+    app: &tauri::AppHandle,
+    uid: u32,
+    mailbox: &MailBox,
+    metadata: &AttachmentRecord,
+) -> Result<Vec<u8>, Error> {
+    let (provider, pool, username, keychain_manager) = {
+        let state = app.state::<ArcSwap<AppState>>();
+        let current_state = state.load();
+        let initialized = current_state.state();
+        (
+            initialized.accounts[0].provider.clone(),
+            initialized.sqlite_pool.clone(),
+            initialized.accounts[0].email.clone(),
+            initialized.apple_keychain_manager.clone(),
+        )
+    };
+    let cache_root = app.path().app_cache_dir()?;
+
+    if let Some(cached) = get_cached_part(&pool, metadata.part_db_id).await? {
+        match fs::read(cache_root.join(&cached.relative_path)).await {
+            Ok(data) => return Ok(data),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                remove_cached_part(&pool, metadata.part_db_id).await?;
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+
+    let imap_cmd_channel_tx = app.state::<UnboundedSender<ImapCommand>>();
+    let (response_tx, response_rx) = oneshot::channel::<Result<FetchedAttachment, String>>();
+    let cancel_token = app
+        .state::<SharedFetchManager>()
+        .logout_token
+        .lock()
+        .await
+        .child_token();
+    imap_cmd_channel_tx.send(ImapCommand::FetchAttachment {
+        mail_box: mailbox.clone(),
+        uid,
+        part_id: metadata.section.clone(),
+        response_channel: response_tx,
+        username,
+        keychain_manager,
+        cancel_token,
+    })?;
+    let fetched = response_rx
+        .await?
+        .map_err(|message| Error::Other(format!("Failed to fetch attachment: {message}")))?;
+
+    let mailbox_key = format!("{}_{}", provider.as_ref(), mailbox.as_ref());
+    let previous_uid_validity = get_mailbox_uid_validity(&pool, &mailbox_key).await?;
+    if previous_uid_validity.is_some_and(|value| value != fetched.uid_validity) {
+        reconcile_mailbox_uid_validity(&pool, &mailbox_key, fetched.uid_validity).await?;
+        return Err(Error::Other(
+            "The mailbox changed on the server. Refresh it before opening attachments.".to_string(),
+        ));
+    }
+
+    let (relative_path, cache_path) = attachment_cache_path(&cache_root, metadata.part_db_id);
+    if let Some(parent) = cache_path.parent() {
+        fs::create_dir_all(parent).await?;
+    }
+    let temporary_path = cache_path.with_extension("tmp");
+    fs::write(&temporary_path, &fetched.data).await?;
+    fs::rename(&temporary_path, &cache_path).await?;
+    store_cached_part(
+        &pool,
+        metadata.part_db_id,
+        &relative_path,
+        fetched.data.len(),
+    )
+    .await?;
+    evict_attachment_cache(&pool, &cache_root, metadata.part_db_id).await?;
+
+    Ok(fetched.data)
+}
+
+fn attachment_file_name_candidate(file_name: &str, copy_number: u32) -> String {
+    let safe_name = Path::new(file_name)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty() && *name != "." && *name != "..")
+        .unwrap_or("attachment");
+    if copy_number == 0 {
+        return safe_name.to_string();
+    }
+    let path = Path::new(safe_name);
+    let stem = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("attachment");
+    match path.extension().and_then(|extension| extension.to_str()) {
+        Some(extension) if !extension.is_empty() => format!("{stem} ({copy_number}).{extension}"),
+        _ => format!("{stem} ({copy_number})"),
+    }
+}
+
+async fn save_attachment_to_directory(
+    directory: &Path,
+    file_name: &str,
+    data: &[u8],
+) -> Result<PathBuf, Error> {
+    fs::create_dir_all(directory).await?;
+    for copy_number in 0..u32::MAX {
+        let destination = directory.join(attachment_file_name_candidate(file_name, copy_number));
+        let mut file = match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&destination)
+            .await
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.into()),
+        };
+        file.write_all(data).await?;
+        file.sync_all().await?;
+        return Ok(destination);
+    }
+    Err(Error::Other(
+        "Could not choose an available attachment filename".to_string(),
+    ))
 }
 
 #[tauri::command]
@@ -47,8 +237,8 @@ pub async fn fetch_emails(
     let emails = get_emails_as_front_end_from_pool(
         initialized.accounts[0].provider.clone(),
         mailbox,
-        min_range as u16,
-        max_range as u16,
+        min_range,
+        max_range,
         &initialized.sqlite_pool,
     )
     .await?;
@@ -93,7 +283,7 @@ pub async fn refresh_emails_handler(
                 provider,
                 mailbox,
                 0,
-                refresh_summary.new_emails_count,
+                u32::from(refresh_summary.new_emails_count),
                 &initialized.sqlite_pool,
             )
             .await?;
@@ -109,6 +299,85 @@ pub async fn refresh_emails_handler(
             Err(Error::Other(format!("Failed to fetch new emails: {}", err)))
         }
     }
+}
+
+#[tauri::command]
+#[tracing::instrument(
+    name = "command.email.attachment.preview",
+    skip(app),
+    fields(uid, mailbox, part_id),
+    err
+)]
+pub async fn get_email_attachment(
+    app: tauri::AppHandle,
+    uid: u32,
+    mailbox: String,
+    part_id: String,
+) -> Result<AttachmentPreviewResponse, Error> {
+    let mailbox = MailBox::from(mailbox);
+    let (provider, pool) = {
+        let state = app.state::<ArcSwap<AppState>>();
+        let current_state = state.load();
+        let initialized = current_state.state();
+        (
+            initialized.accounts[0].provider.clone(),
+            initialized.sqlite_pool.clone(),
+        )
+    };
+    let mailbox_key = format!("{}_{}", provider.as_ref(), mailbox.as_ref());
+    let metadata = get_attachment_record(&pool, &mailbox_key, uid, &part_id)
+        .await?
+        .ok_or(Error::NotFound)?;
+    let data = load_attachment_data(&app, uid, &mailbox, &metadata).await?;
+
+    Ok(AttachmentPreviewResponse {
+        file_name: metadata.file_name,
+        content_type: metadata.content_type,
+        base64_data: BASE64_STANDARD.encode(data),
+    })
+}
+
+#[tauri::command]
+#[tracing::instrument(
+    name = "command.email.attachment.save",
+    skip(app),
+    fields(uid, mailbox, part_id),
+    err
+)]
+pub async fn save_email_attachment(
+    app: tauri::AppHandle,
+    uid: u32,
+    mailbox: String,
+    part_id: String,
+) -> Result<DownloadedAttachmentResponse, Error> {
+    let mailbox = MailBox::from(mailbox);
+    let (provider, pool) = {
+        let state = app.state::<ArcSwap<AppState>>();
+        let current_state = state.load();
+        let initialized = current_state.state();
+        (
+            initialized.accounts[0].provider.clone(),
+            initialized.sqlite_pool.clone(),
+        )
+    };
+    let mailbox_key = format!("{}_{}", provider.as_ref(), mailbox.as_ref());
+    let metadata = get_attachment_record(&pool, &mailbox_key, uid, &part_id)
+        .await?
+        .ok_or(Error::NotFound)?;
+    let data = load_attachment_data(&app, uid, &mailbox, &metadata).await?;
+    let saved_path =
+        save_attachment_to_directory(&app.path().download_dir()?, &metadata.file_name, &data)
+            .await?;
+    let saved_file_name = saved_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(&metadata.file_name)
+        .to_string();
+
+    Ok(DownloadedAttachmentResponse {
+        file_name: saved_file_name,
+        path: saved_path.to_string_lossy().into_owned(),
+    })
 }
 
 #[tauri::command]
@@ -144,8 +413,8 @@ pub async fn set_email_read(
 pub(crate) async fn get_emails_as_front_end_from_pool(
     provider: Provider,
     mailbox: MailBox,
-    min_range: u16,
-    max_range: u16,
+    min_range: u32,
+    max_range: u32,
     sqlite_pool: &SqlitePool,
 ) -> Result<Vec<FrontendEmail>, Error> {
     let table_name = format!("{}_{}", provider.as_ref(), mailbox.as_ref());
@@ -160,7 +429,7 @@ pub(crate) async fn get_emails_as_front_end_from_pool(
         .enumerate()
         .map(|(idx, email)| {
             let id = email.uid.map_or_else(
-                || format!("db-{}-{}", mailbox.as_ref(), min_range + idx as u16),
+                || format!("db-{}-{}", mailbox.as_ref(), min_range + idx as u32),
                 |uid| format!("db-{}-uid-{uid}", mailbox.as_ref()),
             );
             let mut frontend = email.into_frontend(id);

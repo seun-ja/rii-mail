@@ -17,7 +17,7 @@ use crate::{
     handlers::{provider_from_imap_server, refresh_chatgpt_token_if_needed},
     imap::ImapCommand,
     llm::{init_llm_agent, LocalInference},
-    workers::SharedFetchManager,
+    workers::{queue_initial_fetch, SharedFetchManager},
     ImapClientChannelTx, LOGGED_IN, LOGGING_IN,
 };
 
@@ -89,10 +89,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
 
     let fetch_manager = app.state::<SharedFetchManager>();
 
-    fetch_manager.reset_for_session().await;
-    let fetch_token = fetch_manager.logout_token.lock().await.child_token();
-
-    imap_cmd_channel_tx.send(ImapCommand::FetchEmails(provider.clone(), fetch_token))?;
+    queue_initial_fetch(&fetch_manager, &imap_cmd_channel_tx, provider.clone()).await?;
 
     let initialized_state = config::InitializedState {
         local_inference: initialized_state.local_inference,
