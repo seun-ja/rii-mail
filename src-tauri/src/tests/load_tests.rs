@@ -62,7 +62,7 @@ fn fixture(uid: u32) -> StandardEmail {
             .map(|date| date.fixed_offset()),
         body: Some(encode_cached_email_content(&content).expect("fixture should serialize")),
         labels: None,
-        read: uid % 3 == 0,
+        read: uid.is_multiple_of(3),
     }
 }
 
