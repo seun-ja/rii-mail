@@ -258,13 +258,14 @@ What is covered now:
 - Initial population syncs Inbox on the primary session, then syncs Sent and Spam/Junk on the background session. The server Spam/Junk mailbox is resolved through IMAP special-use metadata when available.
 - Initial population batches inserts in chunks (`INITIAL_BATCH_SIZE = 100`) to avoid very large DB writes.
 - Frontend pagination requests emails in pages (`INITIAL_BATCH_SIZE = 50`, `NEXT_BATCH_SIZE = 50`) and loads more on scroll.
-- Ongoing refresh uses incremental UID-based sync via `mailbox_sync_state.last_uid`. New Inbox messages rated `Spam` with a score greater than `0.8` are moved with IMAP `UID MOVE`, omitted from the Inbox cache, and then collected by the Spam refresh.
+- Ongoing refresh uses incremental UID-based sync via `mailboxes.highest_uid_seen`. New Inbox messages rated `Spam` with a score greater than `0.8` are moved with IMAP `UID MOVE`, omitted from the Inbox cache, and then collected by the Spam refresh.
 
 ## Config and Data Storage
 
 - App config directory: managed via Tauri `app_config_dir`
 - Config file: `config.json`
-- Mail database and cached data: under app config `data/`
+- Mail database and cached data: under app data `data/`
+- SQLite uses one normalized schema for every provider; messages are scoped by account and mailbox rather than stored in provider-named tables.
 - Credentials: stored through Apple Keychain integration on macOS
 
 ## Troubleshooting

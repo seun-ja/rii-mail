@@ -21,7 +21,7 @@ fn parse_date(value: &str) -> DateTime<FixedOffset> {
 #[tokio::test]
 async fn get_emails_as_front_end_from_pool_maps_rows_to_frontend_shape() {
     let app_dir = unique_test_dir("handler-email");
-    let pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
+    let pool = init_db(&app_dir, "emails.db")
         .await
         .expect("db should initialize");
 
@@ -57,7 +57,7 @@ async fn get_emails_as_front_end_from_pool_maps_rows_to_frontend_shape() {
 #[tokio::test]
 async fn database_email_ids_remain_stable_when_a_newer_email_is_inserted() {
     let app_dir = unique_test_dir("handler-email-stable-ids");
-    let pool = init_db(&app_dir, "emails.db", &Provider::Gmail)
+    let pool = init_db(&app_dir, "emails.db")
         .await
         .expect("db should initialize");
 

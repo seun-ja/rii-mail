@@ -1,14 +1,17 @@
 mod emails_db;
 
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, time::Duration};
 
 pub use emails_db::{
-    check_email_db_empty, cleanup, get_email_by_uid, get_emails, get_last_uid,
-    populate_inbox_folder_count, populate_sent_folder_count, populate_storage, set_email_read,
-    set_email_read_states, set_last_uid,
+    check_email_db_empty, cleanup, ensure_account, ensure_mailbox, get_email_by_uid, get_emails,
+    get_last_uid, populate_inbox_folder_count, populate_sent_folder_count, populate_storage,
+    set_email_read, set_email_read_states, set_last_uid,
 };
 
-use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
+use sqlx::{
+    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqliteSynchronous},
+    SqlitePool,
+};
 
 use crate::error::Error;
 
@@ -28,7 +31,11 @@ pub async fn db_pool(app_data_dir: &PathBuf, db: &str) -> Result<SqlitePool, sql
 
     let options = SqliteConnectOptions::new()
         .filename(&db_path)
-        .create_if_missing(true);
+        .create_if_missing(true)
+        .foreign_keys(true)
+        .journal_mode(SqliteJournalMode::Wal)
+        .synchronous(SqliteSynchronous::Normal)
+        .busy_timeout(Duration::from_secs(5));
 
     SqlitePool::connect_with(options).await
 }
@@ -36,14 +43,10 @@ pub async fn db_pool(app_data_dir: &PathBuf, db: &str) -> Result<SqlitePool, sql
 #[tracing::instrument(
     name = "db.initialize",
     skip_all,
-    fields(database = db, provider = provider.as_ref()),
+    fields(database = db),
     err
 )]
-pub async fn init_db(
-    app_data_dir: &PathBuf,
-    db: &str,
-    provider: &Provider,
-) -> Result<SqlitePool, Error> {
+pub async fn init_db(app_data_dir: &PathBuf, db: &str) -> Result<SqlitePool, Error> {
     let pool = db_pool(app_data_dir, db).await?;
 
     sqlx::query("PRAGMA journal_mode = WAL;")
@@ -58,110 +61,12 @@ pub async fn init_db(
         .execute(&pool)
         .await?;
 
-    create_table_for_provider(&pool, provider).await?;
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .map_err(|error| Error::Other(format!("Database migration failed: {error}")))?;
 
     Ok(pool)
-}
-
-async fn create_table_for_provider(
-    pool: &SqlitePool,
-    provider: &Provider,
-) -> Result<(), sqlx::Error> {
-    let inbox_table_name = format!("{}_{}", provider.as_ref(), MailBox::Inbox.as_ref());
-    let sent_table_name = format!("{}_{}", provider.as_ref(), MailBox::Sent.as_ref());
-    let spam_table_name = format!("{}_{}", provider.as_ref(), MailBox::Spam.as_ref());
-
-    let inbox_uid_index = format!("idx_{}_{}_uid", provider.as_ref(), MailBox::Inbox.as_ref());
-    let inbox_date_index = format!("idx_{}_{}_date", provider.as_ref(), MailBox::Inbox.as_ref());
-
-    let sent_uid_index = format!("idx_{}_{}_uid", provider.as_ref(), MailBox::Sent.as_ref());
-    let sent_date_index = format!("idx_{}_{}_date", provider.as_ref(), MailBox::Sent.as_ref());
-    let spam_uid_index = format!("idx_{}_{}_uid", provider.as_ref(), MailBox::Spam.as_ref());
-    let spam_date_index = format!("idx_{}_{}_date", provider.as_ref(), MailBox::Spam.as_ref());
-
-    let sql = format!(
-        r#"
-        CREATE TABLE IF NOT EXISTS {inbox_table_name} (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            uid INTEGER NOT NULL UNIQUE,
-            date INTEGER,
-            body BLOB,
-            labels TEXT,
-            read INTEGER NOT NULL DEFAULT 0
-        );
-
-        CREATE TABLE IF NOT EXISTS {sent_table_name} (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            uid INTEGER NOT NULL UNIQUE,
-            date TEXT,
-            body BLOB,
-            labels TEXT,
-            read INTEGER NOT NULL DEFAULT 0
-        );
-
-        CREATE TABLE IF NOT EXISTS {spam_table_name} (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            uid INTEGER NOT NULL UNIQUE,
-            date TEXT,
-            body BLOB,
-            labels TEXT,
-            read INTEGER NOT NULL DEFAULT 0
-        );
-
-        CREATE TABLE IF NOT EXISTS total_emails (
-            provider TEXT PRIMARY KEY,
-            Sent INTEGER NOT NULL DEFAULT 0,
-            INBOX INTEGER NOT NULL DEFAULT 0
-        );
-
-        CREATE TABLE IF NOT EXISTS mailbox_sync_state (
-            mailbox TEXT PRIMARY KEY,
-            last_uid INTEGER NOT NULL
-        );
-
-        CREATE INDEX IF NOT EXISTS {inbox_uid_index}
-        ON {inbox_table_name}(uid);
-
-        CREATE INDEX IF NOT EXISTS {inbox_date_index}
-        ON {inbox_table_name}(date);
-
-        CREATE INDEX IF NOT EXISTS {sent_uid_index}
-        ON {sent_table_name}(uid);
-
-        CREATE INDEX IF NOT EXISTS {sent_date_index}
-        ON {sent_table_name}(date);
-
-        CREATE INDEX IF NOT EXISTS {spam_uid_index}
-        ON {spam_table_name}(uid);
-
-        CREATE INDEX IF NOT EXISTS {spam_date_index}
-        ON {spam_table_name}(date);
-        "#
-    );
-    sqlx::query(&sql).execute(pool).await?;
-
-    ensure_read_column(pool, &inbox_table_name).await?;
-    ensure_read_column(pool, &sent_table_name).await?;
-    ensure_read_column(pool, &spam_table_name).await?;
-
-    Ok(())
-}
-
-async fn ensure_read_column(pool: &SqlitePool, table_name: &str) -> Result<(), sqlx::Error> {
-    let columns: Vec<(i64, String, String, i64, Option<String>, i64)> =
-        sqlx::query_as(&format!("PRAGMA table_info({table_name})"))
-            .fetch_all(pool)
-            .await?;
-
-    if !columns.iter().any(|column| column.1 == "read") {
-        sqlx::query(&format!(
-            "ALTER TABLE {table_name} ADD COLUMN read INTEGER NOT NULL DEFAULT 0"
-        ))
-        .execute(pool)
-        .await?;
-    }
-
-    Ok(())
 }
 
 #[derive(Debug, Clone, Eq, Hash, PartialEq)]

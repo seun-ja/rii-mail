@@ -1,6 +1,6 @@
 import { createAppSqliteClient } from "../shared/sqlite.js";
 
-const MAILBOX_COLUMN_BY_NAME = Object.freeze({
+const SERVER_MAILBOX_BY_NAME = Object.freeze({
   INBOX: "INBOX",
   Sent: "Sent",
 });
@@ -13,8 +13,8 @@ export function createMailboxCountClient({ storage, sql } = {}) {
   }
 
   async function fetchMailboxEmailCount(mailbox, provider) {
-    const mailboxColumn = MAILBOX_COLUMN_BY_NAME[mailbox];
-    if (!mailboxColumn) {
+    const serverMailbox = SERVER_MAILBOX_BY_NAME[mailbox];
+    if (!serverMailbox) {
       return null;
     }
 
@@ -25,8 +25,13 @@ export function createMailboxCountClient({ storage, sql } = {}) {
       }
 
       const rows = await db.select(
-        `SELECT ${mailboxColumn} AS count FROM total_emails WHERE provider = $1`,
-        [provider],
+        `SELECT m.server_message_count AS count
+         FROM mailboxes m
+         JOIN accounts a ON a.id = m.account_id
+         WHERE a.provider = $1 AND m.server_name = $2
+         ORDER BY a.id
+         LIMIT 1`,
+        [provider, serverMailbox],
       );
 
       const count = Array.isArray(rows) ? rows[0]?.count : null;

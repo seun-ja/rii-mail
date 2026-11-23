@@ -56,7 +56,7 @@ opentelemetry-otlp = { version = "0.31", features = [
 opentelemetry_sdk = { version = "0.31.0", features = ["rt-tokio"] }
 tracing-opentelemetry = "0.32"
 
-sqlx = { version = "=0.8.1", features = [ "runtime-tokio", "sqlite", "chrono"] }
+sqlx = { version = "=0.8.1", features = ["runtime-tokio", "sqlite", "chrono", "migrate"] }
 
 hex = "0.4.3"
 arc-swap = "1.7.1"

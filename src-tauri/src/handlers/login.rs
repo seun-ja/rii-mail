@@ -136,11 +136,12 @@ async fn handle_initialization(
 ) -> Result<(InitializedState, Provider), Error> {
     let provider = provider_from_imap_server(&config.imap_server_url);
 
-    let sqlite_pool = db::init_db(&data_dir, &config.sqlite_db, &provider).await?;
+    let sqlite_pool = db::init_db(&data_dir, &config.sqlite_db).await?;
 
     let apple_keychain_manager = AppleKeychainManager::new(app_service_name);
 
     let username = config.accounts.first().cloned().unwrap_or_default();
+    db::ensure_account(&sqlite_pool, &username, None, provider.as_ref()).await?;
     let credential = Credentials::new(username.clone(), password.to_string());
 
     let smtp_transport_client = config::smtp_transport_client(&config.smtp_relay_url, credential)?;

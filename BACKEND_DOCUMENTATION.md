@@ -388,7 +388,7 @@ So in the current app:
 
 ### Skip behavior when data already exists
 
-`fetch_emails(...)` checks whether the mailbox table already has rows.
+`fetch_emails(...)` checks whether the normalized mailbox already has message rows.
 
 If rows already exist, it returns early with `FetchResult::Populated` and does not run a full IMAP bootstrap for that mailbox.
 
@@ -402,13 +402,13 @@ For full mailbox population, the backend:
 
 1. selects the mailbox with `session.select(...)`
 2. calls:
-   - `UID FETCH 1:* (UID FLAGS ENVELOPE INTERNALDATE BODY.PEEK[])`
+   - `UID FETCH 1:* (UID FLAGS BODY.PEEK[])`
 3. streams IMAP messages incrementally
 4. converts each message into `StandardEmail`
 5. batches inserts into SQLite
 6. records the highest UID seen
 7. updates folder counts
-8. persists `last_uid` into `mailbox_sync_state`
+8. persists the high-water UID into `mailboxes.highest_uid_seen`
 
 ### Insert batching
 
@@ -440,13 +440,13 @@ Manual refresh uses the stored last UID.
 The backend:
 
 1. selects the mailbox
-2. reads `last_uid` from `mailbox_sync_state`
+2. reads `highest_uid_seen` from the mailbox row
 3. searches IMAP using `last_uid + 1:*`
 4. fetches only new UIDs
 5. for Inbox only, rates newly fetched messages with the local spam rater; messages labelled `Spam` with a score greater than `0.8` are collected
 6. moves those high-confidence messages atomically with IMAP `UID MOVE` to the resolved Spam/Junk mailbox and omits them from the local Inbox cache
 7. inserts the remaining messages into SQLite
-8. updates `last_uid`
+8. updates `highest_uid_seen`
 9. returns:
    - count of new emails
    - total mailbox size reported by IMAP
@@ -692,62 +692,28 @@ The backend creates a SQLite database under the app config directory and enables
 
 ### Tables actively used
 
-For each provider, the current schema creates:
+The schema is provider-independent and created through SQLx migrations:
 
-- `<provider>_INBOX`
-- `<provider>_Sent`
-- `<provider>_Spam`
+- `accounts`
+- `mailboxes`
+- `messages`
+- `message_addresses`
+- `labels` and `message_labels`
+- `message_content`
+- `mime_parts` and `part_cache`
+- `drafts`, `draft_addresses`, and `draft_attachments`
+- `cache_deletion_queue`
 
-Examples:
-
-- `gmail_INBOX`
-- `gmail_Sent`
-- `gmail_Spam`
-- `yahoo_INBOX`
-- `yahoo_Sent`
-- `yahoo_Spam`
-
-It also creates:
-
-- `total_emails`
-- `mailbox_sync_state`
-
-### Purpose of each table
-
-#### Mailbox tables
-
-Store:
-
-- `uid`
-- `date`
-- raw `body`
-- serialized `labels`
-
-#### `total_emails`
-
-Stores per-provider mailbox counts for:
-
-- `INBOX`
-- `Sent`
-
-#### `mailbox_sync_state`
-
-Stores:
-
-- `mailbox`
-- `last_uid`
-
-This is what powers incremental refresh.
+IMAP UIDs are constrained by `(mailbox_id, uid)`. Mailbox rows store server counts,
+`UIDVALIDITY`, UID cursors, and sync timestamps. Decoded message bodies are stored separately
+from envelope metadata. Raw MIME blobs are not persisted. MIME structure and attachment-cache
+metadata have dedicated tables; cached attachment bytes live in the app-owned filesystem cache.
 
 ### Storage write behavior
 
-`populate_storage(...)`:
-
-- sorts emails newest-first by date before insert
-- inserts with `INSERT OR IGNORE`
-- writes inside a DB transaction
-
-That means duplicate UID inserts are ignored safely.
+`populate_storage(...)` writes inside a transaction, decomposes fetched messages into normalized
+metadata, address, label, and content rows, and reconciles read state on duplicate mailbox UIDs
+without replacing already cached content.
 
 ### Read behavior
 

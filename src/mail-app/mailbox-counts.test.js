@@ -33,7 +33,7 @@ test("getMailboxCountDb loads the configured sqlite path once", async () => {
   assert.deepEqual(loadCalls, ["sqlite:data/custom.db"]);
 });
 
-test("fetchMailboxEmailCount queries the expected mailbox column", async () => {
+test("fetchMailboxEmailCount queries the normalized mailbox row", async () => {
   const selectCalls = [];
   const client = createMailboxCountClient({
     storage: createStorage(),
@@ -52,8 +52,13 @@ test("fetchMailboxEmailCount queries the expected mailbox column", async () => {
   assert.equal(count, 42);
   assert.deepEqual(selectCalls, [
     {
-      query: "SELECT INBOX AS count FROM total_emails WHERE provider = $1",
-      params: ["gmail"],
+      query: `SELECT m.server_message_count AS count
+         FROM mailboxes m
+         JOIN accounts a ON a.id = m.account_id
+         WHERE a.provider = $1 AND m.server_name = $2
+         ORDER BY a.id
+         LIMIT 1`,
+      params: ["gmail", "INBOX"],
     },
   ]);
 });
