@@ -8,4 +8,5 @@ mod handlers_configuration_tests;
 mod handlers_email_tests;
 mod imap_tests;
 mod llm_tests;
+mod load_tests;
 mod workers_tests;

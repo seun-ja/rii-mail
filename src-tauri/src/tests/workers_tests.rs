@@ -1,5 +1,9 @@
 use crate::error::{friendly_login_error_message, Error};
-use crate::workers::{is_imap_connection_error, FetchManager};
+use crate::{
+    db::Provider,
+    imap::ImapCommand,
+    workers::{is_imap_connection_error, queue_initial_fetch, FetchManager},
+};
 
 #[tokio::test]
 async fn starting_a_session_replaces_cancelled_fetch_tokens() {
@@ -11,6 +15,25 @@ async fn starting_a_session_replaces_cancelled_fetch_tokens() {
 
     assert!(!manager.logout_token.lock().await.is_cancelled());
     assert!(!manager.refresh_token.lock().await.is_cancelled());
+}
+
+#[tokio::test]
+async fn authenticated_session_queues_initial_mailbox_import() {
+    let manager = FetchManager::default();
+    manager.logout_token.lock().await.cancel();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+    queue_initial_fetch(&manager, &tx, Provider::Yahoo)
+        .await
+        .expect("initial fetch should be queued");
+
+    match rx.recv().await.expect("initial fetch command") {
+        ImapCommand::FetchEmails(provider, token) => {
+            assert_eq!(provider, Provider::Yahoo);
+            assert!(!token.is_cancelled());
+        }
+        command => panic!("expected initial fetch command, got {command:?}"),
+    }
 }
 
 #[test]

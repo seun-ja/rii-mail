@@ -3,9 +3,12 @@ mod emails_db;
 use std::{fs, path::PathBuf, time::Duration};
 
 pub use emails_db::{
-    check_email_db_empty, cleanup, ensure_account, ensure_mailbox, get_email_by_uid, get_emails,
-    get_last_uid, populate_inbox_folder_count, populate_sent_folder_count, populate_storage,
-    set_email_read, set_email_read_states, set_last_uid,
+    cached_parts_for_eviction, cached_parts_size, check_email_db_empty, cleanup, ensure_account,
+    ensure_mailbox, get_attachment_record, get_cached_part, get_email_by_uid, get_emails,
+    get_last_uid, get_mailbox_uid_validity, populate_inbox_folder_count,
+    populate_sent_folder_count, populate_storage, reconcile_mailbox_uid_validity,
+    remove_cached_part, set_email_read, set_email_read_states, set_last_uid, store_cached_part,
+    AttachmentRecord, CachedPartRecord,
 };
 
 use sqlx::{

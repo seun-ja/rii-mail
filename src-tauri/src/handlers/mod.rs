@@ -12,7 +12,10 @@ pub use configuration::{
 };
 #[cfg(test)]
 pub(crate) use configuration::{resolve_smtp_relay_url, smtp_relay_candidates};
-pub use email::{fetch_emails, refresh_emails_handler, send_email, set_email_read};
+pub use email::{
+    fetch_emails, get_email_attachment, refresh_emails_handler, save_email_attachment, send_email,
+    set_email_read,
+};
 pub use events::{
     inbox_email_populated, inbox_initial_email_populated, sent_email_populated,
     sent_initial_email_populated, spam_email_populated, spam_initial_email_populated,

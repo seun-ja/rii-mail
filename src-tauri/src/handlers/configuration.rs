@@ -8,7 +8,7 @@ use tauri::{window::Color, LogicalSize, Manager as _, Size};
 use tokio::{
     fs::{create_dir_all, try_exists},
     net::TcpStream,
-    sync::oneshot,
+    sync::{mpsc::UnboundedSender, oneshot},
     time::timeout,
 };
 
@@ -21,8 +21,9 @@ use crate::{
     db,
     error::Error,
     handlers::{provider_from_imap_server, refresh_chatgpt_token_if_needed},
+    imap::ImapCommand,
     llm::{init_llm_agent, LocalInference},
-    workers::SharedFetchManager,
+    workers::{queue_initial_fetch, SharedFetchManager},
     ReturningUserImapClientChannelTx,
 };
 
@@ -306,7 +307,12 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
             }
         }
 
-        app.state::<SharedFetchManager>().reset_for_session().await;
+        // Authentication alone only initializes the IMAP sessions. Queue the
+        // same initial DB population used by interactive login before opening
+        // the main UI, otherwise a returning user polls an empty database.
+        let fetch_manager = app.state::<SharedFetchManager>();
+        let imap_cmd_channel_tx = app.state::<UnboundedSender<ImapCommand>>();
+        queue_initial_fetch(&fetch_manager, &imap_cmd_channel_tx, provider.clone()).await?;
 
         let resource_root = app.path().resource_dir()?;
         let initialized_state = config::InitializedState {

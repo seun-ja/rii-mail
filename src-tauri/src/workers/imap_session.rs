@@ -2,8 +2,10 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
+use arc_swap::ArcSwap;
 use async_native_tls::TlsStream;
 use sqlx::SqlitePool;
+use tauri::Manager as _;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot::{self, Sender};
 use tokio::sync::Mutex;
@@ -11,7 +13,7 @@ use tokio::time::{self, MissedTickBehavior};
 use tokio::{net::TcpStream, sync::mpsc::UnboundedReceiver};
 use tracing::Instrument as _;
 
-use crate::config::ImapClientConfig;
+use crate::config::{AppState, ImapClientConfig};
 use crate::db::{MailBox, Provider};
 use crate::email_cache::SharedImapSession;
 use crate::error::{friendly_login_error_message, Error};
@@ -37,6 +39,80 @@ async fn reconnect_imap_session(
     let session = auth::login(username, &password, Some(client)).await?;
 
     Ok(Arc::new(Mutex::new(session)))
+}
+
+fn reconnect_account(
+    app: &tauri::AppHandle,
+) -> Result<(String, auth::AppleKeychainManager), Error> {
+    let state = app.state::<ArcSwap<AppState>>();
+    let current_state = state.load();
+    let initialized = match current_state.as_ref() {
+        AppState::Initialized(initialized) => initialized,
+        AppState::Fresh => {
+            return Err(Error::Other(
+                "Application state is not initialized".to_string(),
+            ));
+        }
+    };
+    let username = initialized
+        .accounts
+        .first()
+        .map(|account| account.email.clone())
+        .ok_or_else(|| Error::Other("No email account is configured".to_string()))?;
+
+    Ok((username, initialized.apple_keychain_manager.clone()))
+}
+
+async fn reconnect_periodic_session(
+    app: &tauri::AppHandle,
+    imap_endpoint: Option<&(String, u16)>,
+) -> Result<SharedImapSession, Error> {
+    let (username, keychain_manager) = reconnect_account(app)?;
+    reconnect_imap_session(&username, &keychain_manager, imap_endpoint).await
+}
+
+async fn refresh_periodic_mailbox(
+    app: &tauri::AppHandle,
+    session: SharedImapSession,
+    pool: &SqlitePool,
+    mailbox: &MailBox,
+    provider: &Provider,
+    cancel_token: tokio_util::sync::CancellationToken,
+    imap_endpoint: Option<&(String, u16)>,
+) -> Result<Option<SharedImapSession>, Error> {
+    let result = crate::email_cache::fetch_latest(
+        app.clone(),
+        session,
+        pool,
+        mailbox,
+        provider,
+        cancel_token.clone(),
+    )
+    .await;
+
+    match result {
+        Err(error) if is_imap_connection_error(&error) => {
+            tracing::warn!(
+                error = %error,
+                mailbox = mailbox.as_ref(),
+                "Periodic refresh lost its IMAP connection; reconnecting"
+            );
+            let new_session = reconnect_periodic_session(app, imap_endpoint).await?;
+            crate::email_cache::fetch_latest(
+                app.clone(),
+                new_session.clone(),
+                pool,
+                mailbox,
+                provider,
+                cancel_token,
+            )
+            .await?;
+
+            Ok(Some(new_session))
+        }
+        Ok(_) => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -202,13 +278,57 @@ pub async fn worker(
                                 continue;
                             };
 
-                            let Some(session_background) = initialized_session_background.as_ref() else {
-                                tracing::warn!("FetchEmails ignored: background IMAP session is not initialized");
+                            let Some(pool_ref) = pool.as_ref() else {
+                                tracing::warn!("FetchEmails ignored: sqlite pool is not initialized");
                                 continue;
                             };
 
-                            let Some(pool_ref) = pool.as_ref() else {
-                                tracing::warn!("FetchEmails ignored: sqlite pool is not initialized");
+                            let inbox_key = format!(
+                                "{}_{}",
+                                provider.as_ref(),
+                                MailBox::Inbox.as_ref()
+                            );
+                            let has_cached_inbox = match crate::db::check_email_db_empty(
+                                pool_ref,
+                                &inbox_key,
+                            )
+                            .await
+                            {
+                                Ok(has_cached_inbox) => has_cached_inbox,
+                                Err(error) => {
+                                    tracing::warn!(
+                                        ?error,
+                                        provider = provider.as_ref(),
+                                        "Could not inspect the cached Inbox; running a full mailbox sync"
+                                    );
+                                    false
+                                }
+                            };
+
+                            if has_cached_inbox {
+                                initial_fetch_completed.insert(provider.clone());
+                                providers.insert(provider.clone());
+                                database_initialized = true;
+
+                                for sender in [
+                                    &inbox_initial_email_populated_tx,
+                                    &sent_initial_email_populated_tx,
+                                    &spam_initial_email_populated_tx,
+                                ] {
+                                    if let Some(tx) = sender.lock().await.take() {
+                                        let _ = tx.send(());
+                                    }
+                                }
+
+                                tracing::info!(
+                                    provider = provider.as_ref(),
+                                    "Cached Inbox is ready; periodic incremental refresh enabled"
+                                );
+                                continue;
+                            }
+
+                            let Some(session_background) = initialized_session_background.as_ref() else {
+                                tracing::warn!("FetchEmails ignored: background IMAP session is not initialized");
                                 continue;
                             };
 
@@ -229,7 +349,13 @@ pub async fn worker(
                             .await
                             {
                                 Ok(_) => {
-                                    tracing::info!("Initial sync completed");
+                                    initial_fetch_completed.insert(provider.clone());
+                                    providers.insert(provider.clone());
+                                    database_initialized = true;
+                                    tracing::info!(
+                                        provider = provider.as_ref(),
+                                        "Initial sync completed and periodic refresh enabled"
+                                    );
                                 }
                                 Err(Error::ThreadCancel) => {
                                     tracing::info!("Initial sync cancelled");
@@ -267,6 +393,61 @@ pub async fn worker(
 
                             *LOGGED_IN.lock().await = false;
                             let _ = logout_result_tx.send(());
+                        }
+                        ImapCommand::FetchAttachment {
+                            mail_box,
+                            uid,
+                            part_id,
+                            response_channel,
+                            username,
+                            keychain_manager,
+                            cancel_token,
+                        } => {
+                            let request = async {
+                                let session = initialized_session.clone().ok_or_else(|| {
+                                    Error::Other(
+                                        "FetchAttachment failed: IMAP session is not initialized"
+                                            .to_string(),
+                                    )
+                                })?;
+                                match crate::email_cache::fetch_attachment_on_server(
+                                    session,
+                                    &mail_box,
+                                    uid,
+                                    &part_id,
+                                )
+                                .await
+                                {
+                                    Err(error) if is_imap_connection_error(&error) => {
+                                        let new_session = reconnect_imap_session(
+                                            &username,
+                                            &keychain_manager,
+                                            imap_endpoint.as_ref(),
+                                        )
+                                        .await?;
+                                        initialized_session = Some(new_session.clone());
+                                        crate::email_cache::fetch_attachment_on_server(
+                                            new_session,
+                                            &mail_box,
+                                            uid,
+                                            &part_id,
+                                        )
+                                        .await
+                                    }
+                                    result => result,
+                                }
+                            };
+                            let result = tokio::select! {
+                                result = time::timeout(Duration::from_secs(30), request) => result
+                                    .map_err(|_| "Attachment request timed out".to_string())
+                                    .and_then(|result| result.map_err(|error| error.to_string())),
+                                _ = cancel_token.cancelled() => {
+                                    Err("Attachment request cancelled".to_string())
+                                }
+                            };
+                            if let Err(undelivered) = response_channel.send(result) {
+                                tracing::error!(?undelivered, "Failed sending attachment result");
+                            }
                         }
                         ImapCommand::SetEmailRead {
                             mail_box,
@@ -434,13 +615,8 @@ pub async fn worker(
                     }
                 }
                 _ =  ticker.tick(), if database_initialized && !logging_out => {
-                    let Some(session) = initialized_session.as_ref() else {
+                    let Some(mut session) = initialized_session.clone() else {
                         tracing::warn!("FetchEmails ignored: IMAP session is not initialized");
-                        continue;
-                    };
-
-                    let Some(session_background) = initialized_session_background.as_ref() else {
-                        tracing::warn!("FetchEmails ignored: background IMAP session is not initialized");
                         continue;
                     };
 
@@ -454,50 +630,89 @@ pub async fn worker(
                     };
 
                     for provider in &providers {
-                        let provider_for_inbox = provider.clone();
-                        let provider_for_sent = provider.clone();
-                        let provider_for_spam = provider.clone();
-
-                        let (inbox_result, sent_result) = tokio::join!(
-                            crate::email_cache::fetch_latest(
-                                app.clone(),
-                                session.clone(),
-                                pool_ref,
-                                &MailBox::Inbox,
-                                &provider_for_inbox,
-                                refresh_token.clone()
-                            ),
-                            crate::email_cache::fetch_latest(
-                                app.clone(),
-                                session_background.clone(),
-                                pool_ref,
-                                &MailBox::Sent,
-                                &provider_for_sent,
-                                refresh_token.clone()
-                            )
-                        );
-
-                        if let Err(err) = inbox_result {
-                            tracing::error!(error = ?err, "Failed inbox periodic refresh");
+                        // Inbox polling is the user-facing path and must not depend on
+                        // the optional second connection used to warm Sent and Spam.
+                        match refresh_periodic_mailbox(
+                            &app,
+                            session.clone(),
+                            pool_ref,
+                            &MailBox::Inbox,
+                            provider,
+                            refresh_token.clone(),
+                            imap_endpoint.as_ref(),
+                        )
+                        .await
+                        {
+                            Ok(Some(new_session)) => {
+                                session = new_session.clone();
+                                initialized_session = Some(new_session);
+                            }
+                            Ok(None) => {}
+                            Err(err) => {
+                                tracing::error!(error = ?err, "Failed inbox periodic refresh");
+                            }
                         }
 
-                        if let Err(err) = sent_result {
-                            tracing::error!(error = ?err, "Failed sent periodic refresh");
+                        let session_background = match initialized_session_background.clone() {
+                            Some(session) => session,
+                            None => match reconnect_periodic_session(&app, imap_endpoint.as_ref()).await {
+                                Ok(session) => {
+                                    initialized_session_background = Some(session.clone());
+                                    session
+                                }
+                                Err(err) => {
+                                    tracing::warn!(
+                                        error = ?err,
+                                        "Background IMAP connection is unavailable; Inbox polling remains active"
+                                    );
+                                    continue;
+                                }
+                            },
+                        };
+
+                        match refresh_periodic_mailbox(
+                            &app,
+                            session_background.clone(),
+                            pool_ref,
+                            &MailBox::Sent,
+                            provider,
+                            refresh_token.clone(),
+                            imap_endpoint.as_ref(),
+                        )
+                        .await
+                        {
+                            Ok(Some(new_session)) => {
+                                initialized_session_background = Some(new_session);
+                            }
+                            Ok(None) => {}
+                            Err(err) => {
+                                tracing::error!(error = ?err, "Failed sent periodic refresh");
+                            }
                         }
 
                         // Reuse the Sent connection after Inbox refresh finishes so messages
                         // moved by the Inbox spam rater are visible in the local Spam cache.
-                        if let Err(err) = crate::email_cache::fetch_latest(
-                            app.clone(),
-                            session_background.clone(),
+                        let spam_session = initialized_session_background
+                            .clone()
+                            .unwrap_or(session_background);
+                        match refresh_periodic_mailbox(
+                            &app,
+                            spam_session,
                             pool_ref,
                             &MailBox::Spam,
-                            &provider_for_spam,
+                            provider,
                             refresh_token.clone(),
+                            imap_endpoint.as_ref(),
                         )
                         .await
                         {
-                            tracing::error!(error = ?err, "Failed spam periodic refresh");
+                            Ok(Some(new_session)) => {
+                                initialized_session_background = Some(new_session);
+                            }
+                            Ok(None) => {}
+                            Err(err) => {
+                                tracing::error!(error = ?err, "Failed spam periodic refresh");
+                            }
                         }
                     }
                 }
