@@ -84,6 +84,7 @@ pub struct Config {
         deserialize_with = "deserialize_optional_chatgpt_config"
     )]
     pub chatgpt: Option<ChatGptConfig>,
+    pub auto_refresh_interval: u8,
 }
 
 fn deserialize_optional_chatgpt_config<'de, D>(
@@ -234,6 +235,7 @@ pub struct InitializedState {
     pub smtp_transport_client: SmtpTransport,
     pub llm_agent: tokio::sync::RwLock<Option<Agent<Email>>>,
     pub accounts: Vec<Account>,
+    pub auto_refresh_interval: u8,
 }
 
 #[tracing::instrument(

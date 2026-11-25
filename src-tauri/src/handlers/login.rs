@@ -110,6 +110,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
             None,
             vec![ToolWrapper::new(SearchEmailsTool)],
         )?),
+        auto_refresh_interval: config.auto_refresh_interval,
     };
 
     let app_state = app.state::<ArcSwap<AppState>>();
@@ -162,6 +163,7 @@ async fn handle_initialization(
             None,
             vec![ToolWrapper::new(SearchEmailsTool)],
         )?),
+        auto_refresh_interval: config.auto_refresh_interval,
     };
 
     Ok((initialized_state, provider))
