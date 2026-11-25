@@ -7,9 +7,9 @@ use crate::{db::Provider, error::Error, imap::ImapCommand};
 
 mod imap_session;
 
-#[cfg(test)]
-pub(crate) use imap_session::is_imap_connection_error;
 pub use imap_session::worker;
+#[cfg(test)]
+pub(crate) use imap_session::{cleanup_logout_resources, is_imap_connection_error};
 
 #[derive(Default)]
 pub struct FetchManager {

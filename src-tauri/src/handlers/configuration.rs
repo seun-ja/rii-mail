@@ -233,6 +233,19 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
 
     if !try_exists(&config_path).await? {
         tracing::warn!(path = %config_path.display(), "Configuration not found; setup is required");
+
+        // A prior fire-and-forget logout may have been interrupted by process
+        // shutdown. With no config there is no account that may own this cache,
+        // so startup can safely finish removing it before setup begins.
+        let stale_data_path = data_dir.join("data");
+        if let Err(error) = db::cleanup(stale_data_path.clone()).await {
+            tracing::warn!(
+                ?error,
+                path = %stale_data_path.display(),
+                "Failed to remove stale email data during startup"
+            );
+        }
+
         let status = InitStatus::Setup;
         *startup_status = Some(status.clone());
         return Ok(status);

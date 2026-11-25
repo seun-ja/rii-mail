@@ -107,8 +107,6 @@ pub async fn run() {
 
     let (imap_cmd_channel_tx, imap_cmd_channel_rx) = mpsc::unbounded_channel::<ImapCommand>();
 
-    let (logout_state_tx, logout_state_rx) = mpsc::unbounded_channel::<()>();
-
     let (inbox_initial_email_populated_tx, inbox_initial_email_populated_rx) =
         oneshot::channel::<()>();
 
@@ -127,7 +125,6 @@ pub async fn run() {
             imap_client_returning_user_channel_tx,
         ))
         .manage(imap_cmd_channel_tx)
-        .manage(Mutex::new(logout_state_rx))
         .manage(FETCH_MANAGER.clone())
         .manage(INBOX_POPULATE_UPDATE.clone())
         .manage(SENT_POPULATE_UPDATE.clone())
@@ -158,7 +155,6 @@ pub async fn run() {
                     imap_client_channel_rx,
                     imap_client_returning_user_channel_rx,
                     imap_cmd_channel_rx,
-                    logout_state_tx,
                     Arc::new(Mutex::new(Some(inbox_initial_email_populated_tx))),
                     Arc::new(Mutex::new(Some(sent_initial_email_populated_tx))),
                     Arc::new(Mutex::new(Some(spam_initial_email_populated_tx)))
