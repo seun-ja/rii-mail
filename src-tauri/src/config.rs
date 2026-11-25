@@ -84,7 +84,12 @@ pub struct Config {
         deserialize_with = "deserialize_optional_chatgpt_config"
     )]
     pub chatgpt: Option<ChatGptConfig>,
+    #[serde(default = "default_auto_refresh_interval")]
     pub auto_refresh_interval: u8,
+}
+
+fn default_auto_refresh_interval() -> u8 {
+    2
 }
 
 fn deserialize_optional_chatgpt_config<'de, D>(
@@ -289,6 +294,7 @@ mod tests {
 
         assert!(config.signature.is_none());
         assert!(config.signature_html.is_none());
+        assert_eq!(config.auto_refresh_interval, 2);
     }
 
     #[test]
