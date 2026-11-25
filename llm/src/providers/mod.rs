@@ -6,6 +6,7 @@ use schemars::JsonSchema;
 use crate::{error::Error, tools::ToolWrapper};
 
 mod chatgpt;
+mod gemini;
 mod local_inference;
 mod ollama;
 mod openai;
@@ -29,6 +30,8 @@ pub enum Providers {
     OpenAI,
     /// ChatGPT provider: Responses API inference using a user's ChatGPT plan.
     ChatGPT,
+    /// Gemini provider: Google Gemini API inference using an API key.
+    Gemini,
     /// Custom SageMaker AI provider: cloud-based AI model inference using SageMaker.
     ///
     /// The following environment variables must be set:
@@ -45,6 +48,7 @@ impl Display for Providers {
             Providers::Ollama => write!(f, "ollama"),
             Providers::OpenAI => write!(f, "openai"),
             Providers::ChatGPT => write!(f, "chatgpt"),
+            Providers::Gemini => write!(f, "gemini"),
             Providers::CustomSageMakerAI => write!(f, "sagemaker"),
             Providers::LocalInference => write!(f, "local"),
         }
@@ -57,10 +61,11 @@ impl From<&str> for Providers {
             "ollama" => Providers::Ollama,
             "openai" => Providers::OpenAI,
             "chatgpt" => Providers::ChatGPT,
+            "gemini" => Providers::Gemini,
             "sagemaker" => Providers::CustomSageMakerAI,
             "local" => Providers::LocalInference,
             _ => panic!(
-                "unknown provider: {}. Currently supported providers are: ollama, openai, chatgpt, sagemaker, local",
+                "unknown provider: {}. Currently supported providers are: ollama, openai, chatgpt, gemini, sagemaker, local",
                 value
             ),
         }
@@ -118,6 +123,21 @@ impl Providers {
                     access_token,
                     model,
                     Some(&system_message),
+                    tools,
+                )?)
+            }
+            Providers::Gemini => {
+                let api_key = api_key.ok_or_else(|| {
+                    Error::AuthenticationError(
+                        "api_key is required for Gemini provider".to_string(),
+                    )
+                })?;
+                Box::new(gemini::Gemini::new(
+                    api_key,
+                    model,
+                    Some(&system_message),
+                    temperature,
+                    max_tokens,
                     tools,
                 )?)
             }
@@ -188,6 +208,21 @@ impl Providers {
                     access_token,
                     model,
                     Some(&system_message),
+                    tools,
+                )?))
+            }
+            Providers::Gemini => {
+                let api_key = api_key.ok_or_else(|| {
+                    Error::AuthenticationError(
+                        "api_key is required for Gemini provider".to_string(),
+                    )
+                })?;
+                Ok(Box::new(gemini::Gemini::new(
+                    api_key,
+                    model,
+                    Some(&system_message),
+                    temperature,
+                    max_tokens,
                     tools,
                 )?))
             }

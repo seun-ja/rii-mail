@@ -15,14 +15,23 @@ export function initLlmSetupPage({
 } = {}) {
   const ollamaButton = doc.querySelector("#connect-ollama-button");
   const chatgptButton = doc.querySelector("#connect-chatgpt-button");
+  const geminiButton = doc.querySelector("#connect-gemini-button");
+  const geminiApiKeyInput = doc.querySelector("#gemini-api-key");
   const skipButton = doc.querySelector("#skip-llm-button");
   const statusEl = doc.querySelector("#llm-setup-status");
 
-  if (!ollamaButton || !chatgptButton || !skipButton || !statusEl) {
+  if (
+    !ollamaButton ||
+    !chatgptButton ||
+    !geminiButton ||
+    !geminiApiKeyInput ||
+    !skipButton ||
+    !statusEl
+  ) {
     return { ready: false };
   }
 
-  const buttons = [ollamaButton, chatgptButton, skipButton];
+  const buttons = [ollamaButton, chatgptButton, geminiButton, skipButton];
 
   if (!invokeFn) {
     setBusy(
@@ -36,7 +45,7 @@ export function initLlmSetupPage({
 
   let isBusy = false;
 
-  const runAction = async (command, pendingMessage) => {
+  const runAction = async (command, pendingMessage, args) => {
     if (isBusy) {
       return;
     }
@@ -46,7 +55,7 @@ export function initLlmSetupPage({
 
     try {
       if (command) {
-        await invokeFn(command);
+        await invokeFn(command, args);
         statusEl.textContent = "Connected. Opening RiiEmail...";
       }
 
@@ -71,6 +80,15 @@ export function initLlmSetupPage({
       "Opening your system browser. Complete sign-in there; RiiEmail will wait here...",
     ),
   );
+  geminiButton.addEventListener("click", () => {
+    const apiKey = geminiApiKeyInput.value.trim();
+    if (!apiKey) {
+      statusEl.textContent = "Enter a Gemini API key from Google AI Studio.";
+      geminiApiKeyInput.focus();
+      return;
+    }
+    runAction("connect_gemini", "Checking your Gemini API key...", { apiKey });
+  });
   skipButton.addEventListener("click", () =>
     runAction(null, "Opening RiiEmail..."),
   );

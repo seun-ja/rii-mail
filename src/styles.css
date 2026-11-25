@@ -2071,6 +2071,57 @@ button.provider-item.active:hover {
     height: 26px;
 }
 
+.llm-option-icon-gemini {
+    border-color: #d8e3ff;
+    background: linear-gradient(145deg, #eef3ff, #f7edff);
+}
+
+.llm-option-logo-gemini {
+    background: linear-gradient(135deg, #1769e0, #8e55cc, #d45593);
+    background-clip: text;
+    color: transparent;
+    font-size: 1.7rem;
+    line-height: 1;
+}
+
+.llm-api-key-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    color: #52657b;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.llm-api-key-field input {
+    width: 100%;
+    min-height: 40px;
+    box-sizing: border-box;
+    padding: 9px 11px;
+    border: 1.5px solid #d7e2ed;
+    border-radius: 10px;
+    background: #f9fbfd;
+    color: #17263a;
+    font: inherit;
+    font-weight: 500;
+}
+
+.llm-api-key-field input:focus {
+    border-color: #247fbd;
+    outline: 3px solid rgba(29, 117, 190, 0.14);
+}
+
+.llm-key-note {
+    margin: -5px 0 0;
+    color: #718096;
+    font-size: 0.72rem;
+}
+
+.llm-key-note a {
+    color: #176ba7;
+    font-weight: 700;
+}
+
 .llm-browser-note {
     flex: 1;
     margin: 0;

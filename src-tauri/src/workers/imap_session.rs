@@ -23,6 +23,11 @@ use crate::error::{friendly_login_error_message, Error};
 use crate::imap::{init_imap_client, ImapCommand, RefreshSummary};
 use crate::{auth, FETCH_MANAGER, LOGGED_IN, LOGGING_IN};
 
+fn refresh_ticker(interval_seconds: u8) -> time::Interval {
+    let period = Duration::from_secs(u64::from(interval_seconds.max(1)));
+    time::interval_at(time::Instant::now() + period, period)
+}
+
 pub(crate) fn is_imap_connection_error(error: &Error) -> bool {
     matches!(
         error,
@@ -153,14 +158,9 @@ pub async fn worker(
 
         let mut logging_out = false;
 
-        let state = app.state::<ArcSwap<AppState>>();
-        let current_state = state.load();
-        let initialized = current_state.state();
-
-        // 1. Create an interval timer (e.g., every 3 seconds)
-        let mut ticker = time::interval(Duration::from_secs(initialized.auto_refresh_interval as u64));
-
-        // Optional: Prevents bursts of ticks if your other code runs slow
+        // The worker starts before AppState is initialized. Login configuration
+        // replaces this placeholder ticker before periodic refresh is enabled.
+        let mut ticker = refresh_ticker(1);
         ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
         while imap_client_channel_open || imap_cmd_channel_open || logged_in_finalised {
@@ -171,6 +171,8 @@ pub async fn worker(
                         tracing::warn!("IMAP config channel closed");
                         continue;
                     };
+                    ticker = refresh_ticker(config.auto_refresh_interval);
+                    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
                     let background_config = ImapClientConfig {
                         username: config.username.clone(),
@@ -178,6 +180,7 @@ pub async fn worker(
                         imap_server_url: config.imap_server_url.clone(),
                         imap_port: config.imap_port,
                         sqlite_pool: config.sqlite_pool.clone(),
+                        auto_refresh_interval: config.auto_refresh_interval,
                         login_result_tx: None,
                     };
                     imap_endpoint = Some((config.imap_server_url.clone(), config.imap_port));
@@ -218,6 +221,8 @@ pub async fn worker(
                         tracing::warn!("Returning user IMAP config channel closed");
                         continue;
                     };
+                    ticker = refresh_ticker(config.auto_refresh_interval);
+                    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
                     let background_config = ImapClientConfig {
                         username: config.username.clone(),
@@ -225,6 +230,7 @@ pub async fn worker(
                         imap_server_url: config.imap_server_url.clone(),
                         imap_port: config.imap_port,
                         sqlite_pool: config.sqlite_pool.clone(),
+                        auto_refresh_interval: config.auto_refresh_interval,
                         login_result_tx: None,
                     };
                     imap_endpoint = Some((config.imap_server_url.clone(), config.imap_port));

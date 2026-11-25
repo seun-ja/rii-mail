@@ -123,6 +123,14 @@ where
 }
 
 impl Config {
+    pub fn llm_credential(&self) -> &str {
+        if self.llm_provider.as_deref() == Some("chatgpt") {
+            self.access_token.as_deref().unwrap_or_default()
+        } else {
+            &self.api_key
+        }
+    }
+
     #[tracing::instrument(name = "config.load", skip_all, err)]
     pub async fn init(path: &PathBuf) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let config_json = fs::read_to_string(path).await?;
@@ -272,6 +280,7 @@ pub struct ImapClientConfig {
     pub imap_server_url: String,
     pub imap_port: u16,
     pub sqlite_pool: SqlitePool,
+    pub auto_refresh_interval: u8,
     pub login_result_tx: Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
 }
 

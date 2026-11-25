@@ -9,6 +9,10 @@ function createElement() {
   return {
     disabled: false,
     textContent: "",
+    value: "",
+    focus() {
+      this.focused = true;
+    },
     setAttribute(name, value) {
       this[`attr_${name}`] = value;
     },
@@ -27,11 +31,15 @@ function createElement() {
 function createPage() {
   const ollamaButton = createElement();
   const chatgptButton = createElement();
+  const geminiButton = createElement();
+  const geminiApiKeyInput = createElement();
   const skipButton = createElement();
   const statusEl = createElement();
   const elements = {
     "#connect-ollama-button": ollamaButton,
     "#connect-chatgpt-button": chatgptButton,
+    "#connect-gemini-button": geminiButton,
+    "#gemini-api-key": geminiApiKeyInput,
     "#skip-llm-button": skipButton,
     "#llm-setup-status": statusEl,
   };
@@ -39,6 +47,8 @@ function createPage() {
   return {
     ollamaButton,
     chatgptButton,
+    geminiButton,
+    geminiApiKeyInput,
     skipButton,
     statusEl,
     doc: {
@@ -101,6 +111,43 @@ test("ChatGPT connection explains browser authorization while awaiting the comma
   assert.deepEqual(calls, ["connect_chatgpt", "open_main_window"]);
 });
 
+test("Gemini connection validates and sends the trimmed API key", async () => {
+  const page = createPage();
+  const calls = [];
+  page.geminiApiKeyInput.value = "  test-gemini-key  ";
+
+  initLlmSetupPage({
+    doc: page.doc,
+    invokeFn: async (command, args) => {
+      calls.push([command, args]);
+    },
+  });
+
+  await page.geminiButton.trigger("click");
+
+  assert.deepEqual(calls, [
+    ["connect_gemini", { apiKey: "test-gemini-key" }],
+    ["open_main_window", undefined],
+  ]);
+  assert.equal(page.statusEl.textContent, "Connected. Opening RiiEmail...");
+});
+
+test("Gemini connection requires an API key", async () => {
+  const page = createPage();
+  const calls = [];
+
+  initLlmSetupPage({
+    doc: page.doc,
+    invokeFn: async (command) => calls.push(command),
+  });
+
+  await page.geminiButton.trigger("click");
+
+  assert.deepEqual(calls, []);
+  assert.match(page.statusEl.textContent, /enter a Gemini API key/i);
+  assert.equal(page.geminiApiKeyInput.focused, true);
+});
+
 test("Skip opens the main window without connecting a provider", async () => {
   const page = createPage();
   const calls = [];
@@ -137,5 +184,6 @@ test("failed connections show an accessible error and restore the actions", asyn
   assert.equal(page.statusEl["attr_aria-busy"], "false");
   assert.equal(page.ollamaButton.disabled, false);
   assert.equal(page.chatgptButton.disabled, false);
+  assert.equal(page.geminiButton.disabled, false);
   assert.equal(page.skipButton.disabled, false);
 });
