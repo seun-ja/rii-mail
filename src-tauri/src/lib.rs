@@ -21,7 +21,7 @@ use crate::workers::{worker, FetchManager};
 use crate::{
     config::{AppState, StartupStatusCache},
     handlers::{
-        check_app_status, config_setup, connect_chatgpt, connect_ollama,
+        check_app_status, config_setup, connect_chatgpt, connect_gemini, connect_ollama,
         enable_main_window_controls, fetch_emails, finish_startup, get_email_attachment,
         get_signature, login, logout_with_state, open_main_window, rater, set_signature,
     },
@@ -295,6 +295,7 @@ pub async fn run() {
             is_llm_enabled,
             config_setup,
             connect_chatgpt,
+            connect_gemini,
             connect_ollama,
             fetch_emails,
             finish_startup,

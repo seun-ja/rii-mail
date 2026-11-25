@@ -287,6 +287,7 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
             username: username.clone(),
             password,
             sqlite_pool: sqlite_pool.clone(),
+            auto_refresh_interval: config.auto_refresh_interval,
             login_result_tx: Some(login_result_tx),
         };
 
@@ -331,10 +332,13 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
                 if chatgpt_refresh_failed {
                     None
                 } else {
-                    config.llm_provider.map(|provider| provider.as_str().into())
+                    config
+                        .llm_provider
+                        .as_ref()
+                        .map(|provider| provider.as_str().into())
                 },
                 &config.default_model,
-                config.access_token.as_deref().unwrap_or(&config.api_key),
+                config.llm_credential(),
                 None,
                 None,
                 vec![ToolWrapper::new(SearchEmailsTool)],

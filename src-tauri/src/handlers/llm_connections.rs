@@ -35,6 +35,7 @@ const API_RESOURCE: &str = "https://api.openai.com/v1";
 const CHATGPT_SCOPES: &str =
     "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct";
 const OAUTH_TIMEOUT: Duration = Duration::from_secs(300);
+const GEMINI_MODELS_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -126,6 +127,47 @@ pub async fn connect_ollama(app: tauri::AppHandle) -> Result<LlmConnection, Erro
 
     Ok(LlmConnection {
         provider: "ollama".to_string(),
+        model,
+        account_email: None,
+    })
+}
+
+#[tauri::command]
+#[tracing::instrument(name = "command.llm.connect_gemini", skip_all, err)]
+pub async fn connect_gemini(
+    app: tauri::AppHandle,
+    api_key: String,
+) -> Result<LlmConnection, Error> {
+    let api_key = api_key.trim();
+    if api_key.is_empty() {
+        return Err(Error::Authentication(
+            "Enter a Gemini API key from Google AI Studio".to_string(),
+        ));
+    }
+
+    let model = validate_gemini_key(api_key).await?;
+    let agent = init_llm_agent(
+        Some(Providers::Gemini),
+        &model,
+        api_key,
+        None,
+        None,
+        Vec::<ToolWrapper<SearchEmailsTool>>::new(),
+    )?;
+    let config_path = config_path(&app)?;
+    let saved_api_key = api_key.to_string();
+    let saved_model = model.clone();
+    Config::update(&config_path, move |config| {
+        config.llm_provider = Some("gemini".to_string());
+        config.default_model = saved_model;
+        config.api_key = saved_api_key;
+    })
+    .await
+    .map_err(config_error)?;
+    replace_llm_agent(&app, agent).await;
+
+    Ok(LlmConnection {
+        provider: "gemini".to_string(),
         model,
         account_email: None,
     })
@@ -289,6 +331,82 @@ pub async fn refresh_chatgpt_token_if_needed(
     .map_err(config_error)?;
     *config = updated;
     Ok(())
+}
+
+async fn validate_gemini_key(api_key: &str) -> Result<String, Error> {
+    let response = reqwest::Client::new()
+        .get(format!("{GEMINI_MODELS_URL}?pageSize=1000"))
+        .header("x-goog-api-key", api_key)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|error| Error::Other(format!("Could not reach the Gemini API: {error}")))?;
+    let status = response.status();
+    let body: Value = response
+        .json()
+        .await
+        .map_err(|error| Error::Other(format!("Invalid response from the Gemini API: {error}")))?;
+
+    if !status.is_success() {
+        let message = body
+            .pointer("/error/message")
+            .and_then(Value::as_str)
+            .unwrap_or("The Gemini API rejected this key");
+        return Err(Error::Authentication(format!(
+            "Gemini API key validation returned HTTP {status}: {message}"
+        )));
+    }
+
+    select_gemini_model(&body).ok_or_else(|| {
+        Error::Other("No compatible Gemini Flash model is available for this API key".to_string())
+    })
+}
+
+fn select_gemini_model(body: &Value) -> Option<String> {
+    let mut models = body
+        .get("models")?
+        .as_array()?
+        .iter()
+        .filter(|model| {
+            model
+                .get("supportedGenerationMethods")
+                .and_then(Value::as_array)
+                .is_some_and(|methods| methods.iter().any(|method| method == "generateContent"))
+        })
+        .filter_map(|model| model.get("name").and_then(Value::as_str))
+        .filter_map(|name| name.strip_prefix("models/"))
+        .filter(|name| {
+            name.contains("gemini")
+                && name.contains("flash")
+                && !["image", "audio", "tts", "live", "embedding", "vision"]
+                    .iter()
+                    .any(|kind| name.contains(kind))
+        })
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+
+    models.sort_by(|left, right| {
+        gemini_model_score(right)
+            .cmp(&gemini_model_score(left))
+            .then_with(|| right.cmp(left))
+    });
+    models.into_iter().next()
+}
+
+fn gemini_model_score(model: &str) -> u8 {
+    if model == "gemini-flash-latest" {
+        4
+    } else if !model.contains("preview")
+        && !model.contains("experimental")
+        && !model.contains("exp")
+        && !model.contains("lite")
+    {
+        3
+    } else if !model.contains("lite") {
+        2
+    } else {
+        1
+    }
 }
 
 fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, Error> {
@@ -655,7 +773,9 @@ fn config_error(error: Box<dyn std::error::Error + Send + Sync>) -> Error {
 
 #[cfg(test)]
 mod tests {
-    use super::{split_scopes, CHATGPT_SCOPES};
+    use serde_json::json;
+
+    use super::{select_gemini_model, split_scopes, CHATGPT_SCOPES};
 
     #[test]
     fn requested_scopes_include_direct_plan_usage_and_refresh() {
@@ -664,5 +784,49 @@ mod tests {
             .iter()
             .any(|scope| scope == "chatgpt.tokens.use.direct"));
         assert!(scopes.iter().any(|scope| scope == "offline_access"));
+    }
+
+    #[test]
+    fn selects_latest_stable_text_flash_model() {
+        let models = json!({
+            "models": [
+                {
+                    "name": "models/text-embedding-004",
+                    "supportedGenerationMethods": ["embedContent"]
+                },
+                {
+                    "name": "models/gemini-3-flash-preview",
+                    "supportedGenerationMethods": ["generateContent"]
+                },
+                {
+                    "name": "models/gemini-2.5-flash",
+                    "supportedGenerationMethods": ["generateContent"]
+                },
+                {
+                    "name": "models/gemini-2.5-flash-image",
+                    "supportedGenerationMethods": ["generateContent"]
+                }
+            ]
+        });
+
+        assert_eq!(
+            select_gemini_model(&models).as_deref(),
+            Some("gemini-2.5-flash")
+        );
+    }
+
+    #[test]
+    fn selects_preview_flash_when_no_stable_text_model_exists() {
+        let models = json!({
+            "models": [{
+                "name": "models/gemini-3-flash-preview",
+                "supportedGenerationMethods": ["countTokens", "generateContent"]
+            }]
+        });
+
+        assert_eq!(
+            select_gemini_model(&models).as_deref(),
+            Some("gemini-3-flash-preview")
+        );
     }
 }

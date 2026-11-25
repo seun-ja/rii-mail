@@ -23,7 +23,8 @@ pub use events::{
 use lettre::{message::MessageBuilder, Address};
 pub use llm::{email_generator, is_llm_enabled, rater};
 pub use llm_connections::{
-    connect_chatgpt, connect_ollama, ensure_chatgpt_agent_fresh, refresh_chatgpt_token_if_needed,
+    connect_chatgpt, connect_gemini, connect_ollama, ensure_chatgpt_agent_fresh,
+    refresh_chatgpt_token_if_needed,
 };
 pub use login::login;
 pub use menu::logout_with_state;

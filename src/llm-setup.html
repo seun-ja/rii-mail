@@ -84,6 +84,46 @@
                             Continue with ChatGPT
                         </button>
                     </section>
+
+                    <section class="llm-option" aria-labelledby="gemini-title">
+                        <div class="llm-option-heading">
+                            <span
+                                class="llm-option-icon llm-option-icon-gemini"
+                                aria-hidden="true"
+                            >
+                                <span class="llm-option-logo-gemini">✦</span>
+                            </span>
+                            <div>
+                                <h2 id="gemini-title">Gemini</h2>
+                                <p>Use your Google AI Studio API key.</p>
+                            </div>
+                        </div>
+                        <label class="llm-api-key-field" for="gemini-api-key">
+                            <span>Gemini API key</span>
+                            <input
+                                id="gemini-api-key"
+                                type="password"
+                                autocomplete="off"
+                                spellcheck="false"
+                                placeholder="Paste API key"
+                            />
+                        </label>
+                        <p class="llm-key-note">
+                            Create a key in
+                            <a
+                                href="https://aistudio.google.com/app/apikey"
+                                target="_blank"
+                                rel="noreferrer"
+                            >Google AI Studio</a>.
+                        </p>
+                        <button
+                            id="connect-gemini-button"
+                            class="llm-connect-button"
+                            type="button"
+                        >
+                            Connect Gemini
+                        </button>
+                    </section>
                 </div>
 
                 <div
@@ -107,7 +147,7 @@
                             stroke-linecap="round"
                         />
                     </svg>
-                    OAuth credentials stay in the desktop app, not browser storage.
+                    AI credentials stay in the desktop app, not browser storage.
                 </p>
             </div>
         </main>

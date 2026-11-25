@@ -66,6 +66,7 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
         imap_server_url: config.imap_server_url.clone(),
         imap_port: config.imap_port,
         sqlite_pool: initialized_state.sqlite_pool.clone(),
+        auto_refresh_interval: config.auto_refresh_interval,
         login_result_tx: Some(login_result_tx),
     };
     tracing::info!("Sending IMAP client config to worker for authentication");
@@ -103,9 +104,12 @@ pub async fn login(app: tauri::AppHandle, username: String, password: String) ->
             provider: provider_from_imap_server(&config.imap_server_url),
         }],
         llm_agent: tokio::sync::RwLock::new(init_llm_agent(
-            config.llm_provider.map(|provider| provider.as_str().into()),
+            config
+                .llm_provider
+                .as_ref()
+                .map(|provider| provider.as_str().into()),
             &config.default_model,
-            config.access_token.as_deref().unwrap_or(&config.api_key),
+            config.llm_credential(),
             None,
             None,
             vec![ToolWrapper::new(SearchEmailsTool)],
@@ -156,9 +160,12 @@ async fn handle_initialization(
             provider: provider_from_imap_server(&config.imap_server_url),
         }],
         llm_agent: tokio::sync::RwLock::new(init_llm_agent(
-            config.llm_provider.map(|provider| provider.as_str().into()),
+            config
+                .llm_provider
+                .as_ref()
+                .map(|provider| provider.as_str().into()),
             &config.default_model,
-            config.access_token.as_deref().unwrap_or(&config.api_key),
+            config.llm_credential(),
             None,
             None,
             vec![ToolWrapper::new(SearchEmailsTool)],
