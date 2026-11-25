@@ -1,9 +1,35 @@
 use crate::error::{friendly_login_error_message, Error};
 use crate::{
-    db::Provider,
+    db::{init_db, Provider},
     imap::ImapCommand,
-    workers::{is_imap_connection_error, queue_initial_fetch, FetchManager},
+    workers::{
+        cleanup_logout_resources, is_imap_connection_error, queue_initial_fetch, FetchManager,
+    },
 };
+use std::time::{SystemTime, UNIX_EPOCH};
+
+fn unique_test_dir(prefix: &str) -> std::path::PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock should be monotonic for tests")
+        .as_nanos();
+    std::env::temp_dir().join(format!("riimail-{prefix}-{nanos}"))
+}
+
+#[tokio::test]
+async fn logout_cleanup_closes_pool_and_removes_cached_data() {
+    let app_dir = unique_test_dir("logout-cleanup");
+    let data_path = app_dir.join("data");
+    let pool = init_db(&app_dir, "emails.db")
+        .await
+        .expect("database should initialize");
+    assert!(data_path.exists());
+
+    cleanup_logout_resources(Some(pool), Some(data_path.clone()), None, None).await;
+
+    assert!(!data_path.exists());
+    let _ = std::fs::remove_dir_all(app_dir);
+}
 
 #[tokio::test]
 async fn starting_a_session_replaces_cancelled_fetch_tokens() {

@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -6,15 +7,15 @@ use arc_swap::ArcSwap;
 use async_native_tls::TlsStream;
 use sqlx::SqlitePool;
 use tauri::Manager as _;
-use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot::Sender;
 use tokio::sync::Mutex;
+use tokio::task::JoinHandle;
 use tokio::time::{self, MissedTickBehavior};
 use tokio::{net::TcpStream, sync::mpsc::UnboundedReceiver};
 use tracing::Instrument as _;
 
 use crate::config::{AppState, ImapClientConfig};
-use crate::db::{check_email_db_empty, set_email_read, MailBox, Provider};
+use crate::db::{self, check_email_db_empty, set_email_read, MailBox, Provider};
 use crate::email_cache::{
     fetch_attachment_on_server, fetch_emails, fetch_latest, set_email_read_on_server,
     SharedImapSession,
@@ -22,6 +23,83 @@ use crate::email_cache::{
 use crate::error::{friendly_login_error_message, Error};
 use crate::imap::{init_imap_client, ImapCommand, RefreshSummary};
 use crate::{auth, FETCH_MANAGER, LOGGED_IN, LOGGING_IN};
+
+const RESOURCE_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+
+async fn logout_imap_session(session: Option<SharedImapSession>, session_name: &'static str) {
+    let Some(session) = session else {
+        return;
+    };
+
+    match time::timeout(RESOURCE_SHUTDOWN_TIMEOUT, async {
+        let mut session = session.lock().await;
+        session.logout().await
+    })
+    .await
+    {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => {
+            tracing::warn!(
+                ?error,
+                session = session_name,
+                "Failed to logout IMAP session"
+            );
+        }
+        Err(_) => {
+            tracing::warn!(
+                session = session_name,
+                timeout_seconds = RESOURCE_SHUTDOWN_TIMEOUT.as_secs(),
+                "Timed out logging out IMAP session; dropping the connection"
+            );
+        }
+    }
+}
+
+pub(crate) async fn cleanup_logout_resources(
+    pool: Option<SqlitePool>,
+    data_path: Option<PathBuf>,
+    primary_session: Option<SharedImapSession>,
+    background_session: Option<SharedImapSession>,
+) {
+    let cleanup_cache = async {
+        if let Some(pool) = pool {
+            if time::timeout(RESOURCE_SHUTDOWN_TIMEOUT, pool.close())
+                .await
+                .is_err()
+            {
+                tracing::warn!(
+                    timeout_seconds = RESOURCE_SHUTDOWN_TIMEOUT.as_secs(),
+                    "Timed out closing the email database pool"
+                );
+            }
+            drop(pool);
+        }
+
+        if let Some(data_path) = data_path {
+            if let Err(error) = db::cleanup(data_path.clone()).await {
+                tracing::warn!(
+                    ?error,
+                    path = %data_path.display(),
+                    "Failed to remove cached email data after logout"
+                );
+            }
+        }
+    };
+
+    tokio::join!(
+        cleanup_cache,
+        logout_imap_session(primary_session, "primary"),
+        logout_imap_session(background_session, "background"),
+    );
+}
+
+async fn await_logout_cleanup(logout_cleanup: &mut Option<JoinHandle<()>>) {
+    if let Some(task) = logout_cleanup.take() {
+        if let Err(error) = task.await {
+            tracing::warn!(?error, "Logout cleanup task failed");
+        }
+    }
+}
 
 fn refresh_ticker(interval_seconds: u8) -> time::Interval {
     let period = Duration::from_secs(u64::from(interval_seconds.max(1)));
@@ -129,7 +207,6 @@ pub async fn worker(
     mut imap_client_channel_rx: UnboundedReceiver<ImapClientConfig>,
     mut imap_client_returning_user_channel_rx: UnboundedReceiver<ImapClientConfig>,
     mut imap_cmd_channel_rx: UnboundedReceiver<ImapCommand>,
-    logout_result_tx: UnboundedSender<()>,
     inbox_initial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
     sent_initial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
     spam_initial_email_populated_tx: Arc<Mutex<Option<Sender<()>>>>,
@@ -157,6 +234,7 @@ pub async fn worker(
         };
 
         let mut logging_out = false;
+        let mut logout_cleanup: Option<JoinHandle<()>> = None;
 
         // The worker starts before AppState is initialized. Login configuration
         // replaces this placeholder ticker before periodic refresh is enabled.
@@ -171,6 +249,8 @@ pub async fn worker(
                         tracing::warn!("IMAP config channel closed");
                         continue;
                     };
+                    await_logout_cleanup(&mut logout_cleanup).await;
+                    logging_out = false;
                     ticker = refresh_ticker(config.auto_refresh_interval);
                     ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
@@ -221,6 +301,8 @@ pub async fn worker(
                         tracing::warn!("Returning user IMAP config channel closed");
                         continue;
                     };
+                    await_logout_cleanup(&mut logout_cleanup).await;
+                    logging_out = false;
                     ticker = refresh_ticker(config.auto_refresh_interval);
                     ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
@@ -377,33 +459,42 @@ pub async fn worker(
                             }
                         }
                         ImapCommand::Logout => {
-                            if let Some(session) = initialized_session.take() {
-                                let mut session = session.lock().await;
-                                if let Err(err) = session.logout().await {
-                                    tracing::warn!(error = ?err, "Failed to logout IMAP session");
-                                }
-                            } else {
-                                tracing::info!("Logout ignored: IMAP session is not initialized");
-                            }
+                            let primary_session = initialized_session.take();
+                            let background_session = initialized_session_background.take();
+                            let cleanup_pool = pool.take();
 
-                            if let Some(session_background) = initialized_session_background.take() {
-                                let mut session_background = session_background.lock().await;
-                                if let Err(err) = session_background.logout().await {
-                                    tracing::warn!(error = ?err, "Failed to logout background IMAP session");
-                                }
-                            } else {
-                                tracing::info!("Logout ignored: background IMAP session is not initialized");
-                            }
-
-                            pool = None;
                             imap_endpoint = None;
                             providers.clear();
                             initial_fetch_completed.clear();
                             database_initialized = false;
                             logging_out = true;
-
                             *LOGGED_IN.lock().await = false;
-                            let _ = logout_result_tx.send(());
+
+                            if logout_cleanup.is_none() {
+                                let data_path = app
+                                    .path()
+                                    .app_data_dir()
+                                    .map(|path| path.join("data"))
+                                    .map_err(|error| {
+                                        tracing::warn!(
+                                            ?error,
+                                            "Unable to resolve cached email data path during logout"
+                                        );
+                                    })
+                                    .ok();
+                                let cleanup_span = tracing::info_span!("worker.imap.logout.cleanup");
+                                logout_cleanup = Some(tokio::spawn(
+                                    cleanup_logout_resources(
+                                        cleanup_pool,
+                                        data_path,
+                                        primary_session,
+                                        background_session,
+                                    )
+                                    .instrument(cleanup_span),
+                                ));
+                            } else {
+                                tracing::debug!("Logout cleanup is already running");
+                            }
                         }
                         ImapCommand::FetchAttachment {
                             mail_box,
