@@ -169,6 +169,7 @@ pub async fn config_setup(
         signature: None,
         signature_html: None,
         chatgpt: None,
+        auto_refresh_interval: 2,
     };
 
     let config_dir = app.path().app_config_dir()?;
@@ -338,6 +339,7 @@ pub async fn check_app_status(app: tauri::AppHandle) -> Result<InitStatus, Error
                 None,
                 vec![ToolWrapper::new(SearchEmailsTool)],
             )?),
+            auto_refresh_interval: config.auto_refresh_interval,
         };
 
         let app_state = app.state::<ArcSwap<AppState>>();

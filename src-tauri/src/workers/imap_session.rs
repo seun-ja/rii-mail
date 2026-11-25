@@ -7,15 +7,18 @@ use async_native_tls::TlsStream;
 use sqlx::SqlitePool;
 use tauri::Manager as _;
 use tokio::sync::mpsc::UnboundedSender;
-use tokio::sync::oneshot::{self, Sender};
+use tokio::sync::oneshot::Sender;
 use tokio::sync::Mutex;
 use tokio::time::{self, MissedTickBehavior};
 use tokio::{net::TcpStream, sync::mpsc::UnboundedReceiver};
 use tracing::Instrument as _;
 
 use crate::config::{AppState, ImapClientConfig};
-use crate::db::{MailBox, Provider};
-use crate::email_cache::SharedImapSession;
+use crate::db::{check_email_db_empty, set_email_read, MailBox, Provider};
+use crate::email_cache::{
+    fetch_attachment_on_server, fetch_emails, fetch_latest, set_email_read_on_server,
+    SharedImapSession,
+};
 use crate::error::{friendly_login_error_message, Error};
 use crate::imap::{init_imap_client, ImapCommand, RefreshSummary};
 use crate::{auth, FETCH_MANAGER, LOGGED_IN, LOGGING_IN};
@@ -80,7 +83,7 @@ async fn refresh_periodic_mailbox(
     cancel_token: tokio_util::sync::CancellationToken,
     imap_endpoint: Option<&(String, u16)>,
 ) -> Result<Option<SharedImapSession>, Error> {
-    let result = crate::email_cache::fetch_latest(
+    let result = fetch_latest(
         app.clone(),
         session,
         pool,
@@ -98,7 +101,7 @@ async fn refresh_periodic_mailbox(
                 "Periodic refresh lost its IMAP connection; reconnecting"
             );
             let new_session = reconnect_periodic_session(app, imap_endpoint).await?;
-            crate::email_cache::fetch_latest(
+            fetch_latest(
                 app.clone(),
                 new_session.clone(),
                 pool,
@@ -150,10 +153,12 @@ pub async fn worker(
 
         let mut logging_out = false;
 
-        let (_email_cmd_tx, _email_cmd_rx) = oneshot::channel::<()>();
+        let state = app.state::<ArcSwap<AppState>>();
+        let current_state = state.load();
+        let initialized = current_state.state();
 
         // 1. Create an interval timer (e.g., every 3 seconds)
-        let mut ticker = time::interval(Duration::from_secs(60));
+        let mut ticker = time::interval(Duration::from_secs(initialized.auto_refresh_interval as u64));
 
         // Optional: Prevents bursts of ticks if your other code runs slow
         ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -288,7 +293,7 @@ pub async fn worker(
                                 provider.as_ref(),
                                 MailBox::Inbox.as_ref()
                             );
-                            let has_cached_inbox = match crate::db::check_email_db_empty(
+                            let has_cached_inbox = match check_email_db_empty(
                                 pool_ref,
                                 &inbox_key,
                             )
@@ -336,7 +341,7 @@ pub async fn worker(
                             let sent_tx = sent_initial_email_populated_tx.clone();
                             let spam_tx = spam_initial_email_populated_tx.clone();
 
-                            match crate::email_cache::fetch_emails(
+                            match fetch_emails(
                                 session.clone(),
                                 Some(session_background.clone()),
                                 pool_ref,
@@ -410,7 +415,7 @@ pub async fn worker(
                                             .to_string(),
                                     )
                                 })?;
-                                match crate::email_cache::fetch_attachment_on_server(
+                                match fetch_attachment_on_server(
                                     session,
                                     &mail_box,
                                     uid,
@@ -426,7 +431,7 @@ pub async fn worker(
                                         )
                                         .await?;
                                         initialized_session = Some(new_session.clone());
-                                        crate::email_cache::fetch_attachment_on_server(
+                                        fetch_attachment_on_server(
                                             new_session,
                                             &mail_box,
                                             uid,
@@ -468,7 +473,7 @@ pub async fn worker(
                                     "SetEmailRead failed: sqlite pool is not initialized".to_string(),
                                 ))?;
 
-                                let server_result = crate::email_cache::set_email_read_on_server(
+                                let server_result = set_email_read_on_server(
                                     session,
                                     &mail_box,
                                     uid,
@@ -491,7 +496,7 @@ pub async fn worker(
                                         )
                                         .await?;
                                         initialized_session = Some(new_session.clone());
-                                        crate::email_cache::set_email_read_on_server(
+                                        set_email_read_on_server(
                                             new_session,
                                             &mail_box,
                                             uid,
@@ -507,7 +512,7 @@ pub async fn worker(
                                     provider.as_ref(),
                                     mail_box.as_ref()
                                 );
-                                crate::db::set_email_read(
+                                set_email_read(
                                     pool_ref,
                                     &table_name,
                                     uid,
@@ -552,7 +557,7 @@ pub async fn worker(
                                 FETCH_MANAGER.refresh_token.lock().await.child_token()
                             };
 
-                            let refresh_result = crate::email_cache::fetch_latest(
+                            let refresh_result = fetch_latest(
                                 app.clone(),
                                 session,
                                 pool_ref,
@@ -582,7 +587,7 @@ pub async fn worker(
                                                 .await
                                                 .child_token();
 
-                                            crate::email_cache::fetch_latest(
+                                            fetch_latest(
                                                 app.clone(),
                                                 new_session,
                                                 pool_ref,
