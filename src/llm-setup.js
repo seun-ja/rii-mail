@@ -19,6 +19,9 @@ export function initLlmSetupPage({
   const geminiApiKeyInput = doc.querySelector("#gemini-api-key");
   const skipButton = doc.querySelector("#skip-llm-button");
   const statusEl = doc.querySelector("#llm-setup-status");
+  const providerChoices = Array.from(
+    doc.querySelectorAll?.("[data-llm-provider-choice]") || [],
+  );
 
   if (
     !ollamaButton ||
@@ -26,24 +29,57 @@ export function initLlmSetupPage({
     !geminiButton ||
     !geminiApiKeyInput ||
     !skipButton ||
-    !statusEl
+    !statusEl ||
+    providerChoices.length === 0
   ) {
     return { ready: false };
   }
 
-  const buttons = [ollamaButton, chatgptButton, geminiButton, skipButton];
+  const connectionButtons = [
+    ollamaButton,
+    chatgptButton,
+    geminiButton,
+    skipButton,
+  ];
+  const buttons = [...providerChoices, ...connectionButtons];
+
+  let isBusy = false;
+
+  const selectProvider = (selectedChoice) => {
+    if (isBusy) {
+      return;
+    }
+
+    providerChoices.forEach((choice) => {
+      const isSelected = choice === selectedChoice;
+      const panelId = choice.getAttribute("aria-controls");
+      const panel = panelId ? doc.querySelector(`#${panelId}`) : null;
+
+      choice.setAttribute("aria-pressed", isSelected ? "true" : "false");
+      if (panel) {
+        panel.hidden = !isSelected;
+      }
+    });
+  };
+
+  providerChoices.forEach((choice) => {
+    choice.addEventListener("click", () => selectProvider(choice));
+  });
+
+  selectProvider(
+    providerChoices.find((choice) => choice.getAttribute("aria-pressed") === "true") ||
+      providerChoices[0],
+  );
 
   if (!invokeFn) {
     setBusy(
-      buttons,
+      connectionButtons,
       statusEl,
       true,
       "Backend connection is unavailable. Please restart RiiEmail.",
     );
     return { ready: false };
   }
-
-  let isBusy = false;
 
   const runAction = async (command, pendingMessage, args) => {
     if (isBusy) {

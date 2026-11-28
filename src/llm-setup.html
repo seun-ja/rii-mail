@@ -12,91 +12,109 @@
         <main class="setup-page llm-setup-page">
             <div class="setup-container llm-setup-container">
                 <div class="setup-header">
-                    <div class="setup-brand">
-                        <img
-                            class="setup-brand-img"
-                            src="/assets/mail.png"
-                            alt="RiiMail"
-                        />
-                    </div>
-
-                    <p class="setup-step">Account setup · Step 2 of 2</p>
-                    <h1>Connect an AI assistant</h1>
+                    <h1>Choose your writing assistant</h1>
                     <p class="setup-subtitle">
-                        Choose how RiiMail should power email generation. You can
-                        skip this and connect later.
+                        Pick the service RiiMail should use. You can change this later.
                     </p>
                 </div>
 
-                <div class="llm-options" aria-label="AI connection options">
-                    <section class="llm-option" aria-labelledby="ollama-title">
-                        <div class="llm-option-heading">
-                            <span
-                                class="llm-option-icon llm-option-icon-ollama"
-                                aria-hidden="true"
-                            >
-                                <img
-                                    class="llm-option-logo llm-option-logo-ollama"
-                                    src="/assets/ollama-logo.png"
-                                    alt=""
-                                />
+                <div class="llm-provider-list" aria-label="AI connection options">
+                    <button
+                        class="llm-provider-choice"
+                        type="button"
+                        data-llm-provider-choice
+                        aria-pressed="false"
+                        aria-controls="ollama-connection-panel"
+                    >
+                        <span class="llm-option-icon llm-option-icon-ollama" aria-hidden="true">
+                            <img class="llm-option-logo llm-option-logo-ollama" src="/assets/ollama-logo.png" alt="" />
+                        </span>
+                        <span class="llm-option-copy">
+                            <span class="llm-provider-name">Ollama</span>
+                            <span>Private models on this Mac</span>
+                        </span>
+                        <span class="llm-provider-meta">Local</span>
+                        <span class="llm-selection-mark" aria-hidden="true"></span>
+                    </button>
+
+                    <button
+                        class="llm-provider-choice"
+                        type="button"
+                        data-llm-provider-choice
+                        aria-pressed="false"
+                        aria-controls="chatgpt-connection-panel"
+                    >
+                        <span class="llm-option-icon llm-option-icon-chatgpt" aria-hidden="true">
+                            <img class="llm-option-logo llm-option-logo-chatgpt" src="/assets/chatgpt-logo-white.svg" alt="" />
+                        </span>
+                        <span class="llm-option-copy">
+                            <span class="llm-provider-name">ChatGPT</span>
+                            <span>Sign in with an eligible plan</span>
+                        </span>
+                        <span class="llm-provider-meta">Browser sign-in</span>
+                        <span class="llm-selection-mark" aria-hidden="true"></span>
+                    </button>
+
+                    <button
+                        class="llm-provider-choice"
+                        type="button"
+                        data-llm-provider-choice
+                        aria-pressed="true"
+                        aria-controls="gemini-connection-panel"
+                    >
+                        <span class="llm-option-icon llm-option-icon-gemini" aria-hidden="true">
+                            <span class="llm-option-logo-gemini">✦</span>
+                        </span>
+                        <span class="llm-option-copy">
+                            <span class="llm-provider-name">Gemini</span>
+                            <span>Connect a Google AI Studio key</span>
+                        </span>
+                        <span class="llm-provider-meta">API key</span>
+                        <span class="llm-selection-mark" aria-hidden="true"></span>
+                    </button>
+                </div>
+
+                <section class="llm-provider-detail" aria-live="polite">
+                    <div id="ollama-connection-panel" class="llm-provider-panel" hidden>
+                        <div class="llm-detail-header">
+                            <span class="llm-option-icon llm-option-icon-ollama" aria-hidden="true">
+                                <img class="llm-option-logo llm-option-logo-ollama" src="/assets/ollama-logo.png" alt="" />
                             </span>
-                            <div>
-                                <h2 id="ollama-title">Ollama</h2>
-                                <p>Use a local model running on this device.</p>
+                            <div class="llm-detail-copy">
+                                <h2>Connect Ollama</h2>
+                                <p>Requires Ollama to be running locally.</p>
                             </div>
                         </div>
-                        <button
-                            id="connect-ollama-button"
-                            class="llm-connect-button"
-                            type="button"
-                        >
-                            Connect Ollama
-                        </button>
-                    </section>
+                        <div class="llm-detail-actions">
+                            <button id="connect-ollama-button" class="llm-connect-button" type="button">Connect Ollama</button>
+                        </div>
+                    </div>
 
-                    <section class="llm-option" aria-labelledby="chatgpt-title">
-                        <div class="llm-option-heading">
-                            <span
-                                class="llm-option-icon llm-option-icon-chatgpt"
-                                aria-hidden="true"
-                            >
-                                <img
-                                    class="llm-option-logo llm-option-logo-chatgpt"
-                                    src="/assets/chatgpt-logo-white.svg"
-                                    alt=""
-                                />
+                    <div id="chatgpt-connection-panel" class="llm-provider-panel" hidden>
+                        <div class="llm-detail-header">
+                            <span class="llm-option-icon llm-option-icon-chatgpt" aria-hidden="true">
+                                <img class="llm-option-logo llm-option-logo-chatgpt" src="/assets/chatgpt-logo-white.svg" alt="" />
                             </span>
-                            <div>
-                                <h2 id="chatgpt-title">ChatGPT</h2>
-                                <p>Use your eligible ChatGPT plan.</p>
+                            <div class="llm-detail-copy">
+                                <h2>Connect ChatGPT</h2>
+                                <p>Secure sign-in opens in your browser. Keep this window open.</p>
                             </div>
                         </div>
-                        <p class="llm-browser-note">
-                            Your system browser will open for secure sign-in.
-                            Keep this window open while authorization completes.
-                        </p>
-                        <button
-                            id="connect-chatgpt-button"
-                            class="llm-connect-button"
-                            type="button"
-                        >
-                            Continue with ChatGPT
-                        </button>
-                    </section>
+                        <div class="llm-detail-actions">
+                            <button id="connect-chatgpt-button" class="llm-connect-button" type="button">Continue with ChatGPT</button>
+                        </div>
+                    </div>
 
-                    <section class="llm-option" aria-labelledby="gemini-title">
-                        <div class="llm-option-heading">
-                            <span
-                                class="llm-option-icon llm-option-icon-gemini"
-                                aria-hidden="true"
-                            >
+                    <div id="gemini-connection-panel" class="llm-provider-panel">
+                        <div class="llm-detail-header">
+                            <span class="llm-option-icon llm-option-icon-gemini" aria-hidden="true">
                                 <span class="llm-option-logo-gemini">✦</span>
                             </span>
-                            <div>
-                                <h2 id="gemini-title">Gemini</h2>
-                                <p>Use your Google AI Studio API key.</p>
+                            <div class="llm-detail-copy">
+                                <h2>Connect Gemini</h2>
+                                <p>Paste a Google AI Studio API key to finish.</p>
                             </div>
+                            <a class="llm-key-link" href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer">Get a key ↗</a>
                         </div>
                         <label class="llm-api-key-field" for="gemini-api-key">
                             <span>Gemini API key</span>
@@ -105,26 +123,14 @@
                                 type="password"
                                 autocomplete="off"
                                 spellcheck="false"
-                                placeholder="Paste API key"
+                                placeholder="Paste Gemini API key"
                             />
                         </label>
-                        <p class="llm-key-note">
-                            Create a key in
-                            <a
-                                href="https://aistudio.google.com/app/apikey"
-                                target="_blank"
-                                rel="noreferrer"
-                            >Google AI Studio</a>.
-                        </p>
-                        <button
-                            id="connect-gemini-button"
-                            class="llm-connect-button"
-                            type="button"
-                        >
-                            Connect Gemini
-                        </button>
-                    </section>
-                </div>
+                        <div class="llm-detail-actions">
+                            <button id="connect-gemini-button" class="llm-connect-button" type="button">Connect Gemini</button>
+                        </div>
+                    </div>
+                </section>
 
                 <div
                     id="llm-setup-status"
@@ -134,21 +140,15 @@
                     aria-atomic="true"
                 ></div>
 
-                <button id="skip-llm-button" class="llm-skip-button" type="button">
-                    Skip for now
-                </button>
-
-                <p class="setup-privacy llm-privacy">
-                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <path
-                            d="M7 10V8a5 5 0 0 1 10 0v2m-11 0h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1Z"
-                            stroke="currentColor"
-                            stroke-width="1.8"
-                            stroke-linecap="round"
-                        />
-                    </svg>
-                    AI credentials stay in the desktop app, not browser storage.
-                </p>
+                <div class="llm-footer">
+                    <p class="setup-privacy llm-privacy">
+                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M7 10V8a5 5 0 0 1 10 0v2m-11 0h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                        </svg>
+                        Credentials stay on this device
+                    </p>
+                    <button id="skip-llm-button" class="llm-skip-button" type="button">Skip for now</button>
+                </div>
             </div>
         </main>
     </body>
